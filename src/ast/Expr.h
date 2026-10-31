@@ -231,6 +231,11 @@ public:
     bool hasTemplateArgs = false;
     std::vector<Type*> explicitTemplateArgs;
     std::vector<long long> explicitTemplateValues;
+    // SG-01: parallel to explicitTemplateValues; non-empty entry means the
+    // argument is a symbolic template value parameter (`g<N>()`), while an
+    // expression entry covers dependent arithmetic such as `g<N + 1>()`.
+    std::vector<std::string> explicitTemplateValueNames;
+    std::vector<std::shared_ptr<ExprAST>> explicitTemplateValueExprs;
     // Parameter types of the overload chosen by semantic analysis. Empty when
     // unresolved (e.g. codegen is run without semantic analysis).
     std::vector<Type*> resolvedParamTypes;
@@ -519,6 +524,9 @@ struct OffsetDesignator {
     bool isIndex = false;
     std::string field;
     int64_t index = 0;
+    // SG-03: original constant-expression subscript; sema folds it into
+    // `index`, so codegen keeps consuming the resolved value.
+    std::unique_ptr<ExprAST> indexExpr;
 };
 
 class OffsetOfExprAST : public ExprAST {

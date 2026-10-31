@@ -44,6 +44,15 @@ private:
 
     Type* parseType();
     Type* parseTypeId();
+    // SG-01: one template argument may be a type or an integer const-expr.
+    // `argName` is set for a direct non-type template parameter reference.
+    bool parseTemplateArgument(Type*& argType, long long& argValue,
+                               std::string& argName,
+                               std::shared_ptr<ExprAST>& argExpr);
+    int m_templateArgDepth = 0;
+    // A speculative `name<...>(` probe rolls back to a comparison; diagnostics
+    // from that probe are suppressed (SG-01).
+    bool m_templateArgSpeculative = false;
     std::unique_ptr<UsingDeclAST> parseUsingAliasDecl(bool member);
 
     // PAR-24: legacy alias forms (typedef/type) and block/member-scope using.

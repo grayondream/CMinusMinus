@@ -2,8 +2,11 @@
 #include <unordered_map>
 #include <string>
 #include <vector>
+#include <memory>
 
 #include "Annotation.h"
+
+class ExprAST;
 
 // PAR-04/SEM-04/DEC-01: member access levels. `class` members default to
 // Private, `struct` members to Public (unrecorded members fall back to
@@ -278,6 +281,10 @@ public:
     std::string templateName;
     std::vector<Type*> typeArgs;
     std::vector<long long> valueArgs;
+    // SG-01: parallel symbolic value arguments, resolved during outer template
+    // instantiation (e.g. `A<N>` / `A<N + 1>` inside a template body).
+    std::vector<std::string> valueArgNames;
+    std::vector<std::shared_ptr<ExprAST>> valueArgExprs;
 
     explicit TypeInstanceType(const std::string& n)
         : Type(TypeKind::TypeInstance), templateName(n) {}

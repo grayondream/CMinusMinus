@@ -4067,6 +4067,19 @@ void SemanticAnalyzer::visit(SizeofExprAST& node) {
 // PAR-14: `offsetof(T, member)` — resolves to usize; the field name is
 // validated against the aggregate at codegen (layout query).
 void SemanticAnalyzer::visit(OffsetOfExprAST& node) {
+    // SG-03: subscript designators are constant expressions, folded here so
+    // codegen sees the same resolved integer as before.
+    for (auto& step : node.path) {
+        if (!step.isIndex || !step.indexExpr) continue;
+        auto folded = evaluateConstexpr(step.indexExpr.get());
+        if (!folded || folded->type != ConstValue::INT || folded->intVal < 0) {
+            emitError("offsetof array index must be a non-negative constant expression", node);
+            node.type = nullptr;
+            node.isLValue = false;
+            return;
+        }
+        step.index = folded->intVal;
+    }
     node.type = typeCtx->getUSize();
     node.isLValue = false;
 }
@@ -5392,6 +5405,10 @@ void SemanticAnalyzer::visitStructDeclImpl(StructDeclAST& node) {
     for (auto& f : node.fields) {
         validateAnnotations(f.annotations, node, "field");
         f.type = resolveTypeInstance(f.type, node);
+        // SG-01: a nested instantiation produced during template rewriting
+        // (e.g. `A<N>` inside `B`) is a placeholder whose declaration still
+        // needs its layout/fields materialized.
+        ensureInstanceVisited(f.type, node);
         // PAR-24: a private class-scoped alias may not name a field here.
         checkNestedTypeAccess(f.type, node);
         // P1-05 评审 I4: 字段类型弃用检查。
@@ -5405,7 +5422,11 @@ void SemanticAnalyzer::visitStructDeclImpl(StructDeclAST& node) {
     checkFlexibleArrayConstraint(node);
     for (auto& m : node.methods) {
         m->returnType = resolveTypeInstance(m->returnType, node);
-        for (auto& p : m->params) p->type = resolveTypeInstance(p->type, node);
+        ensureInstanceVisited(m->returnType, node);
+        for (auto& p : m->params) {
+            p->type = resolveTypeInstance(p->type, node);
+            ensureInstanceVisited(p->type, node);
+        }
         // P1-05 评审 I3: 方法弃用记录（方法不经 visit(FunctionDeclAST)）。
         for (const auto& ann : m->annotations) {
             if (ann.name == "deprecated") {
@@ -5863,6 +5884,9 @@ void SemanticAnalyzer::visit(DeclStmtAST& node) {
             visit(*fwdDecl);
         } else if (auto* usingDecl = dynamic_cast<UsingDeclAST*>(node.decl.get())) {
             visit(*usingDecl);
+        } else if (auto* fnDecl = dynamic_cast<FunctionDeclAST*>(node.decl.get())) {
+            // SG-02: block-scope `extern` function prototype.
+            visit(*fnDecl);
         } else if (auto* multi = dynamic_cast<MultiVarDeclAST*>(node.decl.get())) {
             for (auto& d : multi->decls) {
                 if (auto* v = dynamic_cast<VarDeclAST*>(d.get())) visit(*v);

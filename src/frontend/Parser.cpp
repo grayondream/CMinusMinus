@@ -113,6 +113,39 @@ std::string stripStringQuotes(const std::string& s, bool multiline) {
     return s.substr(n, s.size() - 2 * n);
 }
 
+// SG-07: decode one string token. Adjacent literals are concatenated by the
+// parser (after this helper has produced their decoded bytes).
+std::string decodeStringToken(const Token& token, StringLiteralPrefix& prefix) {
+    const std::string& lex = token.lexeme;
+    std::string val;
+    if (lex.size() >= 2 && lex[0] == 'R' && lex[1] == '"') {
+        // SG-18: C++ raw string R"delim(body)delim" — no escape processing.
+        const size_t open = lex.find('(', 2);
+        if (open != std::string::npos) {
+            const std::string delim = lex.substr(2, open - 2);
+            const size_t suffixLen = delim.size() + 2; // ')' + delim + '"'
+            if (lex.size() >= open + 1 + suffixLen) {
+                val = lex.substr(open + 1, lex.size() - suffixLen - (open + 1));
+            }
+        }
+        prefix = StringLiteralPrefix::None;
+    } else if (lex.size() >= 2 && lex[0] == 'r' && lex[1] == '"') {
+        if (lex.size() >= 3) val = lex.substr(2, lex.size() - 3);
+        prefix = StringLiteralPrefix::None;
+    } else if (prefix == StringLiteralPrefix::None &&
+               lex.size() >= 2 && lex.front() == '"' && lex.back() == '"') {
+        val = decodeEscapes(stripStringQuotes(lex, token.isMultilineString));
+    } else if (prefix != StringLiteralPrefix::None) {
+        // u8/u16/u32 prefix: lexeme is `u8"hi"` — strip prefix + quotes.
+        size_t q = lex.find('"');
+        if (q != std::string::npos && lex.size() >= q + 2 && lex.back() == '"') {
+            std::string body = lex.substr(q + 1, lex.size() - q - 2);
+            val = decodeEscapes(body);
+        }
+    }
+    return val;
+}
+
 // Evaluate an integer constant expression used for enumerator values and
 // similar compile-time integers. Supports literals, unary +/-/~, the usual
 // binary operators (TYP-25), and named constants supplied by the parser
@@ -128,6 +161,10 @@ bool evalIntConstExpr(const ExprAST* expr, long long& out,
     }
     if (auto* c = dynamic_cast<const CharExprAST*>(expr)) {
         out = static_cast<unsigned char>(c->value);
+        return true;
+    }
+    if (auto* b = dynamic_cast<const BoolLiteralExprAST*>(expr)) {
+        out = b->value ? 1 : 0;
         return true;
     }
     if (auto* v = dynamic_cast<const VariableExprAST*>(expr)) {
@@ -509,35 +546,9 @@ std::unique_ptr<ExprAST> Parser::parseUnaryImpl() {
         if (isTypeStart() || check(TokenType::TOKEN_CONST) ||
             check(TokenType::TOKEN_VOLATILE) || check(TokenType::TOKEN_ATOMIC)) {
             size_t saved = m_currentTokenPos;
-            Type* castType = parseType();
-            // PAR-08: fixed array dimensions are accepted only in this
-            // type-name position: `(int32[3]){...}`. Scoping them here keeps
-            // `[N]` out of declarations and parameter types. C declarator
-            // order: `T[2][3]` = array[2] of array[3] (wrap right-to-left).
-            if (castType && check(TokenType::TOKEN_LBRACKET)) {
-                size_t dimSaved = m_currentTokenPos;
-                std::vector<int> dims;
-                bool ok = true;
-                while (check(TokenType::TOKEN_LBRACKET)) {
-                    advance(); // '['
-                    if (!check(TokenType::TOKEN_NUMBER)) { ok = false; break; }
-                    auto numTok = advance();
-                    int64_t dim = static_cast<int64_t>(
-                        std::get<unsigned __int128>(numTok->value));
-                    if (dim < 0 || dim > INT32_MAX ||
-                        !match(TokenType::TOKEN_RBRACKET)) {
-                        ok = false;
-                        break;
-                    }
-                    dims.push_back(static_cast<int>(dim));
-                }
-                if (ok && !dims.empty()) {
-                    for (auto it = dims.rbegin(); it != dims.rend(); ++it)
-                        castType = new ArrayType(castType, *it);
-                } else {
-                    m_currentTokenPos = dimSaved;
-                }
-            }
+            // SG-04: casts take a full type-id, including abstract function
+            // pointers and array types (not just parseType's simple suffix).
+            Type* castType = parseTypeId();
             if (castType && match(TokenType::TOKEN_RPAREN)) {
                 // PAR-08: C99 compound literal — `(type){ init-list }`.
                 if (check(TokenType::TOKEN_LBRACE)) {
@@ -711,15 +722,14 @@ std::unique_ptr<ExprAST> Parser::parseUnaryImpl() {
                 }
                 OffsetDesignator d; d.field = sub->lexeme; path.push_back(std::move(d));
             } else if (match(TokenType::TOKEN_LBRACKET)) {
-                auto num = match(TokenType::TOKEN_NUMBER);
-                if (!num) {
-                    errorUnexpected("offsetof array index must be an integer literal");
+                auto indexExpr = parseExpr(2);
+                if (!indexExpr) {
+                    errorUnexpected("expected constant expression in offsetof subscript");
                     return nullptr;
                 }
                 OffsetDesignator d;
                 d.isIndex = true;
-                d.index = static_cast<int64_t>(
-                    static_cast<long long>(std::get<unsigned __int128>(num->value)));
+                d.indexExpr = std::move(indexExpr);
                 path.push_back(std::move(d));
                 if (!expect(TokenType::TOKEN_RBRACKET, "expected ']' in offsetof")) return nullptr;
             } else {
@@ -977,39 +987,20 @@ std::unique_ptr<ExprAST> Parser::parsePrimaryImpl() {
         return std::make_unique<CharExprAST>(val);
     }
 
-    // String literal
+    // String literal (SG-07: adjacent literals concatenate).
     if (token->type == TokenType::TOKEN_STRING) {
-        advance();
-        std::string lex = token->lexeme;
-        std::string val;
-        StringLiteralPrefix prefix = token->stringPrefix;
-        if (lex.size() >= 2 && lex[0] == 'R' && lex[1] == '"') {
-            // SG-18: C++ raw string R"delim(body)delim" — no escape processing.
-            const size_t open = lex.find('(', 2);
-            if (open != std::string::npos) {
-                const std::string delim = lex.substr(2, open - 2);
-                const size_t suffixLen = delim.size() + 2; // ')' + delim + '"'
-                if (lex.size() >= open + 1 + suffixLen) {
-                    val = lex.substr(open + 1,
-                                     lex.size() - suffixLen - (open + 1));
-                }
+        auto first = advance();
+        StringLiteralPrefix prefix = first->stringPrefix;
+        std::string val = decodeStringToken(*first, prefix);
+        while (check(TokenType::TOKEN_STRING)) {
+            auto next = advance();
+            StringLiteralPrefix partPrefix = next->stringPrefix;
+            std::string part = decodeStringToken(*next, partPrefix);
+            if (prefix == StringLiteralPrefix::None &&
+                partPrefix != StringLiteralPrefix::None) {
+                prefix = partPrefix;
             }
-            prefix = StringLiteralPrefix::None;
-        } else if (lex.size() >= 2 && lex[0] == 'r' && lex[1] == '"') {
-            // Raw string: r"..." — no escape processing.
-            if (lex.size() >= 3) val = lex.substr(2, lex.size() - 3);
-            prefix = StringLiteralPrefix::None;
-        } else if (prefix == StringLiteralPrefix::None &&
-                   lex.size() >= 2 && lex.front() == '"' && lex.back() == '"') {
-            val = decodeEscapes(stripStringQuotes(lex, token->isMultilineString));
-        } else if (prefix != StringLiteralPrefix::None) {
-            // u8/u16/u32 prefix: lexeme is `u8"hi"` — strip prefix + quotes.
-            size_t q = lex.find('"');
-            if (q != std::string::npos && lex.size() >= q + 2 &&
-                lex.back() == '"') {
-                std::string body = lex.substr(q + 1, lex.size() - q - 2);
-                val = decodeEscapes(body);
-            }
+            val += part;
         }
         if (prefix == StringLiteralPrefix::None) {
             return std::make_unique<StringExprAST>(val);
@@ -1053,6 +1044,8 @@ std::unique_ptr<ExprAST> Parser::parsePrimaryImpl() {
         // 取比较，C++ 同款立场）。
         std::vector<Type*> explicitTemplateArgs;
         std::vector<long long> explicitTemplateValues;
+        std::vector<std::string> explicitTemplateValueNames;
+        std::vector<std::shared_ptr<ExprAST>> explicitTemplateValueExprs;
         bool hasTemplateArgs = false;
         // 评审 C2：closeBracket 会原地拆分 RSHIFT token——回滚须恢复，
         // 否则比较表达式被静默错译。
@@ -1077,21 +1070,27 @@ std::unique_ptr<ExprAST> Parser::parsePrimaryImpl() {
             if (check(TokenType::TOKEN_GT) || check(TokenType::TOKEN_RSHIFT)) {
                 ok = closeBracket(); // `name<>()` 空实参：纯推导
             } else {
+                m_templateArgSpeculative = true;
                 while (true) {
-                    if (check(TokenType::TOKEN_NUMBER)) {
-                        auto numTok = advance();
-                        explicitTemplateValues.push_back(static_cast<long long>(std::get<unsigned __int128>(numTok->value)));
-                    } else {
-                        Type* argType = parseType();
-                        if (!argType) {
-                            ok = false;
-                            break;
-                        }
+                    Type* argType = nullptr;
+                    long long argValue = 0;
+                    std::string argName;
+                    std::shared_ptr<ExprAST> argExpr;
+                    if (!parseTemplateArgument(argType, argValue, argName, argExpr)) {
+                        ok = false;
+                        break;
+                    }
+                    if (argType) {
                         explicitTemplateArgs.push_back(argType);
+                    } else {
+                        explicitTemplateValues.push_back(argValue);
+                        explicitTemplateValueNames.push_back(std::move(argName));
+                        explicitTemplateValueExprs.push_back(std::move(argExpr));
                     }
                     if (match(TokenType::TOKEN_COMMA)) continue;
                     break;
                 }
+                m_templateArgSpeculative = false;
                 if (ok) ok = closeBracket();
             }
             if (ok) ok = peek() && peek()->type == TokenType::TOKEN_LPAREN;
@@ -1106,6 +1105,8 @@ std::unique_ptr<ExprAST> Parser::parsePrimaryImpl() {
                 m_currentTokenPos = save;
                 explicitTemplateArgs.clear();
                 explicitTemplateValues.clear();
+                explicitTemplateValueNames.clear();
+                explicitTemplateValueExprs.clear();
             }
         }
 
@@ -1133,6 +1134,8 @@ std::unique_ptr<ExprAST> Parser::parsePrimaryImpl() {
             call->hasTemplateArgs = hasTemplateArgs;
             call->explicitTemplateArgs = std::move(explicitTemplateArgs);
             call->explicitTemplateValues = std::move(explicitTemplateValues);
+            call->explicitTemplateValueNames = std::move(explicitTemplateValueNames);
+            call->explicitTemplateValueExprs = std::move(explicitTemplateValueExprs);
             return call;
         }
 
@@ -1377,6 +1380,13 @@ std::unique_ptr<ExprAST> Parser::parseExpr(int minPrec) {
         auto opToken = peek();
         if (!opToken) break;
 
+        // SG-01: inside `<...>` a top-level `>` closes the template
+        // argument list rather than acting as a comparison operator.
+        if (m_templateArgDepth > 0 &&
+            (opToken->type == TokenType::TOKEN_GT ||
+             opToken->type == TokenType::TOKEN_RSHIFT)) {
+            break;
+        }
         int prec = getPrecedence(opToken->type);
         if (prec < minPrec) break;
 
@@ -1652,6 +1662,8 @@ std::unique_ptr<StmtAST> Parser::parseStmt() {
     // storage duration, so both forms allocate at module scope.
     if (check(TokenType::TOKEN_STATIC) || check(TokenType::TOKEN_THREAD_LOCAL) ||
         check(TokenType::TOKEN_EXTERN)) {
+        // SG-02: a block-scope `extern` may declare a function prototype.
+        size_t storageStart = m_currentTokenPos;
         bool isStatic = false;
         bool isTls = false;
         bool isExtern = false;
@@ -1680,6 +1692,15 @@ std::unique_ptr<StmtAST> Parser::parseStmt() {
             return std::make_unique<NullStmtAST>();
         }
         auto nameTok = advance();
+        if (isExtern && check(TokenType::TOKEN_LPAREN)) {
+            m_currentTokenPos = storageStart;
+            auto decl = parseDeclaration();
+            if (decl) {
+                applyLocation(decl.get(), stmtStart ? &*stmtStart : nullptr);
+                return makeDeclStmt(std::move(decl));
+            }
+            m_currentTokenPos = storageStart;
+        }
         auto varDecl = parseVariableDeclList(type, nameTok->lexeme);
         if (!varDecl) return nullptr;
         std::function<void(DeclAST*)> mark = [&mark, isStatic, isTls, isExtern](DeclAST* d) {
@@ -2669,21 +2690,21 @@ Type* Parser::parseBaseType() {
                 };
                 auto* inst = new TypeInstanceType(name);
                 while (true) {
-                    if (check(TokenType::TOKEN_NUMBER)) {
-                        auto numTok = advance();
-                        inst->valueArgs.push_back(static_cast<long long>(std::get<unsigned __int128>(numTok->value)));
-                    } else if (check(TokenType::TOKEN_FLOAT)) {
-                        error("non-type template argument must be an integer constant", *peek());
+                    Type* argType = nullptr;
+                    long long argValue = 0;
+                    std::string argName;
+                    std::shared_ptr<ExprAST> argExpr;
+                    if (!parseTemplateArgument(argType, argValue, argName, argExpr)) {
+                        errorUnexpected("expected type or constant template argument");
                         restoreRshift();
                         return nullptr;
-                    } else {
-                        Type* argType = parseType();
-                        if (!argType) {
-                            errorUnexpected("expected type or integer template argument");
-                            restoreRshift();
-                            return nullptr;
-                        }
+                    }
+                    if (argType) {
                         inst->typeArgs.push_back(argType);
+                    } else {
+                        inst->valueArgs.push_back(argValue);
+                        inst->valueArgNames.push_back(std::move(argName));
+                        inst->valueArgExprs.push_back(std::move(argExpr));
                     }
                     if (match(TokenType::TOKEN_COMMA)) continue;
                     break;
@@ -3762,39 +3783,37 @@ Type* Parser::parseFunctionPointerDeclarator(Type* returnType, std::string& outN
                                              bool requireName,
                                              bool* outIsFunction,
                                              std::vector<std::unique_ptr<ParamDeclAST>>* outFunctionParams) {
+    // SG-05: one recursive declarator engine instead of the previous
+    // single-parenthesis special case. `ops` is the constructor list in
+    // identifier-outward order; building the type walks it in reverse.
     struct Op {
         enum Kind { Pointer, Array, Function } kind;
         int size = 0;
         bool varArg = false;
         std::vector<std::unique_ptr<ParamDeclAST>> params;
     };
+
     outName.clear();
     if (outIsFunction) *outIsFunction = false;
     if (!check(TokenType::TOKEN_LPAREN)) return nullptr;
 
-    size_t saved = m_currentTokenPos;
-    advance(); // '('
-    while (check(TokenType::TOKEN_CONST) || check(TokenType::TOKEN_VOLATILE)) advance();
+    const size_t startPos = m_currentTokenPos;
 
-    // A parenthesized declarator may omit the pointer entirely:
-    // `int32 (x);`, `int32 (f)(void);`, `int32 (a)[3];`. With `*` it is the
-    // familiar pointer-to-function / pointer-to-array form.
-    bool hasPointer = false;
-    if (check(TokenType::TOKEN_STAR)) {
-        advance(); // '*'
-        hasPointer = true;
-        while (check(TokenType::TOKEN_CONST) || check(TokenType::TOKEN_VOLATILE) ||
-               check(TokenType::TOKEN_RESTRICT)) advance();
-    }
+    auto groupingStartsHere = [this]() -> bool {
+        if (!check(TokenType::TOKEN_LPAREN)) return false;
+        size_t i = m_currentTokenPos + 1;
+        while (i < m_tokens.size() &&
+               (m_tokens[i].type == TokenType::TOKEN_CONST ||
+                m_tokens[i].type == TokenType::TOKEN_VOLATILE ||
+                m_tokens[i].type == TokenType::TOKEN_RESTRICT)) {
+            ++i;
+        }
+        if (i >= m_tokens.size()) return false;
+        return m_tokens[i].type == TokenType::TOKEN_STAR ||
+               m_tokens[i].type == TokenType::TOKEN_IDENTIFIER ||
+               m_tokens[i].type == TokenType::TOKEN_LPAREN;
+    };
 
-    if (check(TokenType::TOKEN_IDENTIFIER)) {
-        outName = advance()->lexeme;
-    } else if (requireName) {
-        m_currentTokenPos = saved;
-        return nullptr;
-    }
-
-    // Parse a suffix list: [N] or (params). These bind to the declarator name.
     auto parseSuffixes = [&](std::vector<Op>& ops) -> bool {
         while (!eof()) {
             if (check(TokenType::TOKEN_LBRACKET)) {
@@ -3844,29 +3863,56 @@ Type* Parser::parseFunctionPointerDeclarator(Type* returnType, std::string& outN
         return true;
     };
 
-    std::vector<Op> inner;
-    if (!parseSuffixes(inner) || !match(TokenType::TOKEN_RPAREN)) {
-        m_currentTokenPos = saved;
-        outName.clear();
-        return nullptr;
-    }
-    std::vector<Op> outer;
-    if (!parseSuffixes(outer)) {
-        m_currentTokenPos = saved;
-        outName.clear();
-        return nullptr;
-    }
+    std::function<bool(std::vector<Op>&)> parseDecl =
+        [&](std::vector<Op>& ops) -> bool {
+        int pointerCount = 0;
+        while (check(TokenType::TOKEN_STAR)) {
+            advance();
+            ++pointerCount;
+            while (check(TokenType::TOKEN_CONST) ||
+                   check(TokenType::TOKEN_VOLATILE) ||
+                   check(TokenType::TOKEN_RESTRICT)) {
+                advance();
+            }
+        }
 
-    // Identifier-outward order: inner suffixes, the pointer prefix, then the
-    // suffixes after the closing ')'.
+        if (groupingStartsHere()) {
+            advance(); // '('
+            std::vector<Op> inner;
+            if (!parseDecl(inner)) return false;
+            if (!expect(TokenType::TOKEN_RPAREN, "expected ')' in declarator"))
+                return false;
+            for (auto& op : inner) ops.push_back(std::move(op));
+        } else if (check(TokenType::TOKEN_IDENTIFIER)) {
+            outName = advance()->lexeme;
+        } else if (requireName) {
+            return false;
+        }
+
+        if (!parseSuffixes(ops)) return false;
+
+        // Prefix `*` applies after the declarator's own suffixes (e.g.
+        // `*f()` = function returning pointer; `(*f)()` is handled by the
+        // grouping branch above and therefore places the pointer first).
+        for (int i = 0; i < pointerCount; ++i) {
+            Op p; p.kind = Op::Pointer;
+            ops.push_back(std::move(p));
+        }
+        return true;
+    };
+
     std::vector<Op> ops;
-    for (auto& op : inner) ops.push_back(std::move(op));
-    if (hasPointer) {
-        Op p;
-        p.kind = Op::Pointer;
-        ops.push_back(std::move(p));
+    if (!parseDecl(ops)) {
+        m_currentTokenPos = startPos;
+        outName.clear();
+        return nullptr;
     }
-    for (auto& op : outer) ops.push_back(std::move(op));
+    // A top-level abstract type-id has no name; callers that need a name pass
+    // requireName=true. For requireName=false the empty name is valid.
+    if (requireName && outName.empty()) {
+        m_currentTokenPos = startPos;
+        return nullptr;
+    }
 
     const bool entityIsFunction = !ops.empty() && ops.front().kind == Op::Function;
     if (outIsFunction) *outIsFunction = entityIsFunction;
@@ -4180,6 +4226,15 @@ std::unique_ptr<ParamDeclAST> Parser::parseParamDecl() {
             std::vector<bool> explicitDim;
             while (check(TokenType::TOKEN_LBRACKET)) {
                 advance();
+                // SG-06: C99 array-parameter qualifiers. `static` means the
+                // caller must provide at least N elements; the size itself is
+                // still documentation because parameters decay to slices.
+                while (check(TokenType::TOKEN_STATIC) ||
+                       check(TokenType::TOKEN_CONST) ||
+                       check(TokenType::TOKEN_VOLATILE) ||
+                       check(TokenType::TOKEN_RESTRICT)) {
+                    advance();
+                }
                 int dimSize = 0;
                 bool hasNumber = false;
                 // Same deliberate non-feature as declarations: a runtime
@@ -5430,6 +5485,60 @@ bool Parser::parseArrayDimension(int& size, bool& hasSize) {
     size = static_cast<int>(value);
     hasSize = true;
     return true;
+}
+
+// SG-01: parse one template argument. Type arguments use parseType; integer
+// value arguments are folded with the parser's constant lookup, and a direct
+// non-type parameter (`N`) is kept symbolic for instantiation.
+bool Parser::parseTemplateArgument(Type*& argType, long long& argValue,
+                                     std::string& argName,
+                                     std::shared_ptr<ExprAST>& argExpr) {
+    argType = nullptr;
+    argValue = 0;
+    argName.clear();
+    argExpr.reset();
+
+    if (check(TokenType::TOKEN_FLOAT)) {
+        if (!m_templateArgSpeculative)
+            error("non-type template argument must be an integer constant", *peek());
+        return false;
+    }
+
+    bool valueExpr = false;
+    if (check(TokenType::TOKEN_NUMBER) || check(TokenType::TOKEN_CHAR) ||
+        check(TokenType::TOKEN_TRUE) || check(TokenType::TOKEN_FALSE) ||
+        check(TokenType::TOKEN_PLUS) || check(TokenType::TOKEN_MINUS) ||
+        check(TokenType::TOKEN_TILDE)) {
+        valueExpr = true;
+    } else if (check(TokenType::TOKEN_IDENTIFIER)) {
+        long long ignored = 0;
+        valueExpr = lookupConstValue(peek()->lexeme, ignored) ||
+                    (!m_templateScopes.empty() &&
+                     m_templateScopes.back().valueParams.count(peek()->lexeme));
+    }
+
+    if (valueExpr) {
+        ++m_templateArgDepth;
+        auto expr = parseExpr(2);
+        --m_templateArgDepth;
+        if (!expr) return false;
+        long long value = 0;
+        auto lookup = [this](const std::string& name, long long& out) {
+            return lookupConstValue(name, out);
+        };
+        if (!evalIntConstExpr(expr.get(), value, lookup)) {
+            // Keep dependent expressions (`N + 1`) for instantiation. The
+            // speculative call probe may still roll back if no `(` follows
+            // the closing `>`.
+            argExpr = std::shared_ptr<ExprAST>(expr.release());
+            return true;
+        }
+        argValue = value;
+        return true;
+    }
+
+    argType = parseType();
+    return argType != nullptr;
 }
 
 // P1-07 / PAR-10: parse + constant-evaluate a bit-field width. The caller has

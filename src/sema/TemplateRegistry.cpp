@@ -1,6 +1,8 @@
 // P1-03 / GEN-05: TemplateRegistry 实现。
 #include "sema/TemplateRegistry.h"
 
+#include <algorithm>
+
 #include "ast/Mangle.h"
 #include "sema/TemplateInstantiator.h"
 
@@ -167,7 +169,34 @@ Type* TemplateRegistry::resolveInstance(
     }
     m_depth--;
 
-    std::string name = instanceName(use->templateName, args, use->valueArgs);
+    // SG-01: symbolic value arguments (`A<N>`) resolve against the enclosing
+    // instantiation's value bindings before the instance key is formed.
+    std::vector<long long> values = use->valueArgs;
+    const size_t symbolicCount = std::max(use->valueArgNames.size(),
+                                           use->valueArgExprs.size());
+    values.resize(std::max(values.size(), symbolicCount), 0);
+    for (size_t i = 0; i < use->valueArgExprs.size(); ++i) {
+        if (!use->valueArgExprs[i]) continue;
+        long long evaluated = 0;
+        if (!TemplateInstantiator::evalIntExpr(use->valueArgExprs[i].get(),
+                                               outerValueArgs, evaluated)) {
+            m_errors.push_back("cannot evaluate dependent template value argument");
+            return nullptr;
+        }
+        values[i] = evaluated;
+    }
+    for (size_t i = 0; i < use->valueArgNames.size(); ++i) {
+        const std::string& name = use->valueArgNames[i];
+        if (name.empty()) continue;
+        auto it = outerValueArgs.find(name);
+        if (it == outerValueArgs.end()) {
+            m_errors.push_back("unknown template value argument '" + name + "'");
+            return nullptr;
+        }
+        values[i] = it->second;
+    }
+
+    std::string name = instanceName(use->templateName, args, values);
 
     // 按实例名注册 StructType 占位（INH-01 reuse-registration 模式：sema
     // visit 实例 decl 时补全字段并置 isComplete）。
@@ -177,7 +206,7 @@ Type* TemplateRegistry::resolveInstance(
         TypeContext::instance().addStruct(name, placeholder);
     }
 
-    DeclAST* inst = instantiateClass(use->templateName, args, use->valueArgs);
+    DeclAST* inst = instantiateClass(use->templateName, args, values);
     if (!inst) return nullptr;
     return placeholder;
 }

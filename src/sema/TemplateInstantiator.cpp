@@ -5,6 +5,61 @@
 #include "sema/TemplateRegistry.h"
 #include "support/LiteralKind.h"
 
+bool TemplateInstantiator::evalIntExpr(
+    const ExprAST* expr,
+    const std::unordered_map<std::string, long long>& values,
+    long long& out) {
+    if (!expr) return false;
+    if (auto* n = dynamic_cast<const NumberExprAST*>(expr)) {
+        if (n->valueHi != 0) return false;
+        out = n->value;
+        return true;
+    }
+    if (auto* b = dynamic_cast<const BoolLiteralExprAST*>(expr)) {
+        out = b->value ? 1 : 0;
+        return true;
+    }
+    if (auto* c = dynamic_cast<const CharExprAST*>(expr)) {
+        out = static_cast<unsigned char>(c->value);
+        return true;
+    }
+    if (auto* v = dynamic_cast<const VariableExprAST*>(expr)) {
+        auto it = values.find(v->name);
+        if (it == values.end()) return false;
+        out = it->second;
+        return true;
+    }
+    if (auto* u = dynamic_cast<const UnaryExprAST*>(expr)) {
+        long long value = 0;
+        if (!evalIntExpr(u->operand.get(), values, value)) return false;
+        switch (u->op) {
+            case UnaryOp::Plus:   out = value;  return true;
+            case UnaryOp::Minus:  out = -value; return true;
+            case UnaryOp::BitNot: out = ~value; return true;
+            default: return false;
+        }
+    }
+    if (auto* b = dynamic_cast<const BinaryExprAST*>(expr)) {
+        long long lhs = 0, rhs = 0;
+        if (!evalIntExpr(b->left.get(), values, lhs) ||
+            !evalIntExpr(b->right.get(), values, rhs)) return false;
+        switch (b->op) {
+            case BinaryOp::Add:    out = lhs + rhs; return true;
+            case BinaryOp::Sub:    out = lhs - rhs; return true;
+            case BinaryOp::Mul:    out = lhs * rhs; return true;
+            case BinaryOp::Div:    if (rhs == 0) return false; out = lhs / rhs; return true;
+            case BinaryOp::Mod:    if (rhs == 0) return false; out = lhs % rhs; return true;
+            case BinaryOp::BitAnd: out = lhs & rhs; return true;
+            case BinaryOp::BitOr:  out = lhs | rhs; return true;
+            case BinaryOp::BitXor: out = lhs ^ rhs; return true;
+            case BinaryOp::LShift: out = lhs << rhs; return true;
+            case BinaryOp::RShift: out = lhs >> rhs; return true;
+            default: return false;
+        }
+    }
+    return false;
+}
+
 void TemplateInstantiator::copyLoc(ASTNode* dst, const ASTNode& src) {
     dst->sourceFile = src.sourceFile;
     dst->sourceLine = src.sourceLine;
@@ -156,6 +211,31 @@ std::unique_ptr<ExprAST> TemplateInstantiator::cloneExpr(const ExprAST* e) {
         cloned->printArgKinds = call->printArgKinds;
         cloned->isAssert = call->isAssert;
         cloned->isPanic = call->isPanic;
+        cloned->hasTemplateArgs = call->hasTemplateArgs;
+        for (auto* ta : call->explicitTemplateArgs)
+            cloned->explicitTemplateArgs.push_back(rewrite(ta));
+        for (size_t i = 0; i < call->explicitTemplateValues.size(); ++i) {
+            long long v = call->explicitTemplateValues[i];
+            std::string unresolved;
+            if (i < call->explicitTemplateValueNames.size() &&
+                !call->explicitTemplateValueNames[i].empty()) {
+                const std::string& name = call->explicitTemplateValueNames[i];
+                auto it = m_valueArgs.find(name);
+                if (it != m_valueArgs.end()) v = it->second;
+                else unresolved = name;
+            }
+            if (i < call->explicitTemplateValueExprs.size() &&
+                call->explicitTemplateValueExprs[i]) {
+                long long evaluated = 0;
+                if (evalIntExpr(call->explicitTemplateValueExprs[i].get(),
+                                m_valueArgs, evaluated)) {
+                    v = evaluated;
+                    unresolved.clear();
+                }
+            }
+            cloned->explicitTemplateValues.push_back(v);
+            cloned->explicitTemplateValueNames.push_back(std::move(unresolved));
+        }
         for (auto* pt : call->resolvedParamTypes)
             cloned->resolvedParamTypes.push_back(rewrite(pt));
         out = std::move(cloned);
@@ -191,6 +271,18 @@ std::unique_ptr<ExprAST> TemplateInstantiator::cloneExpr(const ExprAST* e) {
                                                           mc->methodName, std::move(args));
         for (auto* pt : mc->resolvedParamTypes)
             cloned->resolvedParamTypes.push_back(rewrite(pt));
+        out = std::move(cloned);
+    } else if (auto* off = dynamic_cast<const OffsetOfExprAST*>(e)) {
+        auto cloned = std::make_unique<OffsetOfExprAST>(rewrite(off->aggregateType),
+                                                        off->field);
+        for (const auto& d : off->path) {
+            OffsetDesignator nd;
+            nd.isIndex = d.isIndex;
+            nd.field = d.field;
+            nd.index = d.index;
+            nd.indexExpr = cloneExpr(d.indexExpr.get());
+            cloned->path.push_back(std::move(nd));
+        }
         out = std::move(cloned);
     } else if (auto* sz = dynamic_cast<const SizeofExprAST*>(e)) {
         out = std::make_unique<SizeofExprAST>(rewrite(sz->sizeofType),

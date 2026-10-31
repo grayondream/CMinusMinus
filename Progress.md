@@ -1103,3 +1103,15 @@
 - **2.6 可存储闭包**：新增 `auto` 变量类型推导；有捕获 lambda 的闭包 struct 记录调用符号，`auto f = [..]{..}; f(args)` 可反复调用（按值/按引用捕获均验证）。
 - **附带修复**：parser 限定符不再污染共享标量单例（`const char*` 曾使全局 `char`/`int32` 变 const）；class 成员路径接受前导 `const/volatile/atomic`；本地 optional/result 未初始化时零初始化；C 绑定字符串参数改为 `const char*`。
 - **验证**：`examples/all_features.c` 输出 `ALL FEATURES OK`；`examples/full_feature.c` 输出 `FULL FEATURE OK`；全量 `ctest --test-dir build -j8` **1604/1604** 通过（2 个既有 `GTEST_SKIP`）。
+
+## 2026-10-31 — P1/P2 语法缺口收口（SG-01 ~ SG-07）
+
+- **SG-01 模板常量实参**：类型位置与调用位置接受整型常量表达式（`A<1+2>`、`g<1+1>()`）；模板体内依赖值参数表达式（`N`、`N + 1`）通过 `TypeInstanceType::valueArgExprs` / `CallExprAST::explicitTemplateValueExprs` 记录，在单态化时用绑定值求值。新增模板嵌套实例字段的布局物化（`ensureInstanceVisited`）。
+- **SG-02 块内 extern 函数**：`extern int32 f(...);` 在块内解析为函数原型，sema 块作用域注册，codegen 复用模块级声明。
+- **SG-03 offsetof 常量下标**：`offsetof(S, a[1+1])`、枚举常量下标均可用；parser 保存 `indexExpr`，sema 用 `evaluateConstexpr` 折叠。
+- **SG-04 C 风格 cast 完整 type-id**：cast 类型分支改走 `parseTypeId()`，支持 `(int32 (*)(int32))p`。
+- **SG-05 深层声明符**：`parseFunctionPointerDeclarator` 改为递归构造器列表，支持 `int32 (*(*g)(int32))(int32)` 及任意嵌套括号/指针/后缀。
+- **SG-06 C99 数组形参限定符**：`int32 a[static 3]`、`const int32 a[const 3]` 均可解析并去糖为 slice。
+- **SG-07 相邻字符串拼接**：parser 字符串主表达式拼接相邻 token（含 raw/多行），`"ab" "cd"` → `"abcd"`。
+- **示例**：`all_features.c`、`full_feature.c` 新增第 27 节覆盖上述 7 项。
+- **验证**：新增 7 个 `SyntaxGapsE2E` 回归测试；全量 `ctest --test-dir build -j8` **1611/1611** 通过（2 个既有 `GTEST_SKIP`）；两个示例输出 `ALL FEATURES OK` / `FULL FEATURE OK`。

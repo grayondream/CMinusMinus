@@ -427,3 +427,101 @@ TEST_F(SyntaxGapsE2E, BitFieldWidthsAcceptEnumAndConst) {
         }
     )", "syntax_bitfield_const_width.c"), 0);
 }
+
+// ============================================================================
+// P1/P2 语法缺口收口（SG-01 ~ SG-07）
+// ============================================================================
+
+TEST_F(SyntaxGapsE2E, TemplateConstantArguments) {
+    EXPECT_EQ(runSyntaxSource(R"(
+        template<int32 N> struct Sg01A { int32 x; };
+        template<int32 N> struct Sg01B { Sg01A<N> a; };
+        template<int32 N> struct Sg01C { Sg01A<N + 1> a; };
+        template<int32 N> int32 sg01Value() { return N; }
+        template<int32 N> int32 sg01Call() { return sg01Value<N>(); }
+        template<int32 N> int32 sg01Call2() { return sg01Value<N + 1>(); }
+        enum { Sg01K = 2 };
+        int32 main() {
+            Sg01A<1 + 2> a;
+            a.x = 5;
+            Sg01B<4> b;
+            b.a.x = 6;
+            if (a.x + b.a.x != 11) return 1;
+            Sg01A<Sg01K + 1> c;
+            c.x = 7;
+            if (c.x != 7) return 4;
+            Sg01C<2> d;
+            d.a.x = 8;
+            if (d.a.x != 8) return 5;
+            if (sg01Value<1 + 1>() != 2) return 2;
+            if (sg01Call<3>() != 3) return 3;
+            if (sg01Call2<2>() != 3) return 6;
+            return 0;
+        }
+    )", "sg01_template_const_args.c"), 0);
+}
+
+TEST_F(SyntaxGapsE2E, BlockScopeExternFunctionDeclaration) {
+    EXPECT_EQ(runSyntaxSource(R"(
+        int32 main() {
+            extern int32 abs(int32);
+            return abs(-3) - 3;
+        }
+    )", "sg02_block_extern_fn.c"), 0);
+}
+
+TEST_F(SyntaxGapsE2E, OffsetofConstantExpressionSubscript) {
+    EXPECT_EQ(runSyntaxSource(R"(
+        struct SOf { int32 a[4]; int32 b; };
+        enum { SgOfIndex = 1 };
+        int32 main() {
+            if (offsetof(struct SOf, a[1 + 1]) != 8) return 1;
+            if (offsetof(struct SOf, a[SgOfIndex + 1]) != 8) return 2;
+            return 0;
+        }
+    )", "sg03_offsetof_const_index.c"), 0);
+}
+
+TEST_F(SyntaxGapsE2E, CStyleCastToFunctionPointerType) {
+    EXPECT_EQ(runSyntaxSource(R"(
+        int32 plusOne(int32 x) { return x + 1; }
+        int32 main() {
+            void* p = (void*)plusOne;
+            return ((int32 (*)(int32))p)(41) - 42;
+        }
+    )", "sg04_cast_fnptr.c"), 0);
+}
+
+TEST_F(SyntaxGapsE2E, DeepNestedFunctionPointerDeclarator) {
+    EXPECT_EQ(runSyntaxSource(R"(
+        int32 inc(int32 x) { return x + 1; }
+        int32 (*retInc(int32 x))(int32) { return inc; }
+        int32 (*(*g)(int32))(int32);
+        int32 main() {
+            g = retInc;
+            return g(41)(41) - 42;
+        }
+    )", "sg05_deep_declarator.c"), 0);
+}
+
+TEST_F(SyntaxGapsE2E, C99ArrayParameterQualifiers) {
+    EXPECT_EQ(runSyntaxSource(R"(
+        int32 first(int32 a[static 3]) { return a[0]; }
+        int32 second(const int32 a[const 3]) { return a[1]; }
+        int32 main() {
+            int32 x[3] = {40, 2, 0};
+            return first(x) + second(x) - 42;
+        }
+    )", "sg06_array_param_quals.c"), 0);
+}
+
+TEST_F(SyntaxGapsE2E, AdjacentStringLiteralConcatenation) {
+    EXPECT_EQ(runSyntaxSource(R"(
+        int32 main() {
+            string_view s = "ab" "cd";
+            if (s.len != 4) return 1;
+            if (s[0] != 'a' || s[3] != 'd') return 2;
+            return 0;
+        }
+    )", "sg07_adjacent_strings.c"), 0);
+}

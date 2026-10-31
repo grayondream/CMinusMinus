@@ -21,6 +21,12 @@ public:
     // 解析（嵌套实例化 / 递归检测 / 深度上限）。
     Type* rewrite(Type* t);
 
+    // SG-01: evaluate a dependent integer expression (`N`, `N + 1`) against a
+    // value-argument map.
+    static bool evalIntExpr(const ExprAST* expr,
+                            const std::unordered_map<std::string, long long>& values,
+                            long long& out);
+
     // 深克隆声明（含函数体全部语句/表达式），克隆过程中完成类型重写。
     // 调用方负责在克隆体上改名（实例 mangled 名）。
     std::unique_ptr<DeclAST> cloneDecl(const DeclAST& decl);

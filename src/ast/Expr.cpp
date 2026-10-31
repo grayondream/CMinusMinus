@@ -2679,11 +2679,16 @@ llvm::Value* OffsetOfExprAST::codegen(CodegenContext& ctx) {
     auto converter = [&](Type* tt) { return ctx.getLLVMType(tt); };
     auto resolver = [](const std::string&) -> Type* { return nullptr; };
 
-    std::vector<OffsetDesignator> steps = path;
-    if (steps.empty()) {
+    // SG-03: path may own subscript expressions (move-only), so inspect it
+    // directly instead of copying the designator list.
+    std::vector<OffsetDesignator> fallback;
+    const std::vector<OffsetDesignator>* stepsPtr = &path;
+    if (path.empty()) {
         OffsetDesignator d; d.field = field;
-        steps.push_back(std::move(d));
+        fallback.push_back(std::move(d));
+        stepsPtr = &fallback;
     }
+    const std::vector<OffsetDesignator>& steps = *stepsPtr;
 
     uint64_t total = 0;
     Type* cur = t;

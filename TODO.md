@@ -45,6 +45,8 @@
 > **进度快照（2026-10-26，语法缺口 1–6 收口）**：先修 CG-05（rvalue 聚合成员按值读取，`make().x` 不再产生非法 GEP）与 MOD-03（前向类型按值使用报 incomplete；指针仍允许）。随后：①模块导入改为 parse 前预载，`export struct/class/using/template` 可用；②强制 `module` 首部/唯一/文件名匹配；③函数内 `static`/`thread_local` 静态变量与局部 `struct/union/enum` 定义；④通用括号声明符（函数返回函数指针、函数类型别名、指向数组的指针、函数指针数组）+ 表达式 callee 间接调用；⑤自引用类指针字段爆栈修复、类内/类外成员运算符重载调用；⑥函数体 `compile_time.if` 与嵌套 `offsetof(T, a.b)`/`offsetof(T, arr[i])`。全量 **1559/1559**；两个示例仍输出 `ALL FEATURES OK` / `FULL FEATURE OK`。提交线：a805740、53768f1、3d88e2b、c2d509b、4d77701、8dd88ca、2597f62。
 > **进度快照（2026-10-26，基础 C 声明/语句收口）**：补齐 9 项基础语法：空语句 `;`；聚合成员多声明符 `struct S { int32 a, b; }`；聚合成员直接函数指针字段与指向数组的指针字段；`sizeof`/`alignof` 的完整 type-id（数组/抽象函数指针）；后置限定符 `int32 const`；块内 `extern`；record 定义后的 attached 指针/函数声明符；多声明符中的复杂后继（`int32 (*f)(int), (*g)(int);`）。顺带把带方法的 `struct` 正确路由为 class 类型，并修复布局注解对 `ClassType` 的 UB 强转。全量 **1572/1572**；两个示例仍输出 OK。提交线：0bc3be2、88fca71、b07dc1f、42d3ed1、dfcb9cc、607ff32、dad042d、31a68fb、27a1242。
 > **进度快照（2026-10-27，语法缺口审计）**：对第三轮收口后的剩余语法缺口做规范+CLI 复核，按“规范已承诺 / C 兼容性 / 规范未覆盖扩展 / 非语法边界 / Non-goals”分类，详细清单见 **§24**（SG-01 ~ SG-11、SG-B01 ~ SG-B06）。本轮不改代码。
+> **进度快照（2026-10-31，P1/P2 语法缺口收口）**：SG-01 ~ SG-07 已全部修复并新增 7 个 `SyntaxGapsE2E` 回归测试；全量 **1611/1611** 通过（2 个既有 `GTEST_SKIP`）。剩余为需要产品裁决的 SG-08 ~ SG-11、SG-20 ~ SG-23，以及非语法的 SG-B01 ~ SG-B06。
+>
 > **进度快照（2026-10-27，语法缺口补充审计）**：在 §24 基础上继续补漏，新增 **§25**（SG-12 ~ SG-23、SG-B07 ~ SG-B09），覆盖数组/位域常量表达式、声明符递归与函数类型形参、静态成员类外定义、C 字面量、asm、模块/控制流/类模板扩展。新补项中 P1 为 SG-12、SG-14；SG-12、SG-13、SG-14、SG-15、SG-16、SG-17 与 SG-B07、SG-B09 已修复（SG-15 于 2026-10-28）；SG-18、SG-19 已全部修复；SG-20 ~ SG-23 仍挂账（SG-B07 ~ SG-B09 已全部修复）。
 
 
@@ -593,23 +595,25 @@
 
 ### 24.1 规范已承诺、实现未收口（优先）
 
-#### SG-01 模板常量表达式实参 / 依赖值实参 `[gap][P1]`
+#### SG-01 模板常量表达式实参 / 依赖值实参 `[fixed][P1]`
 
 ```c
 template<int32 N> struct A { int32 x; };
-A<1 + 2> a;                         // 失败：模板实参只接受简单整数字面量
+A<1 + 2> a;                         // 已支持：常量表达式实参
 
-template<int32 N> struct B { A<N> a; };  // 失败：N 不能作类型模板实参
+template<int32 N> struct B { A<N> a; };  // 已支持：依赖值实参
 template<int32 N> int32 g() { return N; }
-g<1 + 1>();                         // 失败
-g<N>();                             // 失败；GEN-02 已明确“参数作显式模板实参延后”
+g<1 + 1>();                         // 已支持
+g<N>();                             // 已支持（模板体内）
 ```
 
 - 规范：`template-argument = type | const-expr`。
 - 目标：解析期/实例化期求值常量表达式；依赖值参数在单态化时替换。
 - 关联：GEN-02、GEN-04、PAR-21、SEM-06。
 
-#### SG-02 块内 `extern` 函数声明 `[gap][P1]`
+- 2026-10-31 完成：类型/调用位置接受整型常量表达式；依赖值参数表达式（`N`、`N + 1`）在实例化时替换。
+
+#### SG-02 块内 `extern` 函数声明 `[fixed][P1]`
 
 ```c
 int32 main() {
@@ -624,13 +628,15 @@ int32 main() {
 - 目标：块内 `declaration-statement` 接受 `extern` 函数原型；sema 按外部函数声明处理。
 - 关联：PAR-02、MOD-09、MEM-10。
 
+- 2026-10-31 完成：块内 `extern int32 f(...)` 解析为函数原型，sema 在块作用域注册，codegen 复用模块级声明。
+
 ### 24.2 C 兼容性 / 声明符文法只覆盖简化形式
 
-#### SG-03 `offsetof` 常量表达式下标 `[gap][P1]`
+#### SG-03 `offsetof` 常量表达式下标 `[fixed][P1]`
 
 ```c
-offsetof(S, a[1 + 1]);   // 失败：offsetof array index must be an integer literal
-offsetof(S, a[K]);       // 失败；K 为枚举常量
+offsetof(S, a[1 + 1]);   // 已支持：常量表达式下标
+offsetof(S, a[K]);       // 已支持：枚举常量下标
 ```
 
 - 规范现状：`member-designator = identifier { '.' identifier | '[' integer-literal ']' }`。
@@ -638,10 +644,12 @@ offsetof(S, a[K]);       // 失败；K 为枚举常量
 - 目标：若按 C 语义补齐，下标改为 `const-expr`，在 parse/sema 期求值。
 - 关联：PAR-14。
 
-#### SG-04 C 风格强转到抽象函数指针类型 `[gap][P1]`
+- 2026-10-31 完成：`offsetof` 下标改为常量表达式，sema 折叠（含枚举常量）。
+
+#### SG-04 C 风格强转到抽象函数指针类型 `[fixed][P1]`
 
 ```c
-((int32 (*)(int32))p)(1);        // 失败
+((int32 (*)(int32))p)(1);        // 已支持：完整 type-id
 using F = int32 (*)(int32);
 ((F)p)(1);                       // 可绕过
 ```
@@ -650,7 +658,9 @@ using F = int32 (*)(int32);
 - 目标：cast 的 type-id 支持抽象函数指针/指针数组等声明符；数组本身仍不能作 cast 目标。
 - 关联：PAR-14、PAR-18。
 
-#### SG-05 深层嵌套声明符 `[gap][P2]`
+- 2026-10-31 完成：C 风格 cast 的类型分支改走完整 type-id，支持抽象函数指针。
+
+#### SG-05 深层嵌套声明符 `[fixed][P2]`
 
 ```c
 int32 (*(*g)(int32))(int32);
@@ -660,10 +670,12 @@ int32 (*(*g)(int32))(int32);
 - 目标：声明符递归（内层后缀 + 指针 + 外层后缀，反向应用）覆盖任意可表达嵌套。
 - 关联：PAR-05。
 
-#### SG-06 C99 数组形参限定符 `[gap][P2]`
+- 2026-10-31 完成：声明符解析改为递归构造器列表，支持任意嵌套括号/指针/后缀。
+
+#### SG-06 C99 数组形参限定符 `[fixed][P2]`
 
 ```c
-int32 f(int32 a[static 3]);
+int32 f(int32 a[static 3]);       // 已支持：数组形参限定符
 ```
 
 - 当前：`static` 被当作数组长度表达式，报 VLA/数组大小错误。
@@ -671,15 +683,19 @@ int32 f(int32 a[static 3]);
 - 目标：形参数组后缀接受 `static`/`const`/`volatile`/`restrict` 限定。
 - 关联：TYP-11、PAR-05。
 
-#### SG-07 相邻字符串字面量拼接 `[gap][P2]`
+- 2026-10-31 完成：数组形参后缀接受 `static`/`const`/`volatile`/`restrict`。
+
+#### SG-07 相邻字符串字面量拼接 `[fixed][P2]`
 
 ```c
-string_view s = "a" "b";
+string_view s = "a" "b";          // 已支持：相邻字面量拼接
 ```
 
 - 当前：两个独立字符串 token，报 `expected ';' after variable declaration`。
 - 目标：按 C 翻译阶段拼接相邻字符串字面量（lexer 末尾或 parser 初始化/实参位置均可，需统一）。
 - 关联：LEX-06。
+
+- 2026-10-31 完成：parser 在字符串主表达式处拼接相邻字符串 token（含 raw/多行）。
 
 ### 24.3 规范未覆盖的现代/C++ 兼容扩展（需先裁决，不直接当 bug）
 
@@ -768,8 +784,8 @@ class C { public: template<typename T> T id(T x); }; // 成员模板
 
 ### 24.6 建议顺序与验收
 
-1. **P1 语法收口**：SG-01 模板常量实参 → SG-02 块内 extern 函数 → SG-04 cast 完整 type-id → SG-03 `offsetof` 常量下标。
-2. **P2 C 兼容**：SG-07 相邻字符串 → SG-05 深层声明符 → SG-06 数组形参限定符。
+1. **P1 语法收口（已完成 2026-10-31）**：SG-01 模板常量实参、SG-02 块内 extern 函数、SG-04 cast 完整 type-id、SG-03 `offsetof` 常量下标。
+2. **P2 C 兼容（已完成 2026-10-31）**：SG-07 相邻字符串、SG-05 深层声明符、SG-06 数组形参限定符。
 3. **先裁决再实现**：SG-08 namespace using、SG-09 lambda 扩展、SG-10 注解扩展、SG-11 class 扩展。
 4. **独立排期**：§24.4 的 sema/codegen/ABI 边界，不与 parser 修复混做。
 
@@ -984,9 +1000,9 @@ template<typename T> T V<T>::f() { return this->x; }  // 解析失败
 
 ### 25.5 建议顺序与验收
 
-1. **P1 规范收口（已完成）**：SG-12 数组常量维度、SG-14 显式转换完整 type-id 均已修复；§24.6 剩余 P1 为 SG-01 → SG-02 → SG-04 → SG-03。
-2. **P2 声明符/常量贯通（已完成）**：SG-15 静态数据类外定义、SG-16 括号/多函数声明符、SG-17 函数类型形参、SG-13 位域 enum/const 均已修复。
-3. **P2 C 兼容可选（已完成）**：SG-18、SG-19 已全部修复。
+1. **P1 规范收口（已完成）**：SG-12 数组常量维度、SG-14 显式转换完整 type-id、SG-01 模板常量实参、SG-02 块内 extern 函数、SG-04 cast 完整 type-id、SG-03 `offsetof` 常量下标均已修复（2026-10-31）。
+2. **P2 声明符/常量贯通（已完成）**：SG-15 静态数据类外定义、SG-16 括号/多函数声明符、SG-17 函数类型形参、SG-13 位域 enum/const、SG-05 深层声明符、SG-06 数组形参限定符、SG-07 相邻字符串均已修复（2026-10-31）。
+3. **P2 C 兼容可选（已完成）**：SG-18、SG-19、SG-07、SG-05、SG-06 已全部修复。
 4. **先裁决再实现**：SG-20 模块扩展、SG-21 控制流扩展、SG-22 struct/class 成员扩展、SG-23 模板类成员。**2026-10-28 裁决：本轮暂不扩展，保留为后续产品决策项。**
 5. **边界单列（已全部修复）**：SG-B07 类外静态方法、SG-B08 成员运算符调用、SG-B09 全局 `string_view` 字面量崩溃均已修复。
 

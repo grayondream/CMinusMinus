@@ -75,6 +75,7 @@ char-literal        = [ ( 'u8' | 'u' | 'U' | 'L' ) ] ,
                       "'" , ( char-char | escape-sequence ) , "'" ;
                     (* [impl] SG-18 字符前缀；u8/u/U/L 均按单字符接受 *)
 string-literal      = '"' , { string-char | escape-sequence } , '"'
+                      (* [impl] SG-07: adjacent string literals concatenate *)
                     | 'r"' , { any-char - '"' } , '"'               (* [impl] 原始字符串 *)
                     | 'R"' , [ raw-delimiter ] , '(' , { any-char } , ')' ,
                       [ raw-delimiter ] , '"'                        (* [impl] SG-18 *)
@@ -136,7 +137,9 @@ type-id             = type , { '[' , integer-literal , ']' }
                     , [ '(' , '*' , ')' , '(' , [ parameter-list ] , ')' ]
                     | type , '(' , [ parameter-list ] , ')' ;  (* [impl] 抽象函数类型 *)
 (* [impl] 2026-10-26: 固定数组维度与抽象函数指针可用于 sizeof/alignof
-   以及 using 右值；`sizeof(int32[3])`、`sizeof(int32(*)(int32))`。 *)
+   以及 using 右值；`sizeof(int32[3])`、`sizeof(int32(*)(int32))`。
+   [impl] SG-04/SG-05: C 风格 cast 与 type-id 使用同一递归声明符解析；
+   支持 `(int32 (*)(int32))`、`int32 (*(*g)(int32))(int32)` 等嵌套形式。 *)
 
 (* --- 记录类型 --- *)
 record-decl         = struct-decl | class-decl | union-decl ;
@@ -184,7 +187,7 @@ template-decl       = 'template' , '<' , template-parameter , { ',' , template-p
 template-parameter  = 'typename' , identifier                           (* 类型参数 *)
                     | type , identifier ;                               (* 非类型/常量参数 *)
 template-instance   = qualified-name , '<' , template-argument , { ',' , template-argument } , '>' ;
-template-argument   = type | const-expr ;
+template-argument   = type | const-expr ;  (* [impl] SG-01: 常量表达式实参；模板体内依赖值表达式（`N`、`N + 1`）在实例化时替换 *)
 (* [plan] 解析歧义（'<' '>' '>>'）见 GEN-04 / LEX-08 *)
 
 (* --- 函数 --- *)
@@ -202,6 +205,8 @@ operator-symbol     = '+' | '-' | '*' | '/' | '%' | '==' | '!=' | '<' | '>' | '<
                     | '[' , ']' | '(' , ')' ;
 parameter-list      = parameter , { ',' , parameter } , [ ',' , '...' ] ;
 parameter           = type , [ identifier ] , [ '=' , const-expr ] ;   (* [impl] 默认参数 FUN-09，仅尾随 *)
+(* [impl] SG-06: 数组形参后缀接受 static/const/volatile/restrict 限定；
+   例如 `int32 a[static 3]`、`const int32 a[const 3]`。 *)
 
 (* --- 变量 --- *)
 variable-decl-list  = variable-decl , { ',' , variable-decl } , ';' ;
@@ -336,7 +341,7 @@ prefix-expr         = prefix-op , unary-expr
                     | 'offsetof' , '(' , type , ',' , member-designator , ')'  (* [impl] PAR-14 *)
                     | cast-expr ;
 prefix-op           = '+' | '-' | '!' | '~' | '*' | '&' | '++' | '--' ;
-member-designator   = identifier , { '.' , identifier | '[' , integer-literal , ']' } ;
+member-designator   = identifier , { '.' , identifier | '[' , const-expr , ']' } ;  (* [impl] SG-03: 下标为常量表达式 *)
 
 cast-expr           = '(' , type , ')' , unary-expr
                     | 'static_cast' , '<' , type , '>' , '(' , assign-expr , ')'      (* [impl] PAR-18 *)

@@ -874,6 +874,45 @@ void section_modules() {
 
 // 全局 f() 已在文件前部定义（第 13 节 namespace 隔离用）
 
+
+// ---------------------------------------------------------------------------
+// 27. P1/P2 语法缺口收口：模板常量实参、块内 extern、offsetof 常量下标、
+//     完整 type-id cast、深层声明符、数组形参限定符、相邻字符串拼接
+// ---------------------------------------------------------------------------
+template<int32 N> struct P12Box { int32 v; };
+template<int32 N> int32 p12Add(int32 x) { return x + N; }
+struct P12Offset { int32 a[4]; int32 b; };
+int32 p12First(int32 a[static 3]) { return a[0]; }
+int32 p12Inc(int32 x) { return x + 1; }
+int32 (*p12Ret(int32 x))(int32) { return p12Inc; }
+int32 (*(*p12Deep)(int32))(int32);
+
+void section_p1p2_syntax() {
+    println("== 27. P1/P2 syntax ==");
+    P12Box<1 + 2> box;
+    box.v = 42;
+    check(box.v == 42, "template constant-expression argument");
+    check(p12Add<1 + 1>(40) == 42, "template constant-expression call");
+
+    extern int32 abs(int32);
+    check(abs(-1) == 1, "block-scope extern function");
+
+    enum { P12Index = 1 };
+    check(offsetof(struct P12Offset, a[P12Index + 1]) == 8,
+          "offsetof constant-expression subscript");
+
+    int32 a[3] = {42, 0, 0};
+    check(p12First(a) == 42, "C99 array parameter qualifier");
+
+    string_view joined = "ab" "cd";
+    check(joined.len == 4 && joined[3] == 'd', "adjacent string literals");
+
+    p12Deep = p12Ret;
+    check(p12Deep(0)(41) == 42, "deep nested declarator");
+    void* raw = (void*)p12Inc;
+    check(((int32 (*)(int32))raw)(41) == 42, "cast to function pointer type");
+}
+
 int32 main() {
     section_types();
     section_aliases();
@@ -900,6 +939,7 @@ int32 main() {
     section_operator_overload();
     section_storage();
     section_modules();
+    section_p1p2_syntax();
     if (fails == 0) {
         println("FULL FEATURE OK");
     }
