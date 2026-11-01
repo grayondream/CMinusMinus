@@ -366,3 +366,80 @@ TEST_F(ConstexprContainersTest, StillRejectsStringConstexprFunction) {
     )", "ct_string_constexpr.c");
     EXPECT_TRUE(hasErrorContaining(errors, "literal return type"));
 }
+
+TEST_F(ConstexprContainersTest, VecTableIsReadableAtRuntime) {
+    EXPECT_EQ(runWithImports(R"(
+        import std.collections;
+        constexpr std::Vec<int32> make() {
+            std::Vec<int32> v;
+            v.init();
+            for (usize i = 0; i < 8; i = i + 1) v.push((int32)(i * i));
+            return v;
+        }
+        constexpr std::Vec<int32> T = make();
+        int32 main() {
+            if (T.len != 8) return 1;
+            if (T.get(5) != 25) return 2;
+            if (T.data[6] != 36) return 3;
+            return 0;
+        }
+    )", "ct_table_vec.c"), 0);
+}
+
+TEST_F(ConstexprContainersTest, DequeTableIsReadableAtRuntime) {
+    EXPECT_EQ(runWithImports(R"(
+        import std.collections;
+        constexpr std::Deque<int32> make() {
+            std::Deque<int32> d;
+            d.init();
+            d.push_back(1);
+            d.push_front(0);
+            d.push_back(2);
+            return d;
+        }
+        constexpr std::Deque<int32> T = make();
+        int32 main() {
+            if (T.len != 3) return 1;
+            if (T.get(0) != 0 || T.get(1) != 1 || T.get(2) != 2) return 2;
+            return 0;
+        }
+    )", "ct_table_deque.c"), 0);
+}
+
+TEST_F(ConstexprContainersTest, EmptyVecTableIsReadableAtRuntime) {
+    EXPECT_EQ(runWithImports(R"(
+        import std.collections;
+        constexpr std::Vec<int32> make() {
+            std::Vec<int32> v;
+            v.init();
+            return v;
+        }
+        constexpr std::Vec<int32> T = make();
+        int32 main() {
+            if (T.len != 0) return 1;
+            if (!T.is_empty()) return 2;
+            return 0;
+        }
+    )", "ct_table_empty.c"), 0);
+}
+
+TEST_F(ConstexprContainersTest, StringViewTableIsReadableAtRuntime) {
+    EXPECT_EQ(runWithImports(R"(
+        import std.collections;
+        constexpr std::Vec<string_view> make() {
+            std::Vec<string_view> v;
+            v.init();
+            v.push("alpha");
+            v.push("beta");
+            v.push("gamma");
+            return v;
+        }
+        constexpr std::Vec<string_view> T = make();
+        int32 main() {
+            if (T.len != 3) return 1;
+            if (T.get(1) != "beta") return 2;
+            if (T.get(2).len() != 5) return 3;
+            return 0;
+        }
+    )", "ct_table_str.c"), 0);
+}

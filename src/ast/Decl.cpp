@@ -6,6 +6,7 @@
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Constants.h"
 #include "Mangle.h"
+#include <algorithm>
 #include <functional>
 #include <unordered_set>
 
@@ -939,6 +940,140 @@ llvm::Constant* buildAggregateConstant(CodegenContext& ctx, Type* type,
     }
 }
 
+// ===== Constexpr container materialization =====
+// A constexpr container value becomes immutable module constants: one global
+// per backing array plus a constant struct matching the runtime ABI.
+static unsigned long g_ctTableId = 0;
+
+static llvm::Constant* ctMakeStringConstant(CodegenContext& ctx,
+                                            const std::string& value) {
+    if (value.empty()) return nullptr;
+    auto& module = ctx.getModule();
+    auto* arrTy = llvm::ArrayType::get(llvm::Type::getInt8Ty(ctx.getContext()),
+                                       value.size() + 1);
+    auto* data = llvm::ConstantDataArray::getString(ctx.getContext(), value, true);
+    auto* gv = new llvm::GlobalVariable(module, arrTy, /*isConstant=*/true,
+                                        llvm::GlobalVariable::PrivateLinkage, data,
+                                        "__smc_ct_str_" + std::to_string(g_ctTableId++));
+    return gv;
+}
+
+static llvm::Constant* ctValueToConstant(CodegenContext& ctx, Type* type,
+                                         const CtValue& v) {
+    Type* t = type;
+    while (t && t->kind == TypeKind::Typedef) {
+        t = static_cast<TypedefType*>(t)->aliasedType;
+    }
+    llvm::Type* lt = ctx.getLLVMType(type);
+    if (!lt) return nullptr;
+    switch (v.type) {
+        case CtValue::INT:
+            return llvm::ConstantInt::get(lt, static_cast<uint64_t>(v.intVal));
+        case CtValue::CHAR:
+            return llvm::ConstantInt::get(lt, static_cast<uint64_t>(v.charVal));
+        case CtValue::DOUBLE:
+            return llvm::ConstantFP::get(lt, v.doubleVal);
+        case CtValue::STR: {
+            auto* st = llvm::dyn_cast<llvm::StructType>(lt);
+            if (!st || st->getNumElements() < 2) return nullptr;
+            llvm::Constant* data = ctMakeStringConstant(ctx, v.strVal);
+            if (!data) return llvm::Constant::getNullValue(lt);
+            return llvm::ConstantStruct::get(
+                st, {data, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx.getContext()),
+                                                 v.strVal.size())});
+        }
+        default:
+            return nullptr;
+    }
+}
+
+static llvm::Constant* ctArrayConstant(CodegenContext& ctx, Type* elemType,
+                                       const std::vector<CtValue>& values,
+                                       std::size_t cap, const std::string& name) {
+    if (cap == 0) return nullptr;
+    llvm::Type* elemLLVM = ctx.getLLVMType(elemType);
+    if (!elemLLVM) return nullptr;
+    std::vector<llvm::Constant*> elems;
+    elems.reserve(cap);
+    for (std::size_t i = 0; i < cap; ++i) {
+        CtValue def = i < values.size() ? values[i] : ctDefaultValue(elemType);
+        llvm::Constant* c = ctValueToConstant(ctx, elemType, def);
+        if (!c) c = llvm::Constant::getNullValue(elemLLVM);
+        elems.push_back(c);
+    }
+    auto* arrTy = llvm::ArrayType::get(elemLLVM, cap);
+    auto* init = llvm::ConstantArray::get(arrTy, elems);
+    return new llvm::GlobalVariable(ctx.getModule(), arrTy, /*isConstant=*/true,
+                                    llvm::GlobalVariable::PrivateLinkage, init,
+                                    name + "_" + std::to_string(g_ctTableId++));
+}
+
+static llvm::Constant* buildCtContainerConstant(CodegenContext& ctx, Type* type,
+                                                const CtContainer& c) {
+    Type* raw = type;
+    while (raw && raw->kind == TypeKind::Typedef)
+        raw = static_cast<TypedefType*>(raw)->aliasedType;
+    if (!raw) return nullptr;
+
+    const std::vector<FieldInfo>* fields = nullptr;
+    if (raw->kind == TypeKind::Class) {
+        fields = &static_cast<ClassType*>(raw)->fields;
+    } else if (raw->kind == TypeKind::Struct) {
+        fields = &static_cast<StructType*>(raw)->fields;
+    }
+    if (!fields) return nullptr;
+    auto* st = llvm::dyn_cast<llvm::StructType>(ctx.getLLVMType(type));
+    if (!st) return nullptr;
+
+    const std::size_t logicalLen = c.len;
+    std::size_t cap = std::max<std::size_t>(8, c.cap);
+    if (cap < logicalLen) cap = logicalLen;
+
+    std::vector<CtValue> storage;
+    if (c.kind == CtContainer::Vec) {
+        storage = c.items;
+    } else if (c.kind == CtContainer::Deque) {
+        storage.reserve(logicalLen);
+        for (std::size_t i = 0; i < logicalLen; ++i) {
+            storage.push_back(c.items.empty()
+                                  ? ctDefaultValue(c.elementType)
+                                  : c.items[(c.head + i) % c.cap]);
+        }
+    }
+
+    llvm::Constant* data = nullptr;
+    if ((c.kind == CtContainer::Vec || c.kind == CtContainer::Deque) &&
+        c.elementType) {
+        data = ctArrayConstant(ctx, c.elementType, storage, cap, "__smc_ct_data");
+    }
+
+    auto i64 = [&](std::size_t v) {
+        return llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx.getContext()), v);
+    };
+
+    std::vector<llvm::Constant*> elems;
+    elems.reserve(fields->size());
+    for (const auto& f : *fields) {
+        llvm::Constant* value = nullptr;
+        if (f.name == "data") {
+            value = data ? data
+                         : llvm::Constant::getNullValue(st->getElementType(elems.size()));
+        } else if (f.name == "len") {
+            value = i64(c.len);
+        } else if (f.name == "cap") {
+            value = i64(cap);
+        } else if (f.name == "head") {
+            value = i64(0);
+        } else if (f.name == "tombstones") {
+            value = i64(c.tombstones);
+        }
+        if (!value) value = llvm::Constant::getNullValue(st->getElementType(elems.size()));
+        elems.push_back(value);
+    }
+    return llvm::ConstantStruct::get(st, elems);
+}
+
+
 llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
     llvm::Type* llvmType = ctx.getLLVMType(type);
 
@@ -959,7 +1094,9 @@ llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
     // name to it. Sema has already proven the initializer is constant.
     if (isStaticLocal && !ctx.isGlobalScope()) {
         llvm::Constant* initConstant = nullptr;
-        if (foldedValue) {
+        if (foldedContainer) {
+            initConstant = buildCtContainerConstant(ctx, type, *foldedContainer);
+        } else if (foldedValue) {
             initConstant = foldToConstant(ctx, *foldedValue);
         } else if (initExpr) {
             initConstant = llvm::dyn_cast_or_null<llvm::Constant>(initExpr->codegen(ctx));
@@ -989,7 +1126,9 @@ llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
 
     if (ctx.isGlobalScope()) {
         llvm::Constant* initConstant = nullptr;
-        if (isConstexpr && foldedValue) {
+        if (isConstexpr && foldedContainer) {
+            initConstant = buildCtContainerConstant(ctx, type, *foldedContainer);
+        } else if (isConstexpr && foldedValue) {
             initConstant = foldToConstant(ctx, *foldedValue);
         } else if (initExpr) {
             if (auto* initList = dynamic_cast<InitializerListExprAST*>(initExpr.get())) {
@@ -1051,7 +1190,12 @@ llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
         }
     }
     
-    if (isConstexpr && foldedValue) {
+    if (isConstexpr && foldedContainer) {
+        llvm::Value* constVal = buildCtContainerConstant(ctx, type, *foldedContainer);
+        if (constVal) {
+            ctx.getBuilder().CreateStore(constVal, alloca);
+        }
+    } else if (isConstexpr && foldedValue) {
         llvm::Value* constVal = foldToConstant(ctx, *foldedValue);
         if (constVal) {
             constVal = ctx.castValue(constVal, llvmType);
