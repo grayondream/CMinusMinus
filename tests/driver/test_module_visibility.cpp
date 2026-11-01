@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include <unistd.h>
+
 #include "ast/Decl.h"
 #include "codegen/CodegenContext.h"
 #include "driver/ModuleLoader.h"
@@ -43,7 +45,11 @@ protected:
             llvm::InitializeAllAsmPrinters();
             init = true;
         }
-        dir = fs::temp_directory_path() / "smc_module_visibility_test";
+        // CTest runs each gtest case in its own process; a fixed directory
+        // makes concurrent ModuleVisibility tests overwrite each other's
+        // util.smc. Isolate by pid so -j8 is deterministic.
+        dir = fs::temp_directory_path() /
+              ("smc_module_visibility_test_" + std::to_string(::getpid()));
         fs::remove_all(dir);
         fs::create_directories(dir);
     }
