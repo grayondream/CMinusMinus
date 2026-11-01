@@ -17,6 +17,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include <sstream>
+
 class AtomicE2E : public ::testing::Test {
 protected:
     void SetUp() override {
@@ -32,6 +34,32 @@ protected:
         }
     }
 };
+
+static std::string compileToIR(const std::string& source, const std::string& filename) {
+    Lexer lexer(filename, source);
+    auto tokens = lexer.tokenize();
+    Parser parser(tokens);
+    auto ast = parser.parse();
+    if (!ast) {
+        ADD_FAILURE() << "Parse failed";
+        return {};
+    }
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    if (!analyzer.getErrors().empty()) {
+        for (auto& err : analyzer.getErrors()) {
+            ADD_FAILURE() << "Semantic error: " << err.format();
+        }
+        return {};
+    }
+    CodegenContext ctx;
+    ctx.setSourceFile(filename);
+    ast->codegen(ctx);
+    std::string out;
+    llvm::raw_string_ostream os(out);
+    ctx.getModule().print(os, nullptr);
+    return os.str();
+}
 
 static int runSource(const std::string& source, const std::string& filename) {
     Lexer lexer(filename, source);
@@ -215,4 +243,43 @@ TEST_F(AtomicE2E, AtomicAggregateRejectedCleanly) {
         EXPECT_NE(parser.getErrors()[0].message.find("atomic"),
                   std::string::npos);
     }
+}
+
+TEST_F(AtomicE2E, AtomicTemplateFieldWorks) {
+    EXPECT_EQ(runSource(R"(
+        template<typename T> struct Box { atomic T v; };
+        int32 main() {
+            Box<int32> b;
+            b.v = 5;
+            b.v += 2;
+            return b.v == 7 ? 0 : 1;
+        }
+    )", "at_tmpl.c"), 0);
+}
+
+TEST_F(AtomicE2E, AtomicBoolUsesByteAtomic) {
+    std::string ir = compileToIR(R"(
+        atomic bool flag = false;
+        int32 main() { flag = true; return flag ? 0 : 1; }
+    )", "at_bool_ir.c");
+    EXPECT_NE(ir.find("atomic i8"), std::string::npos);
+    EXPECT_EQ(ir.find("atomic i1"), std::string::npos);
+}
+
+TEST_F(AtomicE2E, AtomicInt64FieldUsesNaturalAlignment) {
+    std::string ir = compileToIR(R"(
+        struct Cell { atomic int64 v; };
+        int64 main() { Cell c; c.v = 11; return c.v - 11; }
+    )", "at_align_ir.c");
+    std::istringstream lines(ir);
+    std::string line;
+    int atomicLines = 0;
+    while (std::getline(lines, line)) {
+        if (line.find("atomic i64") == std::string::npos) continue;
+        ++atomicLines;
+        EXPECT_NE(line.find("align 8"), std::string::npos) << line;
+    }
+    EXPECT_GT(atomicLines, 0);
+    EXPECT_EQ(ir.find("__atomic_load"), std::string::npos);
+    EXPECT_EQ(ir.find("__atomic_store"), std::string::npos);
 }

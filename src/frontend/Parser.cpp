@@ -2912,14 +2912,30 @@ Type* Parser::parseType() {
             error("atomic requires an integer scalar type", *peek());
             return nullptr;
         }
-        auto* copy = new Type(inner->kind, inner->base);
-        copy->isConst = isConst;
-        copy->isVolatile = isVolatile;
-        copy->isAtomic = true;
-        copy->ctDeadBranch = inner->ctDeadBranch;
-        copy->deprecated = inner->deprecated;
-        copy->deprecatedMsg = inner->deprecatedMsg;
-        baseType = copy;
+        if (inner->kind == TypeKind::TypeVar) {
+            // `atomic T` inside a template body: a plain Type(kind, base)
+            // clone would lose TypeVarType::name and later crash template
+            // instantiation. Preserve the placeholder identity and let the
+            // instantiator apply the atomic qualifier to the resolved type.
+            auto* tv = static_cast<TypeVarType*>(inner);
+            auto* copy = new TypeVarType(tv->name);
+            copy->isConst = isConst;
+            copy->isVolatile = isVolatile;
+            copy->isAtomic = true;
+            copy->ctDeadBranch = inner->ctDeadBranch;
+            copy->deprecated = inner->deprecated;
+            copy->deprecatedMsg = inner->deprecatedMsg;
+            baseType = copy;
+        } else {
+            auto* copy = new Type(inner->kind, inner->base);
+            copy->isConst = isConst;
+            copy->isVolatile = isVolatile;
+            copy->isAtomic = true;
+            copy->ctDeadBranch = inner->ctDeadBranch;
+            copy->deprecated = inner->deprecated;
+            copy->deprecatedMsg = inner->deprecatedMsg;
+            baseType = copy;
+        }
     }
 
     // Check for pointer types with qualifiers

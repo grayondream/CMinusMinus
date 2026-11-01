@@ -63,6 +63,16 @@ public:
 
     llvm::Type* getLLVMType(Type* type);
 
+    // CON-01: atomic memory is accessed through an integer carrier so bool,
+    // float and pointer atomics can use LLVM's integer atomic instructions.
+    // Returns nullptr for unsupported widths (e.g. 16-byte atomics).
+    llvm::Type* getAtomicCarrierType(Type* type, unsigned& bits);
+    unsigned getAtomicAlignBits(Type* type);
+    llvm::Value* valueToAtomicCarrier(llvm::Value* value, Type* type,
+                                      llvm::Type* carrier);
+    llvm::Value* valueFromAtomicCarrier(llvm::Value* value, Type* type,
+                                        llvm::Type* carrier);
+
     void setSourceFile(const std::string& file);
     void emitFunctionDebug(llvm::Function* func, Type* returnType,
                            const std::string& name, unsigned line);

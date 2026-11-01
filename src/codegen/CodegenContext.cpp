@@ -193,10 +193,30 @@ llvm::Value* CodegenContext::loadValue(llvm::Value* ptr, Type* type) {
             "decay");
     }
 
+    // CON-01: atomic-typed lvalues load through an integer carrier with the
+    // natural alignment of that carrier. This both fixes i64 fields (which
+    // previously emitted `align 4` and fell back to `__atomic_load`) and
+    // avoids invalid LLVM atomic `i1` loads for bool.
+    if (t && t->isAtomic) {
+        unsigned bits = 0;
+        llvm::Type* carrier = getAtomicCarrierType(t, bits);
+        if (carrier) {
+            llvm::Value* addr = ptr;
+            llvm::Type* carrierPtr = llvm::PointerType::get(*context, 0);
+            if (addr->getType() != carrierPtr) {
+                addr = builder.CreateBitCast(addr, carrierPtr, "atomic.addr");
+            }
+            llvm::LoadInst* load =
+                builder.CreateLoad(carrier, addr, "atomic.load");
+            load->setAtomic(llvm::AtomicOrdering::SequentiallyConsistent);
+            load->setAlignment(llvm::Align(bits / 8));
+            return valueFromAtomicCarrier(load, t, carrier);
+        }
+    }
+
     llvm::Type* loadType = t ? getLLVMType(t) : llvm::Type::getInt32Ty(*context);
     if (!loadType) return ptr;
     llvm::LoadInst* load = builder.CreateLoad(loadType, ptr, "loadtmp");
-    // CON-01: atomic-typed lvalues load with seq_cst ordering.
     if (t && t->isAtomic) {
         load->setAtomic(llvm::AtomicOrdering::SequentiallyConsistent);
     }
@@ -766,6 +786,124 @@ llvm::Type* CodegenContext::getLLVMType(Type* type) {
         }
         default:               return llvm::Type::getInt32Ty(*context);
     }
+}
+
+llvm::Type* CodegenContext::getAtomicCarrierType(Type* type, unsigned& bits) {
+    bits = 0;
+    Type* t = type;
+    while (t && t->kind == TypeKind::Typedef) {
+        t = static_cast<TypedefType*>(t)->aliasedType;
+    }
+    if (!t) return nullptr;
+    auto iN = [this](unsigned width) -> llvm::Type* {
+        return llvm::Type::getIntNTy(*context, width);
+    };
+    switch (t->kind) {
+        case TypeKind::Bool:
+        case TypeKind::Char:
+        case TypeKind::Int8:
+        case TypeKind::UInt8:
+            bits = 8;
+            return iN(8);
+        case TypeKind::Int16:
+        case TypeKind::UInt16:
+        case TypeKind::Float16:
+            bits = 16;
+            return iN(16);
+        case TypeKind::Int32:
+        case TypeKind::UInt32:
+        case TypeKind::Float32:
+            bits = 32;
+            return iN(32);
+        case TypeKind::Int64:
+        case TypeKind::UInt64:
+        case TypeKind::Float64:
+        case TypeKind::ISize:
+        case TypeKind::USize:
+        case TypeKind::Pointer:
+            bits = 64;
+            return iN(64);
+        case TypeKind::Enum: {
+            llvm::Type* underlying = getLLVMType(t);
+            if (underlying && underlying->isIntegerTy()) {
+                unsigned width = underlying->getIntegerBitWidth();
+                if (width == 8 || width == 16 || width == 32 || width == 64) {
+                    bits = width;
+                    return iN(width);
+                }
+            }
+            return nullptr;
+        }
+        default:
+            return nullptr;
+    }
+}
+
+unsigned CodegenContext::getAtomicAlignBits(Type* type) {
+    unsigned bits = 0;
+    getAtomicCarrierType(type, bits);
+    return bits;
+}
+
+llvm::Value* CodegenContext::valueToAtomicCarrier(llvm::Value* value,
+                                                   Type* type,
+                                                   llvm::Type* carrier) {
+    if (!value || !carrier) return value;
+    if (value->getType() == carrier) return value;
+    Type* t = type;
+    while (t && t->kind == TypeKind::Typedef) {
+        t = static_cast<TypedefType*>(t)->aliasedType;
+    }
+    llvm::Type* orig = t ? getLLVMType(t) : value->getType();
+    if (orig && orig->isIntegerTy(1) && value->getType()->isIntegerTy(1)) {
+        return builder.CreateZExt(value, carrier, "atomic.bool");
+    }
+    if (value->getType()->isPointerTy()) {
+        return builder.CreatePtrToInt(value, carrier, "atomic.ptr");
+    }
+    if (value->getType()->isFloatingPointTy()) {
+        return builder.CreateBitCast(value, carrier, "atomic.fp");
+    }
+    if (value->getType()->isIntegerTy() && carrier->isIntegerTy()) {
+        unsigned from = value->getType()->getIntegerBitWidth();
+        unsigned to = carrier->getIntegerBitWidth();
+        if (from == to) return builder.CreateBitCast(value, carrier, "atomic.int");
+        if (from < to) return builder.CreateZExt(value, carrier, "atomic.zext");
+        return builder.CreateTrunc(value, carrier, "atomic.trunc");
+    }
+    return builder.CreateBitCast(value, carrier, "atomic.cast");
+}
+
+llvm::Value* CodegenContext::valueFromAtomicCarrier(llvm::Value* value,
+                                                     Type* type,
+                                                     llvm::Type* carrier) {
+    if (!value) return value;
+    Type* t = type;
+    while (t && t->kind == TypeKind::Typedef) {
+        t = static_cast<TypedefType*>(t)->aliasedType;
+    }
+    llvm::Type* orig = t ? getLLVMType(t) : value->getType();
+    if (!orig || orig == value->getType()) return value;
+    if (orig->isIntegerTy(1)) {
+        return builder.CreateTrunc(value, orig, "atomic.bool");
+    }
+    if (orig->isPointerTy()) {
+        return builder.CreateIntToPtr(value, orig, "atomic.ptr");
+    }
+    if (orig->isFloatingPointTy()) {
+        return builder.CreateBitCast(value, orig, "atomic.fp");
+    }
+    if (orig->isIntegerTy() && value->getType()->isIntegerTy()) {
+        unsigned from = value->getType()->getIntegerBitWidth();
+        unsigned to = orig->getIntegerBitWidth();
+        if (from == to) return builder.CreateBitCast(value, orig, "atomic.int");
+        if (from > to) return builder.CreateTrunc(value, orig, "atomic.trunc");
+        return builder.CreateZExt(value, orig, "atomic.zext");
+    }
+    if (carrier && carrier == value->getType()) {
+        return builder.CreateBitCast(value, orig, "atomic.cast");
+    }
+    return builder.CreateBitCast(value, orig, "atomic.cast");
 }
 
 // ===== P1-06 (FMT-01/04): synthesized UTF-8 stepping helpers =====

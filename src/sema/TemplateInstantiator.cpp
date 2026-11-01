@@ -60,6 +60,45 @@ bool TemplateInstantiator::evalIntExpr(
     return false;
 }
 
+// CON-01: a template field `atomic T` stores the qualifier on the TypeVar
+// placeholder. Once T is known, clone the resolved scalar and re-apply the
+// qualifier; concrete parser clones use the same representation. Aggregates
+// are left untouched (sema diagnoses `atomic` on non-integer types).
+static Type* applyAtomicQualifier(Type* resolved, const Type* qualifier) {
+    if (!resolved || resolved->isAtomic) return resolved;
+    Type* base = resolved;
+    while (base && base->kind == TypeKind::Typedef) {
+        base = static_cast<TypedefType*>(base)->aliasedType;
+    }
+    if (!base) return resolved;
+    switch (base->kind) {
+        case TypeKind::Char:
+        case TypeKind::Bool:
+        case TypeKind::Int8: case TypeKind::Int16:
+        case TypeKind::Int32: case TypeKind::Int64:
+        case TypeKind::Int128:
+        case TypeKind::UInt8: case TypeKind::UInt16:
+        case TypeKind::UInt32: case TypeKind::UInt64:
+        case TypeKind::UInt128:
+        case TypeKind::ISize: case TypeKind::USize:
+        case TypeKind::Float16: case TypeKind::Float32:
+        case TypeKind::Float64: case TypeKind::Float128:
+            break;
+        default:
+            return resolved;
+    }
+    auto* copy = new Type(base->kind, base->base);
+    copy->isConst = base->isConst || (qualifier && qualifier->isConst);
+    copy->isVolatile = base->isVolatile || (qualifier && qualifier->isVolatile);
+    copy->isAtomic = true;
+    copy->isRestrict = base->isRestrict;
+    copy->ctDeadBranch = base->ctDeadBranch;
+    copy->deprecated = base->deprecated;
+    copy->deprecatedMsg = base->deprecatedMsg;
+    copy->annotations = base->annotations;
+    return copy;
+}
+
 void TemplateInstantiator::copyLoc(ASTNode* dst, const ASTNode& src) {
     dst->sourceFile = src.sourceFile;
     dst->sourceLine = src.sourceLine;
@@ -75,7 +114,8 @@ Type* TemplateInstantiator::rewrite(Type* t) {
             // 缺失实参属内部错误（sema 定义处检查应拦下）；原样返回避免崩溃。
             // 实参可能内嵌 TypeInstance 占位（Box<Box<i32>>），须递归解析。
             if (it == m_typeArgs.end()) return t;
-            return rewrite(it->second);
+            Type* resolved = rewrite(it->second);
+            return t->isAtomic ? applyAtomicQualifier(resolved, t) : resolved;
         }
         case TypeKind::Pointer: {
             Type* base = rewrite(t->base);
