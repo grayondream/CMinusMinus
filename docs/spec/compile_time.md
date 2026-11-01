@@ -163,6 +163,33 @@ compile_time.repeat(3) {
   展开会错误地创建独立静态对象。
 - 字段/枚举遍历（`for_fields`/`for_enum_values`）需要 AST 克隆或 codegen 特化，暂未实现。
 
+### 7.5 编译期容器与常量表
+
+`constexpr` 函数内可以使用 `std.collections` 的四类容器；求值器按运行时 API
+语义执行，不解释 `malloc`/`memcpy`/容器方法 AST，也不生成运行时分配。
+
+| 能力 | 说明 |
+|---|---|
+| 容器类型 | `std::Vec<T>`、`std::Deque<T>`、`std::HashMap<K,V>`、`std::HashSet<K>` |
+| 元素类型 | int8/16/32/64、uint8/16/32/64、bool、char、float32/64、enum、`string_view` |
+| 控制流 | block/if/while/do/for/break/continue/return，赋值与复合赋值、`++`/`--` |
+| 出参 | `pop(&out)`、`get(key, &out)` 等 `&local` 在调用边界 copy-in/copy-out |
+| 回调 | `HashMap`/`HashSet` 的 hash/equal 与 `Vec::contains/index_of` 的相等函数须可在编译期求值 |
+| 限制 | 任意指针、嵌套容器、`string` 元素、128 位整数常量暂不支持 |
+
+- `constexpr` 变量（命名空间或块作用域）可以是上述容器类型；初始值折叠后，
+  codegen 物化为私有只读常量：每个底层数组一个常量全局，加一个与运行时 ABI
+  一致的容器结构体。`Vec`/`Deque` 的 `data` 指向常量数组，`Deque` 归一化
+  `head = 0`；`HashMap`/`HashSet` 保留开放寻址的 `keys/values/states` 与回调
+  函数指针。
+- 物化后的容器是**只读**的：`push`/`pop`/`put`/`insert`/`remove`/`clear`/
+  `destroy`/字段或元素赋值均诊断拒绝；把常量表复制到可变容器/可变变量也拒绝。
+  `constexpr Vec B = A` 与按值传参在编译期求值中是深拷贝，允许。
+- 返回容器类型的 `constexpr` 函数仍是普通运行时函数；`constexpr` 只增加编译期
+  求值能力，运行时调用走正常容器分配/拷贝语义。
+- 求值步数上限 1,000,000；未知回调、不可求值操作或超限都会使该常量求值失败并
+  给出定位诊断，不会静默退化成运行时值。
+
 ## 8. 类型作为值（CT-08）
 
 - 编译期一等公民：类型可作模板实参（GEN-03）、反射返回值、比较与选择。

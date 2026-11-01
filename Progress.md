@@ -1182,3 +1182,14 @@
 - 新增 `StdCollectionsTest.DirectContainerModuleImports`，验证四个容器模块可脱离汇总模块直接导入并使用。
 - 文档：`docs/spec/stdlib.md` §14 更新模块布局与导入方式。
 - 验证：`ctest --test-dir build -j8` → **1658/1658** 通过（2 个既有 `GTEST_SKIP`，新增 1 个测试）；`examples/all_features.c` → `ALL FEATURES OK`。
+
+## 2026-11-01 — constexpr 容器与常量表
+
+- **求值器**：`CtValue`/`CtContainer` 共享值模型（`src/ast/CtValue.*`）；`constexpr` 解释器支持 block/if/while/do/for/break/continue/return、赋值/复合赋值、`++`/`--`、`&local` 出参、字符串字面量与 `string_view.len()/char_at()`。
+- **容器执行**：`Vec`/`Deque`/`HashMap`/`HashSet` 的 `constexpr` 语义在 `SemanticAnalyzer` 中按运行时 API 执行；HashMap/HashSet 复刻开放寻址/墓碑/0.7 负载，并通过解释器调用 hash/equality 回调。支持标量、enum、`string_view` 元素。
+- **常量表逃逸**：`constexpr std::Vec/Deque/HashMap/HashSet` 变量在 codegen 中物化为私有只读常量数组 + 与运行时 ABI 一致的常量结构体（`src/ast/Decl.cpp`）；支持全局、static 与局部 constexpr 容器。物化表只读：修改方法/字段赋值/可变拷贝均诊断拒绝。
+- **限制**：求值步数上限 1,000,000；回调须可编译期求值；暂不支持任意指针、嵌套容器、`string` 元素、128 位整数常量。
+- **顺带修复**：`typeToMangled` 补 `Str`/`String`（此前 `Vec<string_view>` 实例化为 `std_Vec$unknown`）；`TemplateInstantiator::rewrite` 递归替换函数类型内的 `TypeVar`（`bool (*)(T,T)` 的回调调用不再产生 IR 签名不匹配）。
+- **测试**：新增 `tests/e2e/test_constexpr_containers.cpp`（constexpr Vec/Deque/HashMap/HashSet、string_view、出参、步数上限、只读检查、Vec/Deque/HashMap/HashSet/string_view 常量表运行时读取）；`tests/ast/test_type_nodes.cpp` 增加字符串 mangling 回归；重启用 `ConstexprForLoop`/`ConstexprNestedCall`。
+- **验证**：全量 `ctest --test-dir build -j8` **1690/1690** 通过（2 个既有 `GTEST_SKIP`）；`examples/all_features.c` → `ALL FEATURES OK`。
+- 文档：`docs/spec/compile_time.md` §7.5、`docs/spec/stdlib.md` §14。

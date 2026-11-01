@@ -318,6 +318,9 @@ JIT 经进程符号解析）+ `constexpr` 常量 + 位级浮点分类。
 - 哈希/相等通过函数指针参数注入（无 trait）；`std.hash` 提供整数与 `string_view` 适配器。
 - 汇总模块在模块级使用 `compile_time.static_assert` 校验 `uint8` 状态数组的字节宽度；
   各容器模块只依赖 `std.mem`。
+- 四种容器可在 `constexpr` 求值器中执行；`constexpr` 容器变量由 codegen 物化为
+  只读常量数组 + 常量结构体，运行时可经正常 `get`/`contains`/`size` 读取。详见
+  [`compile_time.md`](./compile_time.md) §7.5。
 
 ## 15. `std.hash` / `std.sort`（STD-16/17）`[impl]`
 
