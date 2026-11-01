@@ -223,6 +223,12 @@ private:
     std::optional<ConstValue> evalConstexprCall(CallExprAST& call, int depth);
     std::optional<ConstValue> evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
                                                 CtFlow& flow);
+    std::optional<ConstValue> evalContainerMethod(MethodCallExprAST& call,
+                                                  ConstValue& object,
+                                                  const std::vector<ConstValue>& args,
+                                                  ASTNode& at);
+    std::optional<ConstValue> evalContainerMember(MemberAccessExprAST& node,
+                                                  ConstValue& object);
     static bool constValueTruthy(const ConstValue& v);
 
     void visit(TranslationUnitAST& node);

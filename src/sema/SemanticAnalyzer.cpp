@@ -1636,6 +1636,36 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
         return ctBinary(*left, *right, static_cast<int>(bin->op), bin->type);
     }
 
+    if (auto* ternary = dynamic_cast<TernaryExprAST*>(expr)) {
+        auto cond = evaluateConstexpr(ternary->cond.get());
+        if (!cond) return std::nullopt;
+        return ctTruthy(*cond) ? evaluateConstexpr(ternary->then.get())
+                               : evaluateConstexpr(ternary->elseExpr.get());
+    }
+
+    if (auto* member = dynamic_cast<MemberAccessExprAST*>(expr)) {
+        auto object = evaluateConstexpr(member->object.get());
+        if (!object || object->type != ConstValue::CONTAINER) {
+            return std::nullopt;
+        }
+        return evalContainerMember(*member, *object);
+    }
+
+    if (auto* mc = dynamic_cast<MethodCallExprAST*>(expr)) {
+        auto object = evaluateConstexpr(mc->object.get());
+        if (!object || object->type != ConstValue::CONTAINER) {
+            return std::nullopt;
+        }
+        std::vector<ConstValue> args;
+        args.reserve(mc->args.size());
+        for (auto& arg : mc->args) {
+            auto value = evaluateConstexpr(arg.get());
+            if (!value) return std::nullopt;
+            args.push_back(*value);
+        }
+        return evalContainerMethod(*mc, *object, args, *mc);
+    }
+
     if (auto* unary = dynamic_cast<UnaryExprAST*>(expr)) {
         auto operand = evaluateConstexpr(unary->operand.get());
         if (!operand) return std::nullopt;
@@ -1942,6 +1972,257 @@ SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
 
     return std::nullopt;
 }
+
+namespace {
+
+std::optional<std::size_t> ctIndexValue(const CtValue& v) {
+    if (v.type != CtValue::INT) return std::nullopt;
+    if (v.isUnsigned) {
+        return static_cast<std::size_t>(static_cast<uint64_t>(v.intVal));
+    }
+    if (v.intVal < 0) return std::nullopt;
+    return static_cast<std::size_t>(v.intVal);
+}
+
+CtValue ctVoidResult() { return ctInt(0); }
+
+CtValue ctBoolResult(bool value) { return ctInt(value ? 1 : 0, 1, true, true); }
+
+CtValue ctUsizeResult(std::size_t value) {
+    return ctInt(static_cast<long long>(static_cast<uint64_t>(value)), 64, true);
+}
+
+} // namespace
+
+std::optional<SemanticAnalyzer::ConstValue>
+SemanticAnalyzer::evalContainerMember(MemberAccessExprAST& node, ConstValue& object) {
+    if (!object.container) return std::nullopt;
+    const CtContainer& c = *object.container;
+    switch (c.kind) {
+        case CtContainer::Vec:
+        case CtContainer::Deque:
+            if (node.memberName == "len") return ctUsizeResult(c.len);
+            if (node.memberName == "cap") return ctUsizeResult(c.cap);
+            if (c.kind == CtContainer::Deque && node.memberName == "head") {
+                return ctUsizeResult(c.head);
+            }
+            return std::nullopt;
+        case CtContainer::HashMap:
+        case CtContainer::HashSet:
+            if (node.memberName == "len") return ctUsizeResult(c.len);
+            if (node.memberName == "cap") return ctUsizeResult(c.cap);
+            if (node.memberName == "tombstones") return ctUsizeResult(c.tombstones);
+            return std::nullopt;
+    }
+    return std::nullopt;
+}
+
+std::optional<SemanticAnalyzer::ConstValue>
+SemanticAnalyzer::evalContainerMethod(MethodCallExprAST& call, ConstValue& object,
+                                      const std::vector<ConstValue>& args,
+                                      ASTNode& at) {
+    (void)at;
+    if (!object.container) return std::nullopt;
+    CtContainer& c = *object.container;
+
+    auto arg = [&](std::size_t i) -> const CtValue& { return args[i]; };
+    auto need = [&](std::size_t n) { return args.size() == n; };
+    auto defaultElem = [&]() { return ctDefaultValue(c.elementType); };
+
+    switch (c.kind) {
+        case CtContainer::Vec: {
+            if (call.methodName == "init" && need(0)) {
+                c.items.clear();
+                c.cap = c.len = c.head = c.tombstones = 0;
+                return ctVoidResult();
+            }
+            if (call.methodName == "destroy" && need(0)) {
+                c.items.clear();
+                c.cap = c.len = c.head = c.tombstones = 0;
+                return ctVoidResult();
+            }
+            if (call.methodName == "is_empty" && need(0)) return ctBoolResult(c.len == 0);
+            if (call.methodName == "capacity" && need(0)) return ctUsizeResult(c.cap);
+            if ((call.methodName == "len" || call.methodName == "size") && need(0)) {
+                return ctUsizeResult(c.len);
+            }
+            if (call.methodName == "reserve" && need(1)) {
+                auto want = ctIndexValue(arg(0));
+                if (!want) return std::nullopt;
+                if (*want <= c.cap) return ctBoolResult(true);
+                std::size_t nc = c.cap == 0 ? 8 : c.cap;
+                while (nc < *want) {
+                    if (nc > (~std::size_t{0}) / 2) {
+                        nc = *want;
+                        break;
+                    }
+                    nc *= 2;
+                }
+                c.items.resize(nc, defaultElem());
+                c.cap = nc;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "push" && need(1)) {
+                if (c.cap == 0) {
+                    c.items.resize(8, defaultElem());
+                    c.cap = 8;
+                }
+                if (c.len + 1 > c.cap) {
+                    std::size_t nc = c.cap * 2;
+                    c.items.resize(nc, defaultElem());
+                    c.cap = nc;
+                }
+                c.items[c.len] = ctClone(arg(0));
+                ++c.len;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "get" && need(1)) {
+                auto index = ctIndexValue(arg(0));
+                if (!index || *index >= c.len) return std::nullopt;
+                return ctClone(c.items[*index]);
+            }
+            if (call.methodName == "set" && need(2)) {
+                auto index = ctIndexValue(arg(0));
+                if (!index || *index >= c.len) return std::nullopt;
+                c.items[*index] = ctClone(arg(1));
+                return ctVoidResult();
+            }
+            if (call.methodName == "clear" && need(0)) {
+                c.len = 0;
+                return ctVoidResult();
+            }
+            if (call.methodName == "insert" && need(2)) {
+                auto index = ctIndexValue(arg(0));
+                if (!index || *index > c.len) return std::nullopt;
+                if (c.cap == 0) {
+                    c.items.resize(8, defaultElem());
+                    c.cap = 8;
+                }
+                if (c.len + 1 > c.cap) {
+                    std::size_t nc = c.cap * 2;
+                    c.items.resize(nc, defaultElem());
+                    c.cap = nc;
+                }
+                c.items.insert(c.items.begin() + static_cast<long>(*index), ctClone(arg(1)));
+                if (c.items.size() > c.cap) c.items.resize(c.cap);
+                ++c.len;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "remove" && need(1)) {
+                auto index = ctIndexValue(arg(0));
+                if (!index || *index >= c.len) return ctBoolResult(false);
+                c.items.erase(c.items.begin() + static_cast<long>(*index));
+                c.items.resize(c.cap, defaultElem());
+                --c.len;
+                c.items[c.len] = defaultElem();
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "swap" && need(2)) {
+                auto a = ctIndexValue(arg(0));
+                auto b = ctIndexValue(arg(1));
+                if (!a || !b || *a >= c.len || *b >= c.len) return ctVoidResult();
+                std::swap(c.items[*a], c.items[*b]);
+                return ctVoidResult();
+            }
+            // contains/index_of and out-parameter methods arrive with Task 6.
+            return std::nullopt;
+        }
+        case CtContainer::Deque: {
+            if (call.methodName == "init" && need(0)) {
+                c.items.clear();
+                c.cap = c.len = c.head = c.tombstones = 0;
+                return ctVoidResult();
+            }
+            if (call.methodName == "destroy" && need(0)) {
+                c.items.clear();
+                c.cap = c.len = c.head = c.tombstones = 0;
+                return ctVoidResult();
+            }
+            if (call.methodName == "is_empty" && need(0)) return ctBoolResult(c.len == 0);
+            if (call.methodName == "capacity" && need(0)) return ctUsizeResult(c.cap);
+            if ((call.methodName == "len" || call.methodName == "size") && need(0)) {
+                return ctUsizeResult(c.len);
+            }
+            if (call.methodName == "reserve" && need(1)) {
+                auto want = ctIndexValue(arg(0));
+                if (!want) return std::nullopt;
+                if (*want <= c.cap) return ctBoolResult(true);
+                std::size_t nc = c.cap == 0 ? 8 : c.cap;
+                while (nc < *want) nc *= 2;
+                std::vector<CtValue> next(nc, defaultElem());
+                for (std::size_t i = 0; i < c.len; ++i) {
+                    next[i] = c.items[(c.head + i) % c.cap];
+                }
+                c.items = std::move(next);
+                c.cap = nc;
+                c.head = 0;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "push_back" && need(1)) {
+                if (c.cap == 0) {
+                    c.items.resize(8, defaultElem());
+                    c.cap = 8;
+                }
+                if (c.len + 1 > c.cap) {
+                    std::size_t nc = c.cap * 2;
+                    std::vector<CtValue> next(nc, defaultElem());
+                    for (std::size_t i = 0; i < c.len; ++i) {
+                        next[i] = c.items[(c.head + i) % c.cap];
+                    }
+                    c.items = std::move(next);
+                    c.cap = nc;
+                    c.head = 0;
+                }
+                const std::size_t tail = (c.head + c.len) % c.cap;
+                c.items[tail] = ctClone(arg(0));
+                ++c.len;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "push_front" && need(1)) {
+                if (c.cap == 0) {
+                    c.items.resize(8, defaultElem());
+                    c.cap = 8;
+                }
+                if (c.len + 1 > c.cap) {
+                    std::size_t nc = c.cap * 2;
+                    std::vector<CtValue> next(nc, defaultElem());
+                    for (std::size_t i = 0; i < c.len; ++i) {
+                        next[i] = c.items[(c.head + i) % c.cap];
+                    }
+                    c.items = std::move(next);
+                    c.cap = nc;
+                    c.head = 0;
+                }
+                c.head = (c.head + c.cap - 1) % c.cap;
+                c.items[c.head] = ctClone(arg(0));
+                ++c.len;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "get" && need(1)) {
+                auto index = ctIndexValue(arg(0));
+                if (!index || *index >= c.len) return std::nullopt;
+                return ctClone(c.items[(c.head + *index) % c.cap]);
+            }
+            if (call.methodName == "set" && need(2)) {
+                auto index = ctIndexValue(arg(0));
+                if (!index || *index >= c.len) return std::nullopt;
+                c.items[(c.head + *index) % c.cap] = ctClone(arg(1));
+                return ctVoidResult();
+            }
+            if (call.methodName == "clear" && need(0)) {
+                c.head = 0;
+                c.len = 0;
+                return ctVoidResult();
+            }
+            return std::nullopt;
+        }
+        case CtContainer::HashMap:
+        case CtContainer::HashSet:
+            return std::nullopt;
+    }
+    return std::nullopt;
+}
+
 
 void SemanticAnalyzer::visit(NumberExprAST& node) {
     // LEX-15: the literal kind chooses the fixed-width type; fall back to int32.
