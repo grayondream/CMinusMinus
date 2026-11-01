@@ -16,6 +16,26 @@ namespace smc {
 
 namespace {
 
+// Module path components are identifiers lexically, but a keyword such as
+// `atomic` is still a valid component (`import std.atomic;`). Accept any token
+// whose lexeme has identifier shape; punctuation/literals are rejected.
+bool isModuleNameToken(const Token& token) {
+    if (token.type == TokenType::TOKEN_IDENTIFIER) return true;
+    const std::string& s = token.lexeme;
+    if (s.empty()) return false;
+    auto isStart = [](unsigned char c) {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_';
+    };
+    auto isContinue = [&](unsigned char c) {
+        return isStart(c) || (c >= '0' && c <= '9');
+    };
+    if (!isStart(static_cast<unsigned char>(s[0]))) return false;
+    for (size_t i = 1; i < s.size(); ++i) {
+        if (!isContinue(static_cast<unsigned char>(s[i]))) return false;
+    }
+    return true;
+}
+
 bool endsWith(const std::string& s, const std::string& suffix) {
     return s.size() >= suffix.size() &&
            s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
@@ -108,11 +128,11 @@ std::vector<std::string> collectImportSpecifiers(const std::vector<Token>& token
             if (lex.size() >= 2 && lex.front() == '"' && lex.back() == '"') {
                 name = lex.substr(1, lex.size() - 2);
             }
-        } else if (j < tokens.size() && tokens[j].type == TokenType::TOKEN_IDENTIFIER) {
+        } else if (j < tokens.size() && isModuleNameToken(tokens[j])) {
             name = tokens[j].lexeme;
             ++j;
             while (j + 1 < tokens.size() && tokens[j].type == TokenType::TOKEN_DOT &&
-                   tokens[j + 1].type == TokenType::TOKEN_IDENTIFIER) {
+                   isModuleNameToken(tokens[j + 1])) {
                 name += "." + tokens[j + 1].lexeme;
                 j += 2;
             }

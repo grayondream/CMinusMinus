@@ -10,6 +10,25 @@
 
 namespace {
 
+// `atomic` is a keyword, but it must remain usable as a module path component
+// (`import std.atomic;`). Module names accept any identifier-shaped lexeme.
+static bool isModuleNameToken(const Token& token) {
+    if (token.type == TokenType::TOKEN_IDENTIFIER) return true;
+    const std::string& s = token.lexeme;
+    if (s.empty()) return false;
+    auto isStart = [](unsigned char c) {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_';
+    };
+    auto isContinue = [&](unsigned char c) {
+        return isStart(c) || (c >= '0' && c <= '9');
+    };
+    if (!isStart(static_cast<unsigned char>(s[0]))) return false;
+    for (size_t i = 1; i < s.size(); ++i) {
+        if (!isContinue(static_cast<unsigned char>(s[i]))) return false;
+    }
+    return true;
+}
+
 // CTX-01: compile_time query argument policy.
 //   None       — every argument is an ordinary expression
 //   FirstType  — first argument may be a type-id; the rest are expressions
@@ -2144,13 +2163,12 @@ std::unique_ptr<TranslationUnitAST> Parser::parse() {
                 error("module declaration must appear before other declarations", *moduleTok);
             }
             sawModule = true;
-            if (check(TokenType::TOKEN_IDENTIFIER)) {
+            if (!eof() && isModuleNameToken(*peek())) {
                 moduleName = advance()->lexeme;
                 while (check(TokenType::TOKEN_DOT) || check(TokenType::TOKEN_COLON_COLON)) {
                     advance();
-                    auto part = match(TokenType::TOKEN_IDENTIFIER);
-                    if (!part) break;
-                    moduleName += "." + part->lexeme;
+                    if (eof() || !isModuleNameToken(*peek())) break;
+                    moduleName += "." + advance()->lexeme;
                 }
             }
             if (moduleName.empty()) {
@@ -2169,13 +2187,12 @@ std::unique_ptr<TranslationUnitAST> Parser::parse() {
                 if (lex.size() >= 2 && lex.front() == '"' && lex.back() == '"') {
                     importName = lex.substr(1, lex.size() - 2);
                 }
-            } else if (check(TokenType::TOKEN_IDENTIFIER)) {
+            } else if (!eof() && isModuleNameToken(*peek())) {
                 importName = advance()->lexeme;
                 while (check(TokenType::TOKEN_DOT)) {
                     advance();
-                    auto part = match(TokenType::TOKEN_IDENTIFIER);
-                    if (!part) break;
-                    importName += "." + part->lexeme;
+                    if (eof() || !isModuleNameToken(*peek())) break;
+                    importName += "." + advance()->lexeme;
                 }
             }
             if (!importName.empty()) {
@@ -5672,10 +5689,22 @@ bool Parser::parseTemplateArgument(Type*& argType, long long& argValue,
         check(TokenType::TOKEN_TILDE)) {
         valueExpr = true;
     } else if (check(TokenType::TOKEN_IDENTIFIER)) {
+        // A non-type argument may be a qualified enum constant such as
+        // `std::MemoryOrderAcquire`. Scan the qualified spelling before
+        // deciding whether this is a type or a value; otherwise the parser
+        // treats the namespace component as a type argument.
+        std::string qualified = m_tokens[m_currentTokenPos].lexeme;
+        size_t k = m_currentTokenPos + 1;
+        while (k + 1 < m_tokens.size() &&
+               m_tokens[k].type == TokenType::TOKEN_COLON_COLON &&
+               m_tokens[k + 1].type == TokenType::TOKEN_IDENTIFIER) {
+            qualified += "::" + m_tokens[k + 1].lexeme;
+            k += 2;
+        }
         long long ignored = 0;
-        valueExpr = lookupConstValue(peek()->lexeme, ignored) ||
+        valueExpr = lookupConstValue(qualified, ignored) ||
                     (!m_templateScopes.empty() &&
-                     m_templateScopes.back().valueParams.count(peek()->lexeme));
+                     m_templateScopes.back().valueParams.count(qualified));
     }
 
     if (valueExpr) {
