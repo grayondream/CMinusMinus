@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdlib>
+#include <iterator>
 #include <set>
 #include <string>
 
@@ -44,12 +45,26 @@ protected:
 };
 
 static int runWithImports(const std::string& source, const std::string& filename) {
-    auto ast = smc::parseStdCPrelude(source, filename);
-    if (!ast) return -1;
+    Lexer lexer(filename, source);
+    auto tokens = lexer.tokenize();
+    if (!lexer.getDiagnostics().empty()) return -1;
 
     smc::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
+    std::vector<std::unique_ptr<DeclAST>> importedDecls;
     std::vector<std::string> errors;
+    smc::preloadImports(smc::collectImportSpecifiers(tokens), ".", paths, loaded,
+                        importedDecls, errors);
+    if (!errors.empty()) return -1;
+
+    Parser parser(tokens);
+    auto ast = parser.parse();
+    if (!ast) return -1;
+    if (!importedDecls.empty()) {
+        ast->declarations.insert(ast->declarations.begin(),
+                                 std::make_move_iterator(importedDecls.begin()),
+                                 std::make_move_iterator(importedDecls.end()));
+    }
     smc::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) return -1;
 
@@ -171,6 +186,75 @@ TEST_F(StdMemTest, AlignedAllocFailsOnBadAlignment) {
             return p == null ? 0 : 1;
         }
     )", "mem_alignfail.c"), 0);
+}
+
+TEST_F(StdMemTest, BackendIsMimalloc) {
+    EXPECT_EQ(runWithImports(R"(
+        import std.mem;
+        int32 main() {
+            if (std::backend_name() != "mimalloc") return 1;
+            void* p = std::alloc(8);
+            if (p == null) return 2;
+            std::dealloc(p);
+            return 0;
+        }
+    )", "mem_backend.c"), 0);
+}
+
+TEST_F(StdMemTest, AllocatorInterface) {
+    EXPECT_EQ(runWithImports(R"(
+        import std.mem;
+        int32 main() {
+            std::Allocator a = std::allocator_default();
+            void* p = std::allocator_alloc(&a, 16);
+            if (p == null) return 1;
+            p = std::allocator_resize(&a, p, 64);
+            if (p == null) return 2;
+            std::allocator_free(&a, p);
+            return 0;
+        }
+    )", "mem_allocator.c"), 0);
+}
+
+TEST_F(StdMemTest, ArenaBumpAllocator) {
+    EXPECT_EQ(runWithImports(R"(
+        import std.mem;
+        int32 main() {
+            char buf[256];
+            std::Arena a;
+            std::arena_init(&a, buf, 256);
+            void* p = std::arena_alloc(&a, 16, 8);
+            if (p == null) return 1;
+            if (!std::is_aligned(p, 8)) return 2;
+            void* q = std::arena_alloc(&a, 32, 8);
+            if (q == null || q == p) return 3;
+            if (std::arena_remaining(&a) == 0) return 4;
+            std::arena_reset(&a);
+            if (std::arena_remaining(&a) != 256) return 5;
+            if (std::arena_alloc(&a, 512, 8) != null) return 6;
+            return 0;
+        }
+    )", "mem_arena.c"), 0);
+}
+
+TEST_F(StdMemTest, PoolReusesBlocks) {
+    EXPECT_EQ(runWithImports(R"(
+        import std.mem;
+        int32 main() {
+            std::Pool p;
+            std::pool_init(&p, 32, 16);
+            void* a = std::pool_alloc(&p);
+            void* b = std::pool_alloc(&p);
+            if (a == null || b == null || a == b) return 1;
+            std::pool_free(&p, a);
+            void* c = std::pool_alloc(&p);
+            if (c != a) return 2;
+            std::pool_free(&p, b);
+            std::pool_free(&p, c);
+            std::pool_destroy(&p);
+            return 0;
+        }
+    )", "mem_pool.c"), 0);
 }
 
 }  // namespace

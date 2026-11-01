@@ -13,6 +13,8 @@ include(GoogleTest)
 file(GLOB_RECURSE TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 
 add_executable(compiler_tests ${TEST_SOURCES})
+# LLJIT tests resolve std.mem's mimalloc entry points from the process.
+set_target_properties(compiler_tests PROPERTIES ENABLE_EXPORTS ON)
 
 target_include_directories(compiler_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -29,7 +31,6 @@ target_compile_definitions(compiler_tests PRIVATE
 target_link_libraries(compiler_tests
     PRIVATE
         my_llvm_c_lib
-        safec
         GTest::gtest_main
 )
 

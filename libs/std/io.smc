@@ -75,6 +75,10 @@ int32 read_int() {
 // Reads one line from stdin into `buf` (capacity `cap`), excluding the
 // newline. Returns the number of bytes stored. Always NUL-terminates.
 int32 read_line(char* buf, int32 cap) {
+    // Capacity <= 0 has nowhere to store even the terminator; do not touch buf.
+    if (buf == null || cap <= 0) {
+        return 0;
+    }
     int32 i = 0;
     while (i < cap - 1) {
         int32 c = getchar();
@@ -110,6 +114,9 @@ usize file_write(void* f, void* buf, usize n) {
 // Reads one line (including the newline, if any) into `buf`; returns `buf`
 // on success, or null at end of file.
 char* file_read_line(char* buf, int32 cap, void* f) {
+    if (buf == null || cap <= 0 || f == null) {
+        return null;
+    }
     return fgets(buf, cap, f);
 }
 

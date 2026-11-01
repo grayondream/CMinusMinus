@@ -387,6 +387,24 @@ TEST_F(StringE2E, DoubleDestroySafe) {
     )", "str21.c"), 0);
 }
 
+TEST_F(StringE2E, DataIsNulTerminatedForLibcInterop) {
+    // string.data is handed to C APIs (getenv/fopen/strlen). Every mutation
+    // path must keep the implicit terminator even though len/cap track bytes.
+    EXPECT_EQ(runSource(R"(
+        int32 main() {
+            string s = string.new("hi");
+            if (s.data[2] != 0) { return 1; }
+            s.append("abc");
+            if (s.data[5] != 0) { return 2; }
+            s.push('!');
+            if (s.data[6] != 0) { return 3; }
+            if (s.data[0] != 'h' || s.data[4] != 'c' || s.data[5] != '!') { return 4; }
+            s.destroy();
+            return 0;
+        }
+    )", "str23.c"), 0);
+}
+
 TEST_F(StringE2E, EmptyStringInvariants) {
     // 空串：len 0、cap >= 1（ptr 保证非空，str→char* 视图安全）。
     EXPECT_EQ(runSource(R"(

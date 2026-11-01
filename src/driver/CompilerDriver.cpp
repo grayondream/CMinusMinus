@@ -29,6 +29,33 @@
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/Config/llvm-config.h"
 
+static void appendStdLibDirs(std::vector<std::string>& dirs) {
+    auto add = [&](const std::filesystem::path& p) {
+        if (p.empty()) return;
+        std::error_code ec;
+        if (!std::filesystem::is_directory(p, ec)) return;
+        std::string s = p.string();
+        for (const auto& existing : dirs) {
+            if (existing == s) return;
+        }
+        dirs.push_back(std::move(s));
+    };
+    if (const char* env = std::getenv("SMC_STD_DIR")) add(env);
+#ifdef STD_DIR
+    add(STD_DIR);
+#endif
+#ifdef SMC_INSTALL_STD_DIR
+    add(SMC_INSTALL_STD_DIR);
+#endif
+    std::error_code ec;
+    auto exe = std::filesystem::read_symlink("/proc/self/exe", ec);
+    if (!ec) {
+        auto base = exe.parent_path();
+        add(base / ".." / "share" / "smc" / "libs");
+        add(base / ".." / "lib" / "smc" / "libs");
+    }
+}
+
 static std::string getHostTargetTriple() {
     return llvm::sys::getDefaultTargetTriple();
 }
@@ -268,9 +295,7 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
         for (const auto& dir : modulePaths) {
             paths.dirs.push_back(dir);
         }
-#ifdef STD_DIR
-        paths.dirs.push_back(STD_DIR);
-#endif
+        appendStdLibDirs(paths.dirs);
         auto specs = smc::collectImportSpecifiers(tokens);
         smc::preloadImports(specs, importerDir, paths, loadedModules, importedDecls, importErrors);
         if (!importErrors.empty()) {
@@ -342,18 +367,22 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
         return 0;
     }
 
-    // Inject the built-in std.c libc binding layer (MOD-09 / STD-23) before
-    // semantic analysis so its declarations precede user code. Prefer the
-    // on-disk module (libs/std/c.smc), falling back to the embedded copy.
+    // Inject std.c (MOD-09 / STD-23) before semantic analysis so its
+    // declarations precede user code. The binding layer is a standard-library
+    // file (libs/std/c.smc), never compiler-embedded source.
     if (usePrelude) {
         std::vector<std::string> stdDirs;
-#ifdef STD_DIR
-        stdDirs.push_back(STD_DIR);
-#endif
         for (const auto& dir : modulePaths) {
             stdDirs.push_back(dir);
         }
-        if (auto prelude = smc::parseStdCPrelude(smc::loadStdCPrelude(stdDirs), "<std.c>")) {
+        appendStdLibDirs(stdDirs);
+        std::string preludeSource = smc::loadStdCPrelude(stdDirs);
+        if (preludeSource.empty()) {
+            std::cerr << "error: standard library not found (expected <std>/c.smc); "
+                         "install the stdlib or pass -M, or use --no-prelude\n";
+            return 1;
+        }
+        if (auto prelude = smc::parseStdCPrelude(preludeSource, "<std.c>")) {
             smc::prependDeclarations(*ast, *prelude);
         }
     }
@@ -423,8 +452,45 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
         return 1;
     }
 
+    // Link user-requested -l/-L and the bundled mimalloc allocator. The
+    // allocator is placed after the generated object and user libraries so the
+    // static archive can satisfy malloc/free before libc is searched.
+    std::vector<std::string> linkLibs = libs;
+    std::vector<std::string> linkPaths = libPaths;
+    auto addMimalloc = [&](const std::string& dir) {
+        std::error_code ec;
+        if (!std::filesystem::is_regular_file(
+                std::filesystem::path(dir) / "libmimalloc.a", ec)) {
+            return false;
+        }
+        for (const auto& p : linkPaths) {
+            if (p == dir) return true;
+        }
+        linkPaths.push_back(dir);
+        return true;
+    };
+    bool haveMimalloc = false;
+#ifdef MIMALLOC_LIB_DIR
+    haveMimalloc = addMimalloc(MIMALLOC_LIB_DIR);
+#endif
+#ifdef SMC_INSTALL_MIMALLOC_DIR
+    if (!haveMimalloc) haveMimalloc = addMimalloc(SMC_INSTALL_MIMALLOC_DIR);
+#endif
+    if (!haveMimalloc) {
+        std::error_code ec;
+        auto exe = std::filesystem::read_symlink("/proc/self/exe", ec);
+        if (!ec) {
+            auto base = exe.parent_path();
+            haveMimalloc = addMimalloc((base / ".." / "lib").string()) ||
+                           addMimalloc((base / ".." / "lib64").string());
+        }
+    }
+    if (haveMimalloc) linkLibs.push_back("mimalloc");
+    // std.math binds libm; without this the documented module fails to link.
+    linkLibs.push_back("m");
+
     Linker linker;
-    int ret = linker.link({objectPath}, outputFile);
+    int ret = linker.link({objectPath}, outputFile, linkLibs, linkPaths);
     if (ret != 0) {
         LOGE("linker failed with exit code {}", ret);
         return ret;

@@ -1177,9 +1177,11 @@ llvm::Value* CallExprAST::codegen(CodegenContext& ctx) {
             llvm::Value* total = llvm::ConstantInt::get(i64Ty, 0);
             for (auto& chunk : chunks)
                 total = builder.CreateAdd(total, chunk.second, "fmt.t");
+            llvm::Value* total1 = builder.CreateAdd(
+                total, llvm::ConstantInt::get(i64Ty, 1), "fmt.total1");
             llvm::Value* cap = builder.CreateSelect(
-                builder.CreateICmpUGT(total, llvm::ConstantInt::get(i64Ty, 64)),
-                total, llvm::ConstantInt::get(i64Ty, 64), "fmt.cap");
+                builder.CreateICmpUGT(total1, llvm::ConstantInt::get(i64Ty, 64)),
+                total1, llvm::ConstantInt::get(i64Ty, 64), "fmt.cap");
             llvm::Value* start = builder.CreateCall(mallocFn, {cap}, "fmt.ptr");
             // NOTE: never chain on memcpy's return — LLVM lowers calls to the
             // memcpy libfunc to an intrinsic DAG node whose return value is
@@ -1191,6 +1193,8 @@ llvm::Value* CallExprAST::codegen(CodegenContext& ctx) {
                 builder.CreateCall(memcpyFn, {dst, chunk.first, chunk.second});
                 off = builder.CreateAdd(off, chunk.second, "fmt.off");
             }
+            llvm::Value* end = builder.CreateGEP(i8Ty, start, total, "fmt.end");
+            builder.CreateStore(llvm::ConstantInt::get(i8Ty, 0), end);
             llvm::Value* out = llvm::Constant::getNullValue(strLLVM);
             out = builder.CreateInsertValue(out, start, {0});
             out = builder.CreateInsertValue(out, total, {1});
@@ -3361,7 +3365,8 @@ static llvm::Value* codegenStringMethod(CodegenContext& ctx, MethodCallExprAST& 
             return builder.CreateCall(cntFn, {ptr, len}, "string.chars");
         }
         case BuiltinMethod::StringNew: {
-            // cap = max(len, 1); malloc(cap); memcpy(ptr, s.ptr, len).
+            // cap = max(len + 1, 1); the extra byte is the C terminator that
+            // makes string.data safe to hand to libc APIs.
             auto savedIP = builder.saveIP();
             auto mallocFn = declareLibcFn(ctx, "malloc", ptrTy, {i64Ty});
             auto memcpyFn = declareLibcFn(ctx, "memcpy", ptrTy, {ptrTy, ptrTy, i64Ty});
@@ -3371,10 +3376,13 @@ static llvm::Value* codegenStringMethod(CodegenContext& ctx, MethodCallExprAST& 
             llvm::Value* sptr = builder.CreateExtractValue(s, 0, "new.sptr");
             llvm::Value* slen = builder.CreateExtractValue(s, 1, "new.slen");
             llvm::Value* one = llvm::ConstantInt::get(i64Ty, 1);
-            llvm::Value* cap = builder.CreateSelect(
-                builder.CreateICmpUGT(slen, one, "new.gt1"), slen, one, "new.cap");
+            llvm::Value* cap = builder.CreateAdd(slen, one, "new.len1");
+            cap = builder.CreateSelect(
+                builder.CreateICmpUGT(cap, one, "new.gt1"), cap, one, "new.cap");
             llvm::Value* ptr = builder.CreateCall(mallocFn, {cap}, "new.ptr");
             builder.CreateCall(memcpyFn, {ptr, sptr, slen});
+            llvm::Value* end = builder.CreateGEP(i8Ty, ptr, slen, "new.end");
+            builder.CreateStore(llvm::ConstantInt::get(i8Ty, 0), end);
             llvm::Value* v = llvm::Constant::getNullValue(strLLVM);
             v = builder.CreateInsertValue(v, ptr, {0});
             v = builder.CreateInsertValue(v, slen, {1});
@@ -3410,18 +3418,21 @@ static llvm::Value* codegenStringMethod(CodegenContext& ctx, MethodCallExprAST& 
             llvm::Value* sptr = builder.CreateExtractValue(s, 0, "append.sptr");
             llvm::Value* slen = builder.CreateExtractValue(s, 1, "append.slen");
             llvm::Value* need = builder.CreateAdd(len, slen, "append.need");
+            // Reserve one byte for the implicit NUL terminator (libc interop).
+            llvm::Value* need1 = builder.CreateAdd(
+                need, llvm::ConstantInt::get(i64Ty, 1), "append.need1");
 
             llvm::Function* fn = builder.GetInsertBlock()->getParent();
             llvm::BasicBlock* growBB = llvm::BasicBlock::Create(c, "append.grow", fn);
             llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(c, "append.merge", fn);
-            llvm::Value* mustGrow = builder.CreateICmpUGT(need, cap, "append.grow?");
+            llvm::Value* mustGrow = builder.CreateICmpUGT(need1, cap, "append.grow?");
             llvm::BasicBlock* condBB = builder.GetInsertBlock();
             builder.CreateCondBr(mustGrow, growBB, mergeBB);
 
             builder.SetInsertPoint(growBB);
             llvm::Value* doubled = builder.CreateMul(cap, llvm::ConstantInt::get(i64Ty, 2), "append.dbl");
             llvm::Value* grown = builder.CreateSelect(
-                builder.CreateICmpUGT(doubled, need, "append.dbl?"), doubled, need, "append.cap2");
+                builder.CreateICmpUGT(doubled, need1, "append.dbl?"), doubled, need1, "append.cap2");
             llvm::Value* rptr = builder.CreateCall(reallocFn, {ptr, grown}, "append.rptr");
             builder.CreateBr(mergeBB);
 
@@ -3445,6 +3456,8 @@ static llvm::Value* codegenStringMethod(CodegenContext& ctx, MethodCallExprAST& 
                 builder.CreateICmpULT(sptr, capEnd, "append.alias2"), "append.alias");
             llvm::Value* src = builder.CreateSelect(selfAlias, ptr2, sptr, "append.src");
             builder.CreateCall(memmoveFn, {dst, src, slen});
+            llvm::Value* end = builder.CreateGEP(i8Ty, ptr2, need, "append.end");
+            builder.CreateStore(llvm::ConstantInt::get(i8Ty, 0), end);
             llvm::Value* v2 = llvm::Constant::getNullValue(strLLVM);
             v2 = builder.CreateInsertValue(v2, ptr2, {0});
             v2 = builder.CreateInsertValue(v2, need, {1});
@@ -3468,18 +3481,20 @@ static llvm::Value* codegenStringMethod(CodegenContext& ctx, MethodCallExprAST& 
             llvm::Value* len = builder.CreateExtractValue(v, 1, "push.len");
             llvm::Value* cap = builder.CreateExtractValue(v, 2, "push.cap");
             llvm::Value* need = builder.CreateAdd(len, llvm::ConstantInt::get(i64Ty, 1), "push.need");
+            llvm::Value* need1 = builder.CreateAdd(
+                need, llvm::ConstantInt::get(i64Ty, 1), "push.need1");
 
             llvm::Function* fn = builder.GetInsertBlock()->getParent();
             llvm::BasicBlock* growBB = llvm::BasicBlock::Create(c, "push.grow", fn);
             llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(c, "push.merge", fn);
-            llvm::Value* mustGrow = builder.CreateICmpUGT(need, cap, "push.grow?");
+            llvm::Value* mustGrow = builder.CreateICmpUGT(need1, cap, "push.grow?");
             llvm::BasicBlock* condBB = builder.GetInsertBlock();
             builder.CreateCondBr(mustGrow, growBB, mergeBB);
 
             builder.SetInsertPoint(growBB);
             llvm::Value* doubled = builder.CreateMul(cap, llvm::ConstantInt::get(i64Ty, 2), "push.dbl");
             llvm::Value* grown = builder.CreateSelect(
-                builder.CreateICmpUGT(doubled, need, "push.dbl?"), doubled, need, "push.cap2");
+                builder.CreateICmpUGT(doubled, need1, "push.dbl?"), doubled, need1, "push.cap2");
             llvm::Value* rptr = builder.CreateCall(reallocFn, {ptr, grown}, "push.rptr");
             builder.CreateBr(mergeBB);
 
@@ -3493,6 +3508,8 @@ static llvm::Value* codegenStringMethod(CodegenContext& ctx, MethodCallExprAST& 
 
             llvm::Value* dst = builder.CreateGEP(i8Ty, ptr2, len, "push.dst");
             builder.CreateStore(ch, dst);
+            llvm::Value* end = builder.CreateGEP(i8Ty, ptr2, need, "push.end");
+            builder.CreateStore(llvm::ConstantInt::get(i8Ty, 0), end);
             llvm::Value* v2 = llvm::Constant::getNullValue(strLLVM);
             v2 = builder.CreateInsertValue(v2, ptr2, {0});
             v2 = builder.CreateInsertValue(v2, need, {1});

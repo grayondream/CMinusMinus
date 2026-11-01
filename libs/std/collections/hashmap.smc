@@ -1,0 +1,220 @@
+// ===== std.collections.hashmap — HashMap<K,V> (open addressing) =====
+module std.collections.hashmap;
+
+import std.mem;
+
+export namespace std {
+
+// ===== HashMap<K,V> (open addressing, caller-supplied hash/equality) =====
+// States: 0 empty, 1 live, 2 tombstone. Keys/values must be relocatable.
+// Caller keeps keys alive for the map's lifetime (string_view keys are fine;
+// owning `string` keys require element cleanup before destroy()).
+
+template<typename K, typename V> struct HashMap {
+    K* keys;
+    V* values;
+    uint8* states;
+    usize cap;
+    usize len;
+    usize tombstones;
+    usize (*hash_fn)(K);
+    bool (*eq_fn)(K, K);
+
+    void init(usize (*hash)(K), bool (*eq)(K, K)) {
+        this->keys = null;
+        this->values = null;
+        this->states = null;
+        this->cap = 0;
+        this->len = 0;
+        this->tombstones = 0;
+        this->hash_fn = hash;
+        this->eq_fn = eq;
+    }
+
+    void destroy() {
+        if (this->keys != null) {
+            std::dealloc(this->keys);
+            std::dealloc(this->values);
+            std::dealloc(this->states);
+        }
+        this->keys = null;
+        this->values = null;
+        this->states = null;
+        this->cap = 0;
+        this->len = 0;
+        this->tombstones = 0;
+    }
+
+    bool is_empty() {
+        return this->len == 0;
+    }
+
+    usize size() {
+        return this->len;
+    }
+
+    usize bucket_count() {
+        return this->cap;
+    }
+
+    bool needs_grow() {
+        return (this->len + 1) * 10 >=
+               this->cap * 7;
+    }
+
+    // Allocate a fresh table and reinsert live entries.
+    bool rehash(usize newCap) {
+        K* oldKeys = this->keys;
+        V* oldValues = this->values;
+        uint8* oldStates = this->states;
+        usize oldCap = this->cap;
+
+        K* newKeys = (K*)std::alloc_zeroed(newCap, compile_time.size_of(K));
+        V* newValues = (V*)std::alloc_zeroed(newCap, compile_time.size_of(V));
+        uint8* newStates = (uint8*)std::alloc_zeroed(newCap, compile_time.size_of(uint8));
+        if (newKeys == null || newValues == null || newStates == null) {
+            if (newKeys != null) std::dealloc(newKeys);
+            if (newValues != null) std::dealloc(newValues);
+            if (newStates != null) std::dealloc(newStates);
+            return false;
+        }
+
+        this->keys = newKeys;
+        this->values = newValues;
+        this->states = newStates;
+        this->cap = newCap;
+        this->len = 0;
+        this->tombstones = 0;
+
+        usize i = 0;
+        while (i < oldCap) {
+            if (oldStates[i] == 1) {
+                this->put_raw(oldKeys[i], oldValues[i]);
+            }
+            i = i + 1;
+        }
+        if (oldKeys != null) {
+            std::dealloc(oldKeys);
+            std::dealloc(oldValues);
+            std::dealloc(oldStates);
+        }
+        return true;
+    }
+
+    // Insert/assign without growing (called by rehash and put).
+    void put_raw(K key, V value) {
+        usize (*hf)(K) = this->hash_fn;
+        bool (*ef)(K, K) = this->eq_fn;
+        if (hf == null || ef == null) return;
+        usize at = hf(key) % this->cap;
+        usize probes = 0;
+        while (probes < this->cap) {
+            uint8 state = this->states[at];
+            if (state == 1 && ef(this->keys[at], key)) {
+                this->values[at] = value;
+                return;
+            }
+            if (state == 0 || state == 2) {
+                this->keys[at] = key;
+                this->values[at] = value;
+                if (state == 2) {
+                    this->tombstones = this->tombstones - 1;
+                }
+                this->states[at] = 1;
+                this->len = this->len + 1;
+                return;
+            }
+            at = (at + 1) % this->cap;
+            probes = probes + 1;
+        }
+    }
+
+    bool put(K key, V value) {
+        if (this->cap == 0) {
+            if (!this->rehash(8 * 2)) {
+                return false;
+            }
+        } else if (this->needs_grow()) {
+            usize next = this->cap * 2;
+            if (!this->rehash(next)) {
+                return false;
+            }
+        }
+        this->put_raw(key, value);
+        return true;
+    }
+
+    V* get_ptr(K key) {
+        if (this->cap == 0) {
+            return null;
+        }
+        usize (*hf)(K) = this->hash_fn;
+        bool (*ef)(K, K) = this->eq_fn;
+        if (hf == null || ef == null) return null;
+        usize at = hf(key) % this->cap;
+        usize probes = 0;
+        while (probes < this->cap) {
+            uint8 state = this->states[at];
+            if (state == 0) {
+                return null;
+            }
+            if (state == 1 && ef(this->keys[at], key)) {
+                return &this->values[at];
+            }
+            at = (at + 1) % this->cap;
+            probes = probes + 1;
+        }
+        return null;
+    }
+
+    bool get(K key, V* out) {
+        V* slot = this->get_ptr(key);
+        if (slot == null) {
+            return false;
+        }
+        if (out != null) {
+            *out = *slot;
+        }
+        return true;
+    }
+
+    bool contains(K key) {
+        return this->get_ptr(key) != null;
+    }
+
+    bool remove(K key) {
+        if (this->cap == 0) {
+            return false;
+        }
+        usize (*hf)(K) = this->hash_fn;
+        bool (*ef)(K, K) = this->eq_fn;
+        if (hf == null || ef == null) return false;
+        usize at = hf(key) % this->cap;
+        usize probes = 0;
+        while (probes < this->cap) {
+            uint8 state = this->states[at];
+            if (state == 0) {
+                return false;
+            }
+            if (state == 1 && ef(this->keys[at], key)) {
+                this->states[at] = 2;
+                this->len = this->len - 1;
+                this->tombstones = this->tombstones + 1;
+                return true;
+            }
+            at = (at + 1) % this->cap;
+            probes = probes + 1;
+        }
+        return false;
+    }
+
+    void clear() {
+        if (this->states != null) {
+            std::bytes_set(this->states, 0, this->cap * compile_time.size_of(uint8));
+        }
+        this->len = 0;
+        this->tombstones = 0;
+    }
+};
+
+} // namespace std

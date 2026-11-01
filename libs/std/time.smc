@@ -1,0 +1,35 @@
+// ===== std.time — wall-clock and CPU time helpers =====
+// Import with `import std.time;`. Values are Unix seconds (wall clock) and
+// process CPU seconds. No timezone/calendar formatting is provided.
+module std.time;
+
+extern int64 time(int64* tloc);
+extern int64 clock();
+extern int32 usleep(uint32 usec);
+
+export namespace std {
+
+constexpr int64 CLOCKS_PER_SEC = 1000000;
+
+int64 unix_seconds() {
+    return time(null);
+}
+
+// Coarse wall-clock milliseconds (second resolution).
+int64 unix_millis() {
+    return time(null) * 1000;
+}
+
+int64 process_ticks() {
+    return clock();
+}
+
+float64 process_seconds() {
+    return (float64)clock() / (float64)CLOCKS_PER_SEC;
+}
+
+void sleep_ms(uint32 ms) {
+    usleep(ms * 1000);
+}
+
+} // namespace std

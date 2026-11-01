@@ -357,6 +357,50 @@ TEST_F(GenericE2E, NestedEnumInTemplateClass) {
     )", "gen18.c"), 7);
 }
 
+TEST_F(GenericE2E, NamespaceQualifiedTemplateLookup) {
+    // 回归：模板注册表使用 Parser 的扁平键（`NsTpl_Box`），而用户写
+    // `NsTpl::Box<int32>`。限定名与命名空间内非限定名必须命中同一模板。
+    EXPECT_EQ(runSource(R"(
+        namespace NsTpl {
+            template<typename T> struct Box { T value; };
+            template<typename T> T id(T x) { return x; }
+        }
+        int32 main() {
+            NsTpl::Box<int32> b;
+            b.value = 9;
+            if (NsTpl::id<int32>(b.value) != 9) return 1;
+            return 0;
+        }
+    )", "gen21.c"), 0);
+}
+
+TEST_F(GenericE2E, BoolLiteralInTemplateMethodBody) {
+    // 回归：模板实例化必须保留 true/false 表达式。此前克隆器未覆盖
+    // BoolLiteralExprAST，return true/false 被当成裸 return，非 void 方法
+    // 全部被误诊为 "must return a value"。
+    EXPECT_EQ(runSource(R"(
+        template<typename T> struct FlagBox {
+            T value;
+            bool always_true() { return true; }
+            bool always_false() { return false; }
+            bool positive() {
+                if (this->value > 0) { return true; }
+                return false;
+            }
+        };
+        int32 main() {
+            FlagBox<int32> b;
+            b.value = 3;
+            if (!b.always_true()) return 1;
+            if (b.always_false()) return 2;
+            if (!b.positive()) return 3;
+            b.value = -1;
+            if (b.positive()) return 4;
+            return 0;
+        }
+    )", "gen20.c"), 0);
+}
+
 TEST_F(GenericE2E, SelfValueFieldDiagnosed) {
     // I3：非模板类值语义自引用（A x）须诊断而非编译器崩溃。
     Lexer lexer("gen19.c", "class BadA { BadA x; };\nint32 main() { return 0; }");

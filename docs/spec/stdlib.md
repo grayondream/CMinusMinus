@@ -126,7 +126,7 @@ namespace 前缀，`namespace std { void abort() { abort(); } }` 会自递归，
 | `s.sub(begin, end) -> string_view` | 字节区间零拷贝视图 `{ptr+begin, end-begin}` | 视图（见下） |
 | `s[begin:end]` | 范围切片语法；对 `string_view`/`string` 得 `string_view`，对数组/切片得 `T[]`；越界 panic | 视图 |
 | `s.len` / `s.char_count` | 属性形式；`len()`/`char_count()` 保留为别名 | — |
-| `string.data` | 拥有型缓冲裸指针（可写，生命周期同 `string`） | 借用 |
+| `string.data` | 拥有型缓冲裸指针（可写，保证 `data[len] == 0`，生命周期同 `string`） | 借用 |
 | `string_view.data` | 只读视图指针（`const char*`） | 借用 |
 | `split(s, sep) -> string_view[]` | 贪心非重叠分割；元素为源数据视图；无分隔符 → 全串 1 段 | 数组 malloc（见下） |
 | `split_destroy(parts)` | 释放 split 的段数组（不触碰元素） | — |
@@ -153,9 +153,10 @@ namespace 前缀，`namespace std { void abort() { abort(); } }` 会自递归，
 **string 拥有型值（I4 收口，2026-10-11）**：赋值/初始化/传参/返回深拷贝活值、移动新鲜值
 （`string.new`/函数调用 rvalue）、赋值自动释放旧缓冲——`string` 是 C++ `std::string` 式拥有值，
 `string_view`（原 `str`）是非拥有视图。见 `docs/superpowers/specs/2026-10-11-string-ownership-design.md`。
-独立 `StrBuilder` 类挂账：**class 无法跨模块导出**——类型名在 parse 期注册、先于 import
-处理（`std::StrBuilder` 与模块级 `export class` 均不可见）；语言侧修复后另行落地。
-不做（spec §8）：字典序 `<`/`>`、`to_lower`/`to_upper`、`replace`。
+独立 `StrBuilder` 类型暂不提供；`string` 自身即 builder，构造路径统一为
+`string.new("")` + `append`/`push`。模块级 `export struct/class/template` 已可用
+（容器库即建立在此之上），因此如需独立 builder 可直接在库层实现，无需改编译器。
+不做（spec §8）：字典序 `<`/`>`、`replace`；ASCII 大小写转换见 §16 `std.ascii`。
 
 ## 10. `format` 与 FMT-08 规格集（P1-09 / STD-11）`[impl]`
 
@@ -197,55 +198,63 @@ type  := 'x' | 'X' | 'o' | 'b' | 'f' | 'e' | 's'
 
 ## 11. `std.mem`（P1-09 / STD-05）`[impl]`
 
-`import std.mem;` 后用 `std::alloc(...)` 等。纯函数层（范围 a，2026-10-17）：
-分配失败返回 `null`（C 语义，调用方检查），不抛异常不 abort。模块自包含
-extern 声明（io.smc 先例）。
+`import std.mem;` 后用 `std::alloc(...)` 等。分配失败返回 `null`（C 语义，调用方
+检查），不抛异常不 abort。**后端固定为 mimalloc**（`thirdparty/mimalloc`，静态链接，
+`MI_OVERRIDE=ON`）；`std::backend_name()` 返回 `"mimalloc"`。模块自包含 extern 声明。
 
 | 函数 | 语义 |
 |---|---|
-| `void* alloc(usize size)` | malloc 包装 |
-| `void* alloc_zeroed(usize count, usize size)` | calloc 包装（零初始化） |
-| `void* resize(void* p, usize size)` | realloc 包装（保内容，失败 null 原指针有效） |
-| `void  dealloc(void* p)` | free 包装 |
+| `void* alloc(usize size)` | `mi_malloc` |
+| `void* alloc_zeroed(usize count, usize size)` | `mi_calloc`（零初始化） |
+| `void* resize(void* p, usize size)` | `mi_realloc`（保内容，失败 null 原指针有效） |
+| `void  dealloc(void* p)` | `mi_free` |
+| `void* bytes_copy/move/set/compare(...)` | libc 字节操作（STD-03，不调元素析构） |
 | `usize align_up(usize n, usize align)` | 向上取整到 2 的幂倍数 |
 | `usize align_down(usize n, usize align)` | 向下取整到 2 的幂倍数 |
 | `bool is_aligned(void* p, usize align)` | 指针按 2 的幂对齐检测 |
-| `void* aligned_alloc(usize align, usize size)` | posix_memalign 包装（失败 null） |
-| `void  aligned_free(void* p)` | = free |
+| `void* aligned_alloc(usize align, usize size)` | `mi_malloc_aligned`（失败 null） |
+| `void  aligned_free(void* p)` | `mi_free` |
 
 `align_up/down/is_aligned` 的 `align` 须为 2 的幂（非 2 的幂行为未定义）；
-`aligned_alloc` 的 `align` 须为 2 的幂且为 `sizeof(void*)` 的倍数（POSIX 要求，违反返回 null）。
+`aligned_alloc` 的 `align` 必须为 2 的幂（违反返回 null）。
 
-### 11.1 Allocator / Arena / Pool 接口草案 `[plan]`（挂账）
+### 11.1 Allocator / Arena / Pool `[impl]`
 
-**阻塞原因**：语言层「类型无法跨模块导出」（parse 期类型名注册先于 import 处理，
-`std::T` 不可解析；`template<typename T>` 亦不可见）——与 StrBuilder 同因
-（见 §9.2 挂账）。语言层修复（模块导出类型/模板）后按此蓝本实现：
+`libs/std/mem.smc` 导出以下类型（模块导出类型已可用）：
 
 ```smc
-// Allocator：函数指针字段 struct，可选上下文指针。
 struct Allocator {
     void* (*alloc_fn)(void* ctx, usize size);
     void* (*resize_fn)(void* ctx, void* p, usize size);
     void  (*free_fn)(void* ctx, void* p);
-    void* ctx;   // 可空
+    void* ctx;
 };
+Allocator allocator_default();
+void* allocator_alloc(Allocator*, usize);
+void* allocator_resize(Allocator*, void*, usize);
+void  allocator_free(Allocator*, void*);
 
-// Arena：连续区 + 游标（栈式分配，一次性释放）。
-struct Arena {
-    void*  base;
-    usize  cap;
-    usize  used;
-};
-// arena_init(base, cap) / arena_alloc(&arena, size, align) / arena_reset / arena_destroy
+struct Arena { void* base; usize cap; usize used; };
+void  arena_init(Arena*, void* base, usize cap);
+void* arena_alloc(Arena*, usize size, usize align); // OOB -> null
+usize arena_remaining(Arena*);
+void  arena_reset(Arena*);
+Arena arena_create(usize cap);   // mimalloc-backed
+void  arena_destroy(Arena*);
 
-// Pool：固定块大小链表。
-struct Pool {
-    void*  head;      // 空闲块链表
-    usize  block_size;
-};
-// pool_init(&pool, block_size) / pool_alloc / pool_free / pool_destroy
+struct Pool { void* free_list; usize block_size; usize block_align; };
+void  pool_init(Pool*, usize block_size, usize align);
+void* pool_alloc(Pool*);
+void  pool_free(Pool*, void* block);
+void  pool_destroy(Pool*);       // outstanding blocks must be returned first
 ```
+
+`Arena` 是调用方提供连续存储的 bump allocator；`arena_create` 便捷地使用
+mimalloc 分配底层区。`Pool` 是固定大小自由链表，`pool_destroy` 只释放当前
+自由链表上的块——未归还的块由调用方负责。
+
+`std.mem` 在模块级使用 `compile_time.static_assert` 校验
+`size_of(usize) == target.pointer_width / 8`。
 
 ## 12. `std.bit`（P1-09 / STD-14）`[impl]`
 
@@ -269,8 +278,8 @@ struct Pool {
 
 ## 13. `std.math`（P1-09 / STD-13）`[impl]`
 
-`import std.math;` 后用 `std::sqrt(...)` 等。libc 绑定（**链接需 `-lm`**；
-JIT 经进程符号解析，CLI 用 `cc -lm`）+ `constexpr` 常量 + 位级浮点分类。
+`import std.math;` 后用 `std::sqrt(...)` 等。libc 绑定（驱动自动追加 `-lm`；
+JIT 经进程符号解析）+ `constexpr` 常量 + 位级浮点分类。
 
 | 函数/常量 | 语义 |
 |---|---|
@@ -285,10 +294,79 @@ JIT 经进程符号解析，CLI 用 `cc -lm`）+ `constexpr` 常量 + 位级浮�
 **C 符号名说明**：namespace 内 extern C 函数保持 C 裸符号名（`std::sqrt` 链接
 到 libm 的 `sqrt`，非 `std_sqrt_float64`）——namespace 前缀仅作访问语法。
 
-## 14. 待办 `[plan]`
+## 14. `std.collections`（STD-06~08）`[impl]`
 
-- `std.mem` 的 Allocator/Arena/Pool（STD-05，随语言层「模块导出类型」）、
-  `std.collections`（STD-06~08）、`std.string`（STD-10）、
-  `std.format`（STD-11）、`std.fs`（STD-19）等。
-- `assert` 的释放模式（Release 关闭）若需要，将随 DEC-06/07（边界/溢出检查策略）
-  一并裁决；当前**始终启用**。
+容器全部实现在 `libs/std/collections/`，**不在编译器内**；每个容器是独立模块，
+可单独导入，也可通过汇总模块一次导入：
+
+- `import std.collections;` → `Vec`/`Deque`/`HashMap`/`HashSet` 全部可见。
+- `import std.collections.vec;`（`deque`/`hashmap`/`hashset` 同理）→ 仅该容器。
+
+使用 C 语义：显式 `init()`/`destroy()`，容器不自动析构元素。元素存储按字节搬迁，
+因此元素类型须可重定位（无内部自指针）；拥有型元素（如 `string`）的清理由调用方负责。
+
+| 类型 | 主要 API |
+|---|---|
+| `Vec<T>` | `init/destroy/reserve/push/pop/get/get_ptr/set/clear/insert/remove/swap/contains/index_of/is_empty/capacity` |
+| `Deque<T>` | `init/destroy/push_front/push_back/pop_front/pop_back/get/get_ptr/set/clear/is_empty/capacity` |
+| `HashMap<K,V>` | `init(hash,eq)/destroy/put/get/get_ptr/contains/remove/clear/size/is_empty/bucket_count` |
+| `HashSet<K>` | `init(hash,eq)/destroy/insert/contains/remove/clear/size/is_empty` |
+
+- `Vec`/`Deque` 容量按 8 起步翻倍；`reserve` 失败保留旧缓冲并返回 `false`。
+- `HashMap` 使用开放寻址（0 空/1 活/2 墓碑），负载因子 0.7；扩容重新插入。
+- 键/值/元素不自动销毁：`string` 等拥有型元素须在 `destroy()` 前自行清理。
+- 哈希/相等通过函数指针参数注入（无 trait）；`std.hash` 提供整数与 `string_view` 适配器。
+- 汇总模块在模块级使用 `compile_time.static_assert` 校验 `uint8` 状态数组的字节宽度；
+  各容器模块只依赖 `std.mem`。
+
+## 15. `std.hash` / `std.sort`（STD-16/17）`[impl]`
+
+`std.hash`：FNV-1a（`hash_bytes`/`hash_string`）、splitmix64（`hash_u64`/`hash_i64`/
+`hash_i32`/`hash_u32`）、`hash_combine`，以及 `hash_key_*`/`equal_*` 回调适配器。
+
+`std.sort`：`sort<T>(T* data, usize len, int32 (*cmp)(T,T))`（稳定插入排序，原地、
+无分配）、`sort_slice<T>(T[], cmp)`、`is_sorted`、`binary_search`（返回索引或 -1）。
+比较器约定与 C `qsort` 一致：`<0/0/>0`。
+
+## 16. `std.parse` / `std.ascii` / `std.path`（STD-15/18）`[impl]`
+
+`std.parse`：`parse_i64/parse_u64`（2..36 进制、可选 `0x/0b/0o` 前缀）、
+`parse_i32`、`parse_bool`、`parse_float64`、`to_string_i64/u64/i32`、
+`to_string_float64`。解析器用 out 参数 + `bool` 成功标志，不抛异常。
+
+`std.ascii`：`is_alpha/is_digit/is_alnum/is_space/is_upper/is_lower/is_hex_digit`、
+`to_lower/to_upper/to_digit`。仅 ASCII；Unicode 文本走 `std.string` 的 UTF-8 原语。
+
+`std.path`：`separator/basename/dirname/extension/stem/is_absolute/join`。
+纯词法操作，`join` 返回新分配的 `string`。分隔符/绝对路径判断通过
+`compile_time.if (compile_time.target.os == "windows")` 在编译期选择分支。
+
+## 17. `std.fs` / `std.time` / `std.os` / `std.testing`（STD-19~22）`[impl]`
+
+- `std.fs`：`exists/is_file/file_size/read_file/write_file/append_file/remove_file/
+  rename_path/create_dir/current_dir`。路径 `string_view` 内部转为 NUL 终止的
+  `string` 再交给 libc；`read_file` 返回拥有型 `string`。
+- `std.time`：`unix_seconds/unix_millis/process_ticks/process_seconds/sleep_ms`。
+- `std.os`：`env_get/env_set/env_unset/run/pid`。`run` 直接把命令交给 `system`，
+  不做 shell 转义；调用方负责命令字符串安全。
+- `std.testing`：`fail/expect/expect_eq_i64/expect_eq_str`。失败写 stderr 后 `abort`
+  （与语言 `assert`/`panic` 同一不可恢复策略）。
+
+## 18. 内建与标准库的边界 `[impl]`
+
+- `print`/`println`/`format`/`assert`/`panic` 仍是**语言内建**：它们需要调用点
+  的格式串/源码位置，且无预处理器；用户同名声明优先。
+- `string`/`string_view`/`optional`/`result`/`slice` 是**语言类型**，其底层表示与
+  所有权规则由编译器维护；高层组合 API 在 `libs/std/string.smc`。
+- `std.c` 已完全移至 `libs/std/c.smc`，编译器**不再内嵌** std.c 文本；缺失标准库
+  安装时驱动会显式报错（`--no-prelude` 可关闭注入）。
+- 容器、哈希、排序、解析、路径、文件、时间、环境、测试辅助全部在 `libs/std/`。
+
+## 19. 待办 `[plan]`
+
+- `std.mem`：placement 分配、`AlignedAllocator`/可失败分配策略细化。
+- `std.collections`：`List`/`BTree`、`Vec::shrink_to_fit`、元素析构/清理辅助。
+- `std.unicode`、完整 `std.string` 字典序/`replace`、`std.path::normalize`。
+- `std.fs`：目录遍历、`stat` 元数据、原子写入；`std.os`：argv/进程控制。
+- `std.testing` + `smc test` runner（TOOL-01）。
+- `assert` 的 Release 释放模式若需要，随 DEC-06/07 裁决；当前**始终启用**。

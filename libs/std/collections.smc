@@ -1,0 +1,28 @@
+// ===== std.collections — explicit-ownership containers =====
+// Umbrella module. Every container lives in its own module/file so it can be
+// imported on its own:
+//
+//   import std.collections;          // Vec, Deque, HashMap, HashSet
+//   import std.collections.vec;      // only std::Vec<T>
+//   import std.collections.deque;    // only std::Deque<T>
+//   import std.collections.hashmap;  // only std::HashMap<K,V>
+//   import std.collections.hashset;  // only std::HashSet<K>
+//
+// C semantics: containers never allocate on construction and never destroy
+// element payloads automatically. Call `destroy()` (and, for owning element
+// types such as `string`, destroy live elements first). Storage relocation is a
+// byte move; element types must be relocatable (no interior self-pointers).
+module std.collections;
+
+import std.collections.vec;
+import std.collections.deque;
+import std.collections.hashmap;
+import std.collections.hashset;
+
+export namespace std {
+
+compile_time.static_assert(
+    compile_time.size_of(uint8) == 1,
+    "std.collections: byte-sized state array requires uint8");
+
+} // namespace std

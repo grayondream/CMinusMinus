@@ -1,0 +1,177 @@
+// ===== std.collections.vec — Vec<T> (growable array) =====
+module std.collections.vec;
+
+import std.mem;
+
+export namespace std {
+
+// ===== Vec<T> =====
+
+template<typename T> struct Vec {
+    T* data;
+    usize len;
+    usize cap;
+
+    void init() {
+        this->data = null;
+        this->len = 0;
+        this->cap = 0;
+    }
+
+    void destroy() {
+        if (this->data != null) {
+            std::dealloc(this->data);
+        }
+        this->data = null;
+        this->len = 0;
+        this->cap = 0;
+    }
+
+    bool is_empty() {
+        return this->len == 0;
+    }
+
+    usize capacity() {
+        return this->cap;
+    }
+
+    // Grow to at least `want` elements, preserving bytes. Returns false on
+    // allocation failure; the old buffer remains valid.
+    bool reserve(usize want) {
+        if (want <= this->cap) {
+            return true;
+        }
+        usize nc = this->cap == 0 ? 8 : this->cap;
+        while (nc < want) {
+            if (nc > (~(usize)0) / 2) {
+                nc = want;
+                break;
+            }
+            nc = nc * 2;
+        }
+        T* np = (T*)std::alloc_zeroed(nc, compile_time.size_of(T));
+        if (np == null) {
+            return false;
+        }
+        if (this->data != null && this->len > 0) {
+            std::bytes_copy(np, this->data, this->len * compile_time.size_of(T));
+            std::dealloc(this->data);
+        }
+        this->data = np;
+        this->cap = nc;
+        return true;
+    }
+
+    bool push(T value) {
+        if (!this->reserve(this->len + 1)) {
+            return false;
+        }
+        this->data[this->len] = value;
+        this->len = this->len + 1;
+        return true;
+    }
+
+    bool pop(T* out) {
+        if (this->len == 0) {
+            return false;
+        }
+        this->len = this->len - 1;
+        if (out != null) {
+            *out = this->data[this->len];
+        }
+        return true;
+    }
+
+    T get(usize index) {
+        return this->data[index];
+    }
+
+    T* get_ptr(usize index) {
+        return &this->data[index];
+    }
+
+    void set(usize index, T value) {
+        this->data[index] = value;
+    }
+
+    void clear() {
+        this->len = 0;
+    }
+
+    // Shift bytes right and insert. `index == len` appends.
+    bool insert(usize index, T value) {
+        if (index > this->len) {
+            return false;
+        }
+        if (!this->reserve(this->len + 1)) {
+            return false;
+        }
+        usize n = this->len - index;
+        if (n > 0) {
+            char* base = (char*)this->data;
+            std::bytes_move(base + (index + 1) * compile_time.size_of(T),
+                            base + index * compile_time.size_of(T),
+                            n * compile_time.size_of(T));
+        }
+        this->data[index] = value;
+        this->len = this->len + 1;
+        return true;
+    }
+
+    // Shift bytes left and drop the slot. Returns false if out of range.
+    bool remove(usize index) {
+        if (index >= this->len) {
+            return false;
+        }
+        usize n = this->len - index - 1;
+        if (n > 0) {
+            char* base = (char*)this->data;
+            std::bytes_move(base + index * compile_time.size_of(T),
+                            base + (index + 1) * compile_time.size_of(T),
+                            n * compile_time.size_of(T));
+        }
+        this->len = this->len - 1;
+        std::bytes_set((char*)this->data + this->len * compile_time.size_of(T),
+                       0, compile_time.size_of(T));
+        return true;
+    }
+
+    void swap(usize a, usize b) {
+        if (a == b || a >= this->len || b >= this->len) {
+            return;
+        }
+        T tmp = this->data[a];
+        this->data[a] = this->data[b];
+        this->data[b] = tmp;
+    }
+
+    // Linear scan with a user equality callback.
+    bool contains(T value, bool (*eq)(T, T)) {
+        bool (*fn)(T, T) = eq;
+        if (fn == null) return false;
+        usize i = 0;
+        while (i < this->len) {
+            if (fn(this->data[i], value)) {
+                return true;
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    // Returns index or -1.
+    isize index_of(T value, bool (*eq)(T, T)) {
+        bool (*fn)(T, T) = eq;
+        if (fn == null) return -1;
+        usize i = 0;
+        while (i < this->len) {
+            if (fn(this->data[i], value)) {
+                return (isize)i;
+            }
+            i = i + 1;
+        }
+        return -1;
+    }
+};
+
+} // namespace std

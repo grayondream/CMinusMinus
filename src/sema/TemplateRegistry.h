@@ -17,8 +17,10 @@ public:
     static TemplateRegistry& instance();
 
     // 注册模板定义（parse 完成后）。非所有权——模板定义由翻译单元持有。
-    // 同名重复注册覆盖（单测重建用）。
-    void registerTemplate(TemplateDeclAST* decl);
+    // 同名重复注册覆盖（单测重建用）。`qualifiedName` 由 sema 在命名空间
+    // 上下文传入（`NsTpl_id`）；省略时使用声明自身的名字。
+    void registerTemplate(TemplateDeclAST* decl,
+                          const std::string& qualifiedName = {});
     TemplateDeclAST* find(const std::string& name) const;
 
     // 类模板实例化：克隆模板体、按实参重写、改名 mangled 拼写
@@ -66,7 +68,14 @@ public:
         TypeContext::instance().removeInstanceTypes();
     }
 
+    // 命名空间限定名 -> TypeContext/Registry 使用的扁平键：
+    // `std::Box` / `std.Box` -> `std_Box`（与 Parser 的 m_typeNamespacePrefix
+    // 和 SemanticAnalyzer::mangleNamespaceName 保持一致）。
+    static std::string canonicalName(const std::string& name);
+
     // 实例命名：`名 + 每个类型实参的 typeToMangled 拼写 + 非类型实参值`。
+    // `name` 先经 canonicalName 归一，保证 `std::Box<T>` 与命名空间内的
+    // `Box<T>` 命中同一实例。
     static std::string instanceName(const std::string& name,
                                     const std::vector<Type*>& typeArgs,
                                     const std::vector<long long>& valueArgs);

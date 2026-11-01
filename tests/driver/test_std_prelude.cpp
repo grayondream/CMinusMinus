@@ -1,4 +1,4 @@
-// MOD-09 / STD-23: the built-in std.c libc binding layer.
+// MOD-09 / STD-23: std.c is loaded from the standard-library tree (no embedded copy).
 #include <gtest/gtest.h>
 
 #include "ast/Decl.h"
@@ -31,8 +31,8 @@ std::set<std::string> functionNames(TranslationUnitAST& ast) {
 
 } // namespace
 
-TEST_F(StdPreludeTest, BuiltinPreludeParsesCleanly) {
-    Lexer lexer("<std.c>", smc::builtinStdCPrelude());
+TEST_F(StdPreludeTest, OnDiskPreludeParsesCleanly) {
+    Lexer lexer("<std.c>", smc::loadStdCPrelude({STD_DIR}));
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
     auto ast = parser.parse();
@@ -67,7 +67,7 @@ TEST_F(StdPreludeTest, UserCodeCanResolvePreludeSymbols) {
     // abs() is not declared by the user; the prelude supplies it.
     auto ast = smc::parseStdCPrelude("int32 main() { return abs(-5) - 5; }", "user");
     ASSERT_NE(ast, nullptr);
-    auto prelude = smc::parseStdCPrelude(smc::builtinStdCPrelude(), "<std.c>");
+    auto prelude = smc::parseStdCPrelude(smc::loadStdCPrelude({STD_DIR}), "<std.c>");
     ASSERT_NE(prelude, nullptr);
     smc::prependDeclarations(*ast, *prelude);
 
@@ -81,11 +81,17 @@ TEST_F(StdPreludeTest, UserCanRedeclarePreludeSymbol) {
     auto ast = smc::parseStdCPrelude(
         "extern int32 abs(int32 x);\nint32 main() { return abs(-3) - 3; }", "user");
     ASSERT_NE(ast, nullptr);
-    auto prelude = smc::parseStdCPrelude(smc::builtinStdCPrelude(), "<std.c>");
+    auto prelude = smc::parseStdCPrelude(smc::loadStdCPrelude({STD_DIR}), "<std.c>");
     ASSERT_NE(prelude, nullptr);
     smc::prependDeclarations(*ast, *prelude);
 
     SemanticAnalyzer analyzer;
     analyzer.analyze(*ast);
     EXPECT_TRUE(analyzer.getErrors().empty());
+}
+
+TEST_F(StdPreludeTest, MissingStdlibHasNoEmbeddedFallback) {
+    // The standard library is data, not compiler-embedded source. A missing
+    // installation must be reported rather than silently using a stale copy.
+    EXPECT_TRUE(smc::loadStdCPrelude({"/nonexistent/smc-stdlib"}).empty());
 }

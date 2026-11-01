@@ -6445,7 +6445,22 @@ void SemanticAnalyzer::analyzeTopLevelDecl(DeclAST& decl) {
         visit(*nsDecl);
     } else if (auto* tplDecl = dynamic_cast<TemplateDeclAST*>(&decl)) {
         // P1-03 / GEN-01: 模板定义只注册，不在此 sema（GEN-06 定义处不检查）。
-        TemplateRegistry::instance().registerTemplate(tplDecl);
+        // Namespace context: type templates are already flattened by Parser
+        // (`NsTpl_Box`), but function/alias template names remain bare until
+        // sema would normally call scopedName. Register them under the same
+        // flattened key so `NsTpl::id<int32>` resolves.
+        std::string tplName;
+        if (auto* fn = dynamic_cast<FunctionDeclAST*>(tplDecl->decl.get()))
+            tplName = fn->name;
+        else if (auto* st = dynamic_cast<StructDeclAST*>(tplDecl->decl.get()))
+            tplName = st->name;
+        else if (auto* ud = dynamic_cast<UsingDeclAST*>(tplDecl->decl.get()))
+            tplName = ud->name;
+        if (!namespacePrefix.empty() && !tplName.empty() &&
+            tplName.rfind(namespacePrefix, 0) != 0) {
+            tplName = namespacePrefix + tplName;
+        }
+        TemplateRegistry::instance().registerTemplate(tplDecl, tplName);
     } else if (auto* multi = dynamic_cast<MultiVarDeclAST*>(&decl)) {
         for (auto& d : multi->decls) {
             if (auto* v = dynamic_cast<VarDeclAST*>(d.get())) visit(*v);

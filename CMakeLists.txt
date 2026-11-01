@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(My_LLVM_C LANGUAGES C CXX)
 
+include(GNUInstallDirs)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -35,6 +37,32 @@ endif()
 add_definitions(${LLVM_DEFINITIONS})
 include_directories(${LLVM_INCLUDE_DIRS})
 
+# Memory backend: the bundled mimalloc is the allocator for both the compiler
+# and programs linked by it. Keep a deterministic static build (no shared
+# library / upstream tests) and expose it as libmimalloc.a in build/lib.
+set(MI_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(MI_BUILD_STATIC ON CACHE BOOL "" FORCE)
+set(MI_BUILD_OBJECT OFF CACHE BOOL "" FORCE)
+set(MI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(MI_OVERRIDE ON CACHE BOOL "" FORCE)
+# Keep the allocator fast even in Debug compiler builds. Upstream's Debug
+# defaults (guard pages, full stats/profiling, invariant checks) are unsuitable
+# for a compiler runtime and dominated startup/alloc cost.
+set(MI_DEBUG OFF CACHE STRING "" FORCE)
+set(MI_SECURE OFF CACHE STRING "" FORCE)
+set(MI_GUARDED OFF CACHE STRING "" FORCE)
+set(MI_STATS OFF CACHE STRING "" FORCE)
+set(MI_PROFILE OFF CACHE STRING "" FORCE)
+set(MI_ALLOW_THP DEFAULT CACHE STRING "" FORCE)
+add_subdirectory(thirdparty/mimalloc EXCLUDE_FROM_ALL)
+set_target_properties(mimalloc-static PROPERTIES OUTPUT_NAME mimalloc)
+# Upstream static builds use -fvisibility=hidden. The compiler's embedded JIT
+# resolves mi_* from the process, so give the public mimalloc entry points
+# default visibility (the executable additionally exports its dynamic symbols).
+if(NOT MSVC)
+    target_compile_options(mimalloc-static PRIVATE -fvisibility=default)
+endif()
+
 add_subdirectory(src)
 
 option(BUILD_TESTS "Build unit tests" ON)
@@ -43,3 +71,11 @@ if(BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+# Stdlib and allocator are installed as data/runtime dependencies, not baked
+# into the compiler binary.
+install(TARGETS my_llvm_c mimalloc-static
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(DIRECTORY libs/ DESTINATION ${CMAKE_INSTALL_DATADIR}/smc/libs
+        FILES_MATCHING PATTERN "*.smc")
