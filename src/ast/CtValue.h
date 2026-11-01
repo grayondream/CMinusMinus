@@ -46,6 +46,8 @@ struct CtValue {
     // ptrIndex (used for get_ptr / .data element views).
     std::shared_ptr<CtContainer> container;
     long long ptrIndex = 0;
+    // PTR to an evaluator environment slot (`&local`) used for out-parameters.
+    std::string ptrName;
 };
 
 struct CtContainer {

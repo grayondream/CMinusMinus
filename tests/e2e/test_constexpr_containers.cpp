@@ -129,6 +129,110 @@ TEST_F(ConstexprContainersTest, VecSumInConstexpr) {
     )", "ct_vec_sum.c"), 0);
 }
 
+TEST_F(ConstexprContainersTest, HashMapInConstexpr) {
+    EXPECT_EQ(runWithImports(R"(
+        import std.collections;
+        import std.hash;
+        constexpr int32 mapWork() {
+            std::HashMap<uint32,int32> m;
+            m.init(std::hash_key_u32, std::equal_u32);
+            uint32 i = 0;
+            while (i < 200) {
+                if (!m.put(i, (int32)(i * 3))) return -1;
+                i = i + 1;
+            }
+            if (m.size() != 200) return -2;
+            if (!m.put(7, 777)) return -3;
+            if (m.size() != 200) return -4;
+            int32 out = 0;
+            if (!m.get(7, &out) || out != 777) return -5;
+            if (!m.remove(7)) return -6;
+            if (m.contains(7)) return -7;
+            if (m.size() != 199) return -8;
+            if (!m.put(7, 7)) return -9;
+            if (!m.get(7, &out) || out != 7) return -10;
+            m.destroy();
+            return 0;
+        }
+        int32 main() { constexpr int32 x = mapWork(); return x; }
+    )", "ct_map.c"), 0);
+}
+
+TEST_F(ConstexprContainersTest, HashSetInConstexpr) {
+    EXPECT_EQ(runWithImports(R"(
+        import std.collections;
+        import std.hash;
+        constexpr int32 setWork() {
+            std::HashSet<uint64> s;
+            s.init(std::hash_key_u64, std::equal_u64);
+            uint64 i = 0;
+            while (i < 64) {
+                if (!s.insert(i * 2)) return -1;
+                i = i + 1;
+            }
+            if (s.size() != 64) return -2;
+            if (!s.contains(42)) return -3;
+            if (s.contains(43)) return -4;
+            if (!s.remove(42)) return -5;
+            if (s.contains(42)) return -6;
+            if (!s.insert(42)) return -7;
+            if (!s.contains(42)) return -8;
+            s.destroy();
+            return 0;
+        }
+        int32 main() { constexpr int32 x = setWork(); return x; }
+    )", "ct_set.c"), 0);
+}
+
+TEST_F(ConstexprContainersTest, StringViewElementsInConstexpr) {
+    EXPECT_EQ(runWithImports(R"(
+        import std.collections;
+        import std.hash;
+        constexpr int32 strWork() {
+            std::Vec<string_view> v;
+            v.init();
+            v.push("alpha");
+            v.push("beta");
+            v.push("gamma");
+            if (v.len != 3) return -1;
+            if (v.get(1) != "beta") return -2;
+            if (!v.contains("gamma", std::equal_string)) return -3;
+            if (v.contains("delta", std::equal_string)) return -4;
+            v.destroy();
+            return 0;
+        }
+        int32 main() { constexpr int32 x = strWork(); return x; }
+    )", "ct_vec_string.c"), 0);
+}
+
+TEST_F(ConstexprContainersTest, OutParametersInConstexpr) {
+    EXPECT_EQ(runWithImports(R"(
+        import std.collections;
+        constexpr int32 outWork() {
+            std::Vec<int32> v;
+            v.init();
+            v.push(10);
+            v.push(20);
+            int32 out = 0;
+            if (!v.pop(&out) || out != 20) return -1;
+            if (v.len != 1) return -2;
+            return out;
+        }
+        int32 main() { constexpr int32 x = outWork(); return x - 20; }
+    )", "ct_out.c"), 0);
+}
+
+TEST_F(ConstexprContainersTest, ConstexprLoopStepLimit) {
+    EXPECT_EQ(runWithImports(R"(
+        import std.collections;
+        constexpr int32 spin() {
+            while (true) { }
+            return 0;
+        }
+        int32 main() { constexpr int32 x = spin(); return x; }
+    )", "ct_step_limit.c"), -1);
+}
+
 TEST_F(ConstexprContainersTest, DequeRingInConstexpr) {
     EXPECT_EQ(runWithImports(R"(
         import std.collections;

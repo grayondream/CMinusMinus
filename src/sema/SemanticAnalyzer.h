@@ -229,6 +229,15 @@ private:
                                                   ASTNode& at);
     std::optional<ConstValue> evalContainerMember(MemberAccessExprAST& node,
                                                   ConstValue& object);
+    FunctionDeclAST* findCtFunction(const std::string& name);
+    std::optional<ConstValue> evalCtFunction(FunctionDeclAST* fn,
+                                             const std::vector<ConstValue>& args,
+                                             int depth);
+    bool ctCallEq(CtContainer& c, const ConstValue& a, const ConstValue& b, bool& out);
+    std::optional<uint64_t> ctCallHash(CtContainer& c, const ConstValue& key);
+    bool ctHashRehash(CtContainer& c, std::size_t newCap);
+    void ctHashPutRaw(CtContainer& c, const ConstValue& key, const ConstValue& value);
+    std::optional<std::size_t> ctHashFind(CtContainer& c, const ConstValue& key);
     static bool constValueTruthy(const ConstValue& v);
 
     void visit(TranslationUnitAST& node);
@@ -378,6 +387,9 @@ private:
     // then may a non-constexpr helper (e.g. std.hash callbacks) be evaluated;
     // top-level constexpr initializers still require constant expressions.
     bool m_ctInFunctionBody = false;
+    // Set when a statement-level expression cannot be evaluated. The body
+    // interpreter aborts instead of silently skipping unsupported operations.
+    bool m_ctFailed = false;
     bool ctStepAllowance(ASTNode& at);
     std::string namespacePrefix;   // e.g. "A_B_" while analyzing namespace A::B
 };

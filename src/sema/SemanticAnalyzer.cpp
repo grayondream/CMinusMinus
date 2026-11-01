@@ -1499,8 +1499,30 @@ SemanticAnalyzer::evalConstexprCallCT(CallExprAST& call,
     m_ctInFunctionBody = savedInBody;
     constexprCallDepth--;
     activeEnv = saved;
+    if (m_ctFailed) return std::nullopt;
     return flow == CtFlow::Return ? result : std::nullopt;
 }
+
+namespace {
+
+std::optional<std::size_t> ctIndexValue(const CtValue& v) {
+    if (v.type != CtValue::INT) return std::nullopt;
+    if (v.isUnsigned) {
+        return static_cast<std::size_t>(static_cast<uint64_t>(v.intVal));
+    }
+    if (v.intVal < 0) return std::nullopt;
+    return static_cast<std::size_t>(v.intVal);
+}
+
+CtValue ctVoidResult() { return ctInt(0); }
+
+CtValue ctBoolResult(bool value) { return ctInt(value ? 1 : 0, 1, true, true); }
+
+CtValue ctUsizeResult(std::size_t value) {
+    return ctInt(static_cast<long long>(static_cast<uint64_t>(value)), 64, true);
+}
+
+} // namespace
 
 bool SemanticAnalyzer::ctStepAllowance(ASTNode& at) {
     if (++ctSteps <= kConstexprStepLimit) {
@@ -1523,6 +1545,7 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
     if (ctEvalDepth++ == 0) {
         ctSteps = 0;
         ctStepReported = false;
+        m_ctFailed = false;
     }
     if (!ctStepAllowance(*expr)) {
         return std::nullopt;
@@ -1565,6 +1588,13 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
         ConstValue cv;
         cv.type = ConstValue::DOUBLE;
         cv.doubleVal = flt->value;
+        return cv;
+    }
+
+    if (auto* str = dynamic_cast<StringExprAST*>(expr)) {
+        ConstValue cv;
+        cv.type = ConstValue::STR;
+        cv.strVal = str->value;
         return cv;
     }
 
@@ -1653,6 +1683,34 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
 
     if (auto* mc = dynamic_cast<MethodCallExprAST*>(expr)) {
         auto object = evaluateConstexpr(mc->object.get());
+        if (object && object->type == ConstValue::STR) {
+            switch (mc->builtinMethod) {
+                case BuiltinMethod::StrLen:
+                    return ctUsizeResult(object->strVal.size());
+                case BuiltinMethod::StrCharCount: {
+                    std::size_t count = 0;
+                    for (unsigned char ch : object->strVal) {
+                        if ((ch & 0xC0) != 0x80) ++count;
+                    }
+                    return ctUsizeResult(count);
+                }
+                case BuiltinMethod::StrCharAt: {
+                    if (mc->args.size() != 1) return std::nullopt;
+                    auto index = evaluateConstexpr(mc->args[0].get());
+                    if (!index || index->type != ConstValue::INT) return std::nullopt;
+                    if (index->intVal < 0 ||
+                        static_cast<std::size_t>(index->intVal) >= object->strVal.size()) {
+                        return std::nullopt;
+                    }
+                    ConstValue ch;
+                    ch.type = ConstValue::CHAR;
+                    ch.charVal = object->strVal[static_cast<std::size_t>(index->intVal)];
+                    return ch;
+                }
+                default:
+                    return std::nullopt;
+            }
+        }
         if (!object || object->type != ConstValue::CONTAINER) {
             return std::nullopt;
         }
@@ -1669,6 +1727,43 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
     if (auto* unary = dynamic_cast<UnaryExprAST*>(expr)) {
         auto operand = evaluateConstexpr(unary->operand.get());
         if (!operand) return std::nullopt;
+
+        if (unary->op == UnaryOp::AddressOf) {
+            auto* var = dynamic_cast<VariableExprAST*>(unary->operand.get());
+            if (!var || !activeEnv) return std::nullopt;
+            if (activeEnv->find(var->name) == activeEnv->end()) return std::nullopt;
+            ConstValue ptr;
+            ptr.type = ConstValue::PTR;
+            ptr.ptrName = var->name;
+            return ptr;
+        }
+
+        if (unary->op == UnaryOp::Deref) {
+            if (operand->type != ConstValue::PTR) return std::nullopt;
+            if (!operand->ptrName.empty()) {
+                if (!activeEnv) return std::nullopt;
+                auto slot = activeEnv->find(operand->ptrName);
+                if (slot == activeEnv->end()) return std::nullopt;
+                return slot->second;
+            }
+            if (!operand->container) return std::nullopt;
+            CtContainer& c = *operand->container;
+            if (c.kind == CtContainer::Vec || c.kind == CtContainer::Deque) {
+                if (operand->ptrIndex < 0 ||
+                    static_cast<std::size_t>(operand->ptrIndex) >= c.items.size()) {
+                    return std::nullopt;
+                }
+                return c.items[static_cast<std::size_t>(operand->ptrIndex)];
+            }
+            if (c.kind == CtContainer::HashMap) {
+                if (operand->ptrIndex < 0 ||
+                    static_cast<std::size_t>(operand->ptrIndex) >= c.values.size()) {
+                    return std::nullopt;
+                }
+                return c.values[static_cast<std::size_t>(operand->ptrIndex)];
+            }
+            return std::nullopt;
+        }
 
         if (unary->op == UnaryOp::PreInc || unary->op == UnaryOp::PreDec) {
             if (!activeEnv) return std::nullopt;
@@ -1827,6 +1922,7 @@ SemanticAnalyzer::evalConstexprCall(CallExprAST& call, int depth) {
     m_ctInFunctionBody = savedInBody;
     constexprCallDepth--;
     activeEnv = saved;
+    if (m_ctFailed) return std::nullopt;
     return flow == CtFlow::Return ? result : std::nullopt;
 }
 
@@ -1846,7 +1942,9 @@ SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
         if (!ret->value) {
             return ctInt(0);
         }
-        return evaluateConstexpr(ret->value.get());
+        auto result = evaluateConstexpr(ret->value.get());
+        if (!result) m_ctFailed = true;
+        return result;
     }
 
     if (auto* block = dynamic_cast<CompoundStmtAST*>(stmt)) {
@@ -1854,6 +1952,7 @@ SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
         for (auto& inner : block->stmts) {
             CtFlow innerFlow = CtFlow::Normal;
             result = evalConstexprStmt(inner.get(), env, depth + 1, innerFlow);
+            if (m_ctFailed) return std::nullopt;
             if (innerFlow != CtFlow::Normal) {
                 flow = innerFlow;
                 return result;
@@ -1865,6 +1964,7 @@ SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
     if (auto* ifs = dynamic_cast<IfStmtAST*>(stmt)) {
         auto cond = evaluateConstexpr(ifs->cond.get());
         if (!cond) {
+            m_ctFailed = true;
             return std::nullopt;
         }
         if (ctTruthy(*cond)) {
@@ -1876,7 +1976,7 @@ SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
     if (auto* wh = dynamic_cast<WhileStmtAST*>(stmt)) {
         while (true) {
             auto cond = evaluateConstexpr(wh->cond.get());
-            if (!cond) return std::nullopt;
+            if (!cond) { m_ctFailed = true; return std::nullopt; }
             if (!ctTruthy(*cond)) break;
             if (!ctStepAllowance(*stmt)) return std::nullopt;
             CtFlow bodyFlow = CtFlow::Normal;
@@ -1902,7 +2002,7 @@ SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
                 return result;
             }
             auto cond = evaluateConstexpr(dw->cond.get());
-            if (!cond) return std::nullopt;
+            if (!cond) { m_ctFailed = true; return std::nullopt; }
             if (!ctTruthy(*cond)) break;
         }
         return std::nullopt;
@@ -1920,7 +2020,7 @@ SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
         while (true) {
             if (fr->cond) {
                 auto cond = evaluateConstexpr(fr->cond.get());
-                if (!cond) return std::nullopt;
+                if (!cond) { m_ctFailed = true; return std::nullopt; }
                 if (!ctTruthy(*cond)) break;
             }
             if (!ctStepAllowance(*stmt)) return std::nullopt;
@@ -1932,7 +2032,10 @@ SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
                 return result;
             }
             if (fr->inc) {
-                if (!evaluateConstexpr(fr->inc.get())) return std::nullopt;
+                if (!evaluateConstexpr(fr->inc.get())) {
+                    m_ctFailed = true;
+                    return std::nullopt;
+                }
             }
         }
         return std::nullopt;
@@ -1957,6 +2060,9 @@ SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
             if (vd->initExpr) {
                 if (auto value = evaluateConstexpr(vd->initExpr.get())) {
                     env[vd->name] = ctClone(*value);
+                } else {
+                    m_ctFailed = true;
+                    return std::nullopt;
                 }
             } else {
                 env[vd->name] = ctDefaultValue(vd->type);
@@ -1966,33 +2072,15 @@ SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
     }
 
     if (auto* es = dynamic_cast<ExprStmtAST*>(stmt)) {
-        evaluateConstexpr(es->expr.get());
+        if (!evaluateConstexpr(es->expr.get())) {
+            m_ctFailed = true;
+            return std::nullopt;
+        }
         return std::nullopt;
     }
 
     return std::nullopt;
 }
-
-namespace {
-
-std::optional<std::size_t> ctIndexValue(const CtValue& v) {
-    if (v.type != CtValue::INT) return std::nullopt;
-    if (v.isUnsigned) {
-        return static_cast<std::size_t>(static_cast<uint64_t>(v.intVal));
-    }
-    if (v.intVal < 0) return std::nullopt;
-    return static_cast<std::size_t>(v.intVal);
-}
-
-CtValue ctVoidResult() { return ctInt(0); }
-
-CtValue ctBoolResult(bool value) { return ctInt(value ? 1 : 0, 1, true, true); }
-
-CtValue ctUsizeResult(std::size_t value) {
-    return ctInt(static_cast<long long>(static_cast<uint64_t>(value)), 64, true);
-}
-
-} // namespace
 
 std::optional<SemanticAnalyzer::ConstValue>
 SemanticAnalyzer::evalContainerMember(MemberAccessExprAST& node, ConstValue& object) {
@@ -2017,6 +2105,163 @@ SemanticAnalyzer::evalContainerMember(MemberAccessExprAST& node, ConstValue& obj
     return std::nullopt;
 }
 
+
+FunctionDeclAST* SemanticAnalyzer::findCtFunction(const std::string& name) {
+    if (name.empty()) return nullptr;
+    auto it = m_allFunctions.find(name);
+    if (it != m_allFunctions.end()) return it->second;
+    auto ct = constexprFunctions.find(name);
+    if (ct != constexprFunctions.end()) return ct->second;
+    const std::string resolved = resolveNamespaceName(name);
+    if (resolved != name) {
+        it = m_allFunctions.find(resolved);
+        if (it != m_allFunctions.end()) return it->second;
+        ct = constexprFunctions.find(resolved);
+        if (ct != constexprFunctions.end()) return ct->second;
+    }
+    return nullptr;
+}
+
+std::optional<SemanticAnalyzer::ConstValue>
+SemanticAnalyzer::evalCtFunction(FunctionDeclAST* fn,
+                                 const std::vector<ConstValue>& args, int depth) {
+    if (!fn || !fn->body || args.size() != fn->params.size()) {
+        return std::nullopt;
+    }
+    if (depth > kConstexprMaxDepth || constexprCallDepth >= kConstexprMaxDepth) {
+        m_ctFailed = true;
+        return std::nullopt;
+    }
+    ConstEnv env = activeEnv ? *activeEnv : ConstEnv{};
+    for (std::size_t i = 0; i < fn->params.size(); ++i) {
+        env[fn->params[i]->name] = ctClone(args[i]);
+    }
+    ConstEnv* saved = activeEnv;
+    activeEnv = &env;
+    constexprCallDepth++;
+    const bool savedInBody = m_ctInFunctionBody;
+    m_ctInFunctionBody = true;
+    CtFlow flow = CtFlow::Normal;
+    auto result = evalConstexprStmt(fn->body.get(), env, depth + 1, flow);
+    m_ctInFunctionBody = savedInBody;
+    constexprCallDepth--;
+    activeEnv = saved;
+    if (m_ctFailed) return std::nullopt;
+    return flow == CtFlow::Return ? result : ctVoidResult();
+}
+
+bool SemanticAnalyzer::ctCallEq(CtContainer& c, const ConstValue& a,
+                                const ConstValue& b, bool& out) {
+    out = false;
+    if (c.eqFn.empty()) return true; // runtime treats a null callback as never-equal
+    FunctionDeclAST* fn = findCtFunction(c.eqFn);
+    if (!fn) {
+        m_ctFailed = true;
+        return false;
+    }
+    auto result = evalCtFunction(fn, {a, b}, 0);
+    if (!result) {
+        m_ctFailed = true;
+        return false;
+    }
+    out = ctTruthy(*result);
+    return true;
+}
+
+std::optional<uint64_t> SemanticAnalyzer::ctCallHash(CtContainer& c,
+                                                     const ConstValue& key) {
+    if (c.hashFn.empty()) return std::nullopt;
+    FunctionDeclAST* fn = findCtFunction(c.hashFn);
+    if (!fn) {
+        m_ctFailed = true;
+        return std::nullopt;
+    }
+    auto result = evalCtFunction(fn, {key}, 0);
+    if (!result || result->type != ConstValue::INT) {
+        m_ctFailed = true;
+        return std::nullopt;
+    }
+    return static_cast<uint64_t>(result->intVal);
+}
+
+bool SemanticAnalyzer::ctHashRehash(CtContainer& c, std::size_t newCap) {
+    std::vector<CtValue> oldKeys = c.keys;
+    std::vector<CtValue> oldValues = c.values;
+    std::vector<uint8_t> oldStates = c.states;
+    const std::size_t oldCap = c.cap;
+
+    c.keys.assign(newCap, ctDefaultValue(c.keyType));
+    if (c.kind == CtContainer::HashMap) {
+        c.values.assign(newCap, ctDefaultValue(c.valueType));
+    } else {
+        c.values.clear();
+    }
+    c.states.assign(newCap, 0);
+    c.cap = newCap;
+    c.len = 0;
+    c.tombstones = 0;
+
+    for (std::size_t i = 0; i < oldCap; ++i) {
+        if (i < oldStates.size() && oldStates[i] == 1) {
+            ctHashPutRaw(c, oldKeys[i],
+                         c.kind == CtContainer::HashMap
+                             ? oldValues[i] : ctVoidResult());
+            if (m_ctFailed) return false;
+        }
+    }
+    return true;
+}
+
+void SemanticAnalyzer::ctHashPutRaw(CtContainer& c, const ConstValue& key,
+                                    const ConstValue& value) {
+    if (c.hashFn.empty() || c.eqFn.empty() || c.cap == 0) return;
+    auto hash = ctCallHash(c, key);
+    if (!hash) return;
+    std::size_t at = static_cast<std::size_t>(*hash % c.cap);
+    for (std::size_t probes = 0; probes < c.cap; ++probes) {
+        const uint8_t state = c.states[at];
+        if (state == 1) {
+            bool equal = false;
+            if (!ctCallEq(c, c.keys[at], key, equal)) return;
+            if (equal) {
+                if (c.kind == CtContainer::HashMap) c.values[at] = ctClone(value);
+                return;
+            }
+        }
+        if (state == 0 || state == 2) {
+            c.keys[at] = ctClone(key);
+            if (c.kind == CtContainer::HashMap) c.values[at] = ctClone(value);
+            if (state == 2) --c.tombstones;
+            c.states[at] = 1;
+            ++c.len;
+            return;
+        }
+        at = (at + 1) % c.cap;
+    }
+}
+
+std::optional<std::size_t> SemanticAnalyzer::ctHashFind(CtContainer& c,
+                                                        const ConstValue& key) {
+    if (c.cap == 0 || c.hashFn.empty() || c.eqFn.empty()) return std::nullopt;
+    auto hash = ctCallHash(c, key);
+    if (!hash) {
+        if (m_ctFailed) return std::nullopt;
+        return std::nullopt;
+    }
+    std::size_t at = static_cast<std::size_t>(*hash % c.cap);
+    for (std::size_t probes = 0; probes < c.cap; ++probes) {
+        const uint8_t state = c.states[at];
+        if (state == 0) return std::nullopt;
+        if (state == 1) {
+            bool equal = false;
+            if (!ctCallEq(c, c.keys[at], key, equal)) return std::nullopt;
+            if (equal) return at;
+        }
+        at = (at + 1) % c.cap;
+    }
+    return std::nullopt;
+}
+
 std::optional<SemanticAnalyzer::ConstValue>
 SemanticAnalyzer::evalContainerMethod(MethodCallExprAST& call, ConstValue& object,
                                       const std::vector<ConstValue>& args,
@@ -2028,6 +2273,36 @@ SemanticAnalyzer::evalContainerMethod(MethodCallExprAST& call, ConstValue& objec
     auto arg = [&](std::size_t i) -> const CtValue& { return args[i]; };
     auto need = [&](std::size_t n) { return args.size() == n; };
     auto defaultElem = [&]() { return ctDefaultValue(c.elementType); };
+    auto defaultKey = [&]() { return ctDefaultValue(c.keyType); };
+    auto defaultValue = [&]() { return ctDefaultValue(c.valueType); };
+
+    auto writeOut = [&](const CtValue& ptr, const CtValue& value) -> bool {
+        if (ptr.type != ConstValue::PTR || ptr.ptrName.empty() || !activeEnv) {
+            return false;
+        }
+        auto slot = activeEnv->find(ptr.ptrName);
+        if (slot == activeEnv->end()) return false;
+        slot->second = ctClone(value);
+        return true;
+    };
+
+    auto callEqValue = [&](const CtValue& eq, const CtValue& a, const CtValue& b,
+                           bool& out) -> bool {
+        out = false;
+        if (eq.type != ConstValue::FUNC || eq.funcName.empty()) return true;
+        FunctionDeclAST* fn = findCtFunction(eq.funcName);
+        if (!fn) {
+            m_ctFailed = true;
+            return false;
+        }
+        auto result = evalCtFunction(fn, {a, b}, 0);
+        if (!result) {
+            m_ctFailed = true;
+            return false;
+        }
+        out = ctTruthy(*result);
+        return true;
+    };
 
     switch (c.kind) {
         case CtContainer::Vec: {
@@ -2076,10 +2351,27 @@ SemanticAnalyzer::evalContainerMethod(MethodCallExprAST& call, ConstValue& objec
                 ++c.len;
                 return ctBoolResult(true);
             }
+            if (call.methodName == "pop" && need(1)) {
+                if (c.len == 0) return ctBoolResult(false);
+                --c.len;
+                if (arg(0).type == ConstValue::PTR && !arg(0).ptrName.empty()) {
+                    if (!writeOut(arg(0), c.items[c.len])) return std::nullopt;
+                }
+                return ctBoolResult(true);
+            }
             if (call.methodName == "get" && need(1)) {
                 auto index = ctIndexValue(arg(0));
                 if (!index || *index >= c.len) return std::nullopt;
                 return ctClone(c.items[*index]);
+            }
+            if (call.methodName == "get_ptr" && need(1)) {
+                auto index = ctIndexValue(arg(0));
+                if (!index || *index >= c.len) return std::nullopt;
+                ConstValue ptr;
+                ptr.type = ConstValue::PTR;
+                ptr.container = object.container;
+                ptr.ptrIndex = static_cast<long long>(*index);
+                return ptr;
             }
             if (call.methodName == "set" && need(2)) {
                 auto index = ctIndexValue(arg(0));
@@ -2124,7 +2416,22 @@ SemanticAnalyzer::evalContainerMethod(MethodCallExprAST& call, ConstValue& objec
                 std::swap(c.items[*a], c.items[*b]);
                 return ctVoidResult();
             }
-            // contains/index_of and out-parameter methods arrive with Task 6.
+            if (call.methodName == "contains" && need(2)) {
+                for (std::size_t i = 0; i < c.len; ++i) {
+                    bool equal = false;
+                    if (!callEqValue(arg(1), c.items[i], arg(0), equal)) return std::nullopt;
+                    if (equal) return ctBoolResult(true);
+                }
+                return ctBoolResult(false);
+            }
+            if (call.methodName == "index_of" && need(2)) {
+                for (std::size_t i = 0; i < c.len; ++i) {
+                    bool equal = false;
+                    if (!callEqValue(arg(1), c.items[i], arg(0), equal)) return std::nullopt;
+                    if (equal) return ctInt(static_cast<long long>(i), 64, false);
+                }
+                return ctInt(-1, 64, false);
+            }
             return std::nullopt;
         }
         case CtContainer::Deque: {
@@ -2158,7 +2465,7 @@ SemanticAnalyzer::evalContainerMethod(MethodCallExprAST& call, ConstValue& objec
                 c.head = 0;
                 return ctBoolResult(true);
             }
-            if (call.methodName == "push_back" && need(1)) {
+            auto growForPush = [&]() {
                 if (c.cap == 0) {
                     c.items.resize(8, defaultElem());
                     c.cap = 8;
@@ -2173,35 +2480,48 @@ SemanticAnalyzer::evalContainerMethod(MethodCallExprAST& call, ConstValue& objec
                     c.cap = nc;
                     c.head = 0;
                 }
+            };
+            if (call.methodName == "push_back" && need(1)) {
+                growForPush();
                 const std::size_t tail = (c.head + c.len) % c.cap;
                 c.items[tail] = ctClone(arg(0));
                 ++c.len;
                 return ctBoolResult(true);
             }
             if (call.methodName == "push_front" && need(1)) {
-                if (c.cap == 0) {
-                    c.items.resize(8, defaultElem());
-                    c.cap = 8;
-                }
-                if (c.len + 1 > c.cap) {
-                    std::size_t nc = c.cap * 2;
-                    std::vector<CtValue> next(nc, defaultElem());
-                    for (std::size_t i = 0; i < c.len; ++i) {
-                        next[i] = c.items[(c.head + i) % c.cap];
-                    }
-                    c.items = std::move(next);
-                    c.cap = nc;
-                    c.head = 0;
-                }
+                growForPush();
                 c.head = (c.head + c.cap - 1) % c.cap;
                 c.items[c.head] = ctClone(arg(0));
                 ++c.len;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "pop_back" && need(1)) {
+                if (c.len == 0) return ctBoolResult(false);
+                const std::size_t tail = (c.head + c.len - 1) % c.cap;
+                --c.len;
+                if (!writeOut(arg(0), c.items[tail])) return std::nullopt;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "pop_front" && need(1)) {
+                if (c.len == 0) return ctBoolResult(false);
+                if (!writeOut(arg(0), c.items[c.head])) return std::nullopt;
+                c.head = (c.head + 1) % c.cap;
+                --c.len;
                 return ctBoolResult(true);
             }
             if (call.methodName == "get" && need(1)) {
                 auto index = ctIndexValue(arg(0));
                 if (!index || *index >= c.len) return std::nullopt;
                 return ctClone(c.items[(c.head + *index) % c.cap]);
+            }
+            if (call.methodName == "get_ptr" && need(1)) {
+                auto index = ctIndexValue(arg(0));
+                if (!index || *index >= c.len) return std::nullopt;
+                ConstValue ptr;
+                ptr.type = ConstValue::PTR;
+                ptr.container = object.container;
+                ptr.ptrIndex = static_cast<long long>((c.head + *index) % c.cap);
+                return ptr;
             }
             if (call.methodName == "set" && need(2)) {
                 auto index = ctIndexValue(arg(0));
@@ -2216,13 +2536,124 @@ SemanticAnalyzer::evalContainerMethod(MethodCallExprAST& call, ConstValue& objec
             }
             return std::nullopt;
         }
-        case CtContainer::HashMap:
-        case CtContainer::HashSet:
+        case CtContainer::HashMap: {
+            if (call.methodName == "init" && need(2)) {
+                c.keys.clear();
+                c.values.clear();
+                c.states.clear();
+                c.cap = c.len = c.tombstones = 0;
+                c.hashFn = arg(0).type == ConstValue::FUNC ? arg(0).funcName : std::string();
+                c.eqFn = arg(1).type == ConstValue::FUNC ? arg(1).funcName : std::string();
+                return ctVoidResult();
+            }
+            if (call.methodName == "destroy" && need(0)) {
+                c.keys.clear();
+                c.values.clear();
+                c.states.clear();
+                c.cap = c.len = c.tombstones = 0;
+                return ctVoidResult();
+            }
+            if (call.methodName == "is_empty" && need(0)) return ctBoolResult(c.len == 0);
+            if (call.methodName == "size" && need(0)) return ctUsizeResult(c.len);
+            if (call.methodName == "bucket_count" && need(0)) return ctUsizeResult(c.cap);
+            if (call.methodName == "put" && need(2)) {
+                if (c.cap == 0) {
+                    if (!ctHashRehash(c, 16)) return std::nullopt;
+                } else if ((c.len + 1) * 10 >= c.cap * 7) {
+                    if (!ctHashRehash(c, c.cap * 2)) return std::nullopt;
+                }
+                ctHashPutRaw(c, arg(0), arg(1));
+                return ctBoolResult(!m_ctFailed);
+            }
+            if (call.methodName == "get_ptr" && need(1)) {
+                auto index = ctHashFind(c, arg(0));
+                if (!index) return std::nullopt;
+                ConstValue ptr;
+                ptr.type = ConstValue::PTR;
+                ptr.container = object.container;
+                ptr.ptrIndex = static_cast<long long>(*index);
+                return ptr;
+            }
+            if (call.methodName == "get" && need(2)) {
+                auto index = ctHashFind(c, arg(0));
+                if (!index) return ctBoolResult(false);
+                if (arg(1).type == ConstValue::PTR && !arg(1).ptrName.empty()) {
+                    if (!writeOut(arg(1), c.values[*index])) return std::nullopt;
+                }
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "contains" && need(1)) {
+                return ctBoolResult(ctHashFind(c, arg(0)).has_value());
+            }
+            if (call.methodName == "remove" && need(1)) {
+                auto index = ctHashFind(c, arg(0));
+                if (!index) return ctBoolResult(false);
+                c.states[*index] = 2;
+                --c.len;
+                ++c.tombstones;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "clear" && need(0)) {
+                if (!c.states.empty()) std::fill(c.states.begin(), c.states.end(), 0);
+                c.len = 0;
+                c.tombstones = 0;
+                return ctVoidResult();
+            }
             return std::nullopt;
+        }
+        case CtContainer::HashSet: {
+            if (call.methodName == "init" && need(2)) {
+                c.keys.clear();
+                c.values.clear();
+                c.states.clear();
+                c.cap = c.len = c.tombstones = 0;
+                c.hashFn = arg(0).type == ConstValue::FUNC ? arg(0).funcName : std::string();
+                c.eqFn = arg(1).type == ConstValue::FUNC ? arg(1).funcName : std::string();
+                return ctVoidResult();
+            }
+            if (call.methodName == "destroy" && need(0)) {
+                c.keys.clear();
+                c.values.clear();
+                c.states.clear();
+                c.cap = c.len = c.tombstones = 0;
+                return ctVoidResult();
+            }
+            if (call.methodName == "is_empty" && need(0)) return ctBoolResult(c.len == 0);
+            if (call.methodName == "size" && need(0)) return ctUsizeResult(c.len);
+            if (call.methodName == "bucket_count" && need(0)) return ctUsizeResult(c.cap);
+            if (call.methodName == "insert" && need(1)) {
+                if (c.cap == 0) {
+                    if (!ctHashRehash(c, 16)) return std::nullopt;
+                } else if ((c.len + 1) * 10 >= c.cap * 7) {
+                    if (!ctHashRehash(c, c.cap * 2)) return std::nullopt;
+                }
+                if (!ctHashFind(c, arg(0))) {
+                    ctHashPutRaw(c, arg(0), ctVoidResult());
+                }
+                return ctBoolResult(!m_ctFailed);
+            }
+            if (call.methodName == "contains" && need(1)) {
+                return ctBoolResult(ctHashFind(c, arg(0)).has_value());
+            }
+            if (call.methodName == "remove" && need(1)) {
+                auto index = ctHashFind(c, arg(0));
+                if (!index) return ctBoolResult(false);
+                c.states[*index] = 2;
+                --c.len;
+                ++c.tombstones;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "clear" && need(0)) {
+                if (!c.states.empty()) std::fill(c.states.begin(), c.states.end(), 0);
+                c.len = 0;
+                c.tombstones = 0;
+                return ctVoidResult();
+            }
+            return std::nullopt;
+        }
     }
     return std::nullopt;
 }
-
 
 void SemanticAnalyzer::visit(NumberExprAST& node) {
     // LEX-15: the literal kind chooses the fixed-width type; fall back to int32.

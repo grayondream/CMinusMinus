@@ -86,6 +86,22 @@ Type* TemplateInstantiator::rewrite(Type* t) {
             p->isRestrict = t->isRestrict;
             return p;
         }
+        case TypeKind::Function: {
+            // GEN-09: a template type parameter may appear inside a function
+            // type (e.g. `bool (*eq)(T, T)` in Vec<T>::contains). Rewrite the
+            // signature too, otherwise the call site sees TypeVar => i32 and
+            // the IR verifier rejects a string_view argument.
+            auto* ft = static_cast<FunctionType*>(t);
+            Type* ret = rewrite(ft->returnType);
+            std::vector<Type*> params;
+            params.reserve(ft->paramTypes.size());
+            for (Type* p : ft->paramTypes) params.push_back(rewrite(p));
+            if (ret == ft->returnType && params == ft->paramTypes) return t;
+            auto* fn = new FunctionType(ret, std::move(params), ft->isVarArg);
+            fn->isConst = t->isConst;
+            fn->isVolatile = t->isVolatile;
+            return fn;
+        }
         case TypeKind::Array: {
             auto* arr = static_cast<ArrayType*>(t);
             Type* elem = rewrite(arr->elementType);
