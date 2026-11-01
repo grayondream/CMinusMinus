@@ -283,3 +283,108 @@ TEST_F(AtomicE2E, AtomicInt64FieldUsesNaturalAlignment) {
     EXPECT_EQ(ir.find("__atomic_load"), std::string::npos);
     EXPECT_EQ(ir.find("__atomic_store"), std::string::npos);
 }
+
+TEST_F(AtomicE2E, AtomicBuiltinLoadStore) {
+    EXPECT_EQ(runSource(R"(
+        int32 main() {
+            int32 x = 0;
+            __smc_atomic_store(&x, 7, 5);
+            return __smc_atomic_load(&x, 5) == 7 ? 0 : 1;
+        }
+    )", "at_builtin_ls.c"), 0);
+}
+
+TEST_F(AtomicE2E, AtomicBuiltinCASAndFetch) {
+    EXPECT_EQ(runSource(R"(
+        int32 main() {
+            int32 x = 3;
+            int32 expected = 3;
+            if (!__smc_atomic_compare_exchange_strong(&x, &expected, 9, 5, 5)) return 1;
+            if (__smc_atomic_fetch_add(&x, 2, 5) != 9) return 2;
+            return __smc_atomic_load(&x, 5) == 11 ? 0 : 3;
+        }
+    )", "at_builtin_cas.c"), 0);
+}
+
+TEST_F(AtomicE2E, AtomicBuiltinPointerAndFloat) {
+    EXPECT_EQ(runSource(R"(
+        int32 main() {
+            int32 x = 1;
+            int32 y = 2;
+            int32* p = &x;
+            int32* expected = &x;
+            if (!__smc_atomic_compare_exchange_strong(&p, &expected, &y, 5, 5)) return 1;
+            float32 f = 1.5f;
+            float32 old = __smc_atomic_exchange(&f, 2.5f, 5);
+            if (old != 1.5f || f != 2.5f) return 2;
+            return p == &y ? 0 : 3;
+        }
+    )", "at_builtin_ptr_float.c"), 0);
+}
+
+TEST_F(AtomicE2E, AtomicBuiltinAllOpsAndFences) {
+    EXPECT_EQ(runSource(R"(
+        enum Color : int32 { Red = 1, Blue = 2 };
+        int32 main() {
+            int32 x = 10;
+            if (__smc_atomic_fetch_sub(&x, 3, 5) != 10) return 1;
+            if (__smc_atomic_fetch_and(&x, 6, 5) != 7) return 2;
+            if (__smc_atomic_fetch_or(&x, 8, 5) != 6) return 3;
+            if (__smc_atomic_fetch_xor(&x, 1, 5) != 14) return 4;
+            if (__smc_atomic_exchange(&x, 1, 5) != 15) return 5;
+
+            bool b = false;
+            bool be = false;
+            if (!__smc_atomic_compare_exchange_strong(&b, &be, true, 5, 5)) return 6;
+            if (!b) return 7;
+
+            Color c = Red;
+            Color ce = Red;
+            if (!__smc_atomic_compare_exchange_strong(&c, &ce, Blue, 5, 5)) return 8;
+            if (c != Blue) return 9;
+
+            __smc_atomic_thread_fence(5);
+            __smc_atomic_signal_fence(5);
+            return 0;
+        }
+    )", "at_builtin_all.c"), 0);
+}
+
+TEST_F(AtomicE2E, AtomicBuiltinRejectsBadTypesAndOrders) {
+    auto expectSemaError = [](const std::string& src) {
+        Lexer lexer("at_bad.c", src);
+        auto tokens = lexer.tokenize();
+        Parser parser(tokens);
+        auto ast = parser.parse();
+        ASSERT_NE(ast, nullptr);
+        SemanticAnalyzer analyzer;
+        analyzer.analyze(*ast);
+        ASSERT_FALSE(analyzer.getErrors().empty());
+        bool meaningful = false;
+        for (const auto& err : analyzer.getErrors()) {
+            if (err.message.find("undeclared function") == std::string::npos) {
+                meaningful = true;
+            }
+        }
+        EXPECT_TRUE(meaningful);
+    };
+    expectSemaError(R"(
+        float32 f = 1.0f;
+        int32 main() { return (int32)__smc_atomic_fetch_and(&f, 1.0f, 5); }
+    )");
+    expectSemaError(R"(
+        int32 x = 0;
+        int32 main() { return __smc_atomic_load(&x, 3); }
+    )");
+    expectSemaError(R"(
+        int32 x = 0;
+        int32 main() { __smc_atomic_store(&x, 1, 2); return 0; }
+    )");
+    expectSemaError(R"(
+        int32 x = 0;
+        int32 expected = 0;
+        int32 main() {
+            return __smc_atomic_compare_exchange_strong(&x, &expected, 1, 5, 3);
+        }
+    )");
+}

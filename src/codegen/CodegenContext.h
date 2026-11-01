@@ -72,6 +72,8 @@ public:
                                       llvm::Type* carrier);
     llvm::Value* valueFromAtomicCarrier(llvm::Value* value, Type* type,
                                         llvm::Type* carrier);
+    unsigned getAtomicByteSize(Type* type);
+    unsigned getPointeeByteSize(Type* pointerType);
 
     void setSourceFile(const std::string& file);
     void emitFunctionDebug(llvm::Function* func, Type* returnType,

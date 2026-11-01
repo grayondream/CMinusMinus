@@ -906,6 +906,24 @@ llvm::Value* CodegenContext::valueFromAtomicCarrier(llvm::Value* value,
     return builder.CreateBitCast(value, orig, "atomic.cast");
 }
 
+unsigned CodegenContext::getAtomicByteSize(Type* type) {
+    unsigned bits = 0;
+    getAtomicCarrierType(type, bits);
+    return bits / 8;
+}
+
+unsigned CodegenContext::getPointeeByteSize(Type* pointerType) {
+    Type* p = pointerType;
+    while (p && p->kind == TypeKind::Typedef) {
+        p = static_cast<TypedefType*>(p)->aliasedType;
+    }
+    if (!p || p->kind != TypeKind::Pointer || !p->base) return 1;
+    llvm::Type* pointee = getLLVMType(p->base);
+    if (!pointee || !pointee->isSized()) return 1;
+    return static_cast<unsigned>(
+        module->getDataLayout().getTypeAllocSize(pointee).getFixedValue());
+}
+
 // ===== P1-06 (FMT-01/04): synthesized UTF-8 stepping helpers =====
 // RFC 3629 subset shared with sema (support/Utf8, T5): reject overlong
 // encodings, surrogates U+D800..DFFF, values above U+10FFFF, and malformed

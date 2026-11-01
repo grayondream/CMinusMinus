@@ -154,6 +154,7 @@ private:
                           const std::vector<Type*>& argTypes,
                           ClassType** defining = nullptr, int depth = 0);
     bool isMethodCall(ExprAST& expr);
+    bool tryAnalyzeAtomicBuiltin(CallExprAST& node);
     bool tryAnalyzePrintCall(CallExprAST& node);
 
     // P1-09 (FMT-07): builtin `format(fmt, args...) -> string`.

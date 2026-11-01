@@ -67,6 +67,66 @@ static int bitFieldTypeBits(Type* t) {
     }
 }
 
+// Internal atomic builtin names and their supported value-type widths. Keep
+// these in sync with CodegenContext::getAtomicCarrierType.
+static bool atomicValueBits(Type* type, unsigned& bits) {
+    Type* t = stripTypedef(type);
+    if (!t) return false;
+    switch (t->kind) {
+        case TypeKind::Bool:
+        case TypeKind::Char:
+        case TypeKind::Int8:
+        case TypeKind::UInt8:
+            bits = 8;
+            return true;
+        case TypeKind::Int16:
+        case TypeKind::UInt16:
+        case TypeKind::Float16:
+            bits = 16;
+            return true;
+        case TypeKind::Int32:
+        case TypeKind::UInt32:
+        case TypeKind::Float32:
+            bits = 32;
+            return true;
+        case TypeKind::Int64:
+        case TypeKind::UInt64:
+        case TypeKind::Float64:
+        case TypeKind::ISize:
+        case TypeKind::USize:
+        case TypeKind::Pointer:
+            bits = 64;
+            return true;
+        case TypeKind::Enum: {
+            auto* et = static_cast<EnumType*>(t);
+            Type* underlying = et->underlyingType;
+            if (!underlying) {
+                bits = 32;
+                return true;
+            }
+            return atomicValueBits(underlying, bits);
+        }
+        default:
+            return false;
+    }
+}
+
+static AtomicBuiltin atomicBuiltinForName(const std::string& name) {
+    if (name == "__smc_atomic_load") return AtomicBuiltin::Load;
+    if (name == "__smc_atomic_store") return AtomicBuiltin::Store;
+    if (name == "__smc_atomic_exchange") return AtomicBuiltin::Exchange;
+    if (name == "__smc_atomic_compare_exchange_weak") return AtomicBuiltin::CompareExchangeWeak;
+    if (name == "__smc_atomic_compare_exchange_strong") return AtomicBuiltin::CompareExchangeStrong;
+    if (name == "__smc_atomic_fetch_add") return AtomicBuiltin::FetchAdd;
+    if (name == "__smc_atomic_fetch_sub") return AtomicBuiltin::FetchSub;
+    if (name == "__smc_atomic_fetch_and") return AtomicBuiltin::FetchAnd;
+    if (name == "__smc_atomic_fetch_or") return AtomicBuiltin::FetchOr;
+    if (name == "__smc_atomic_fetch_xor") return AtomicBuiltin::FetchXor;
+    if (name == "__smc_atomic_thread_fence") return AtomicBuiltin::ThreadFence;
+    if (name == "__smc_atomic_signal_fence") return AtomicBuiltin::SignalFence;
+    return AtomicBuiltin::None;
+}
+
 // SEM-11: true when `stmt` unconditionally transfers control (return/break/
 // continue). Used for the unreachable-code warning (W3003). Trailing `defer`
 // statements do not clear termination — they still run on scope exit.
@@ -3368,6 +3428,238 @@ bool SemanticAnalyzer::lowerToString(CallExprAST& node, size_t argIndex, Type* a
     return false;
 }
 
+// Internal atomic builtins are recognized only when the user has not declared
+// a function of the same name. They are deliberately unspellable in normal
+// source (double-underscore `__smc_` prefix) and exist for libs/std/atomic.smc.
+bool SemanticAnalyzer::tryAnalyzeAtomicBuiltin(CallExprAST& node) {
+    AtomicBuiltin kind = atomicBuiltinForName(node.callee);
+    if (kind == AtomicBuiltin::None) return false;
+
+    auto fail = [&]() {
+        node.atomicBuiltin = AtomicBuiltin::None;
+        node.type = nullptr;
+        node.isLValue = false;
+        return true;
+    };
+
+    size_t arity = 1;
+    switch (kind) {
+        case AtomicBuiltin::Load: arity = 2; break;
+        case AtomicBuiltin::Store:
+        case AtomicBuiltin::Exchange:
+        case AtomicBuiltin::FetchAdd:
+        case AtomicBuiltin::FetchSub:
+        case AtomicBuiltin::FetchAnd:
+        case AtomicBuiltin::FetchOr:
+        case AtomicBuiltin::FetchXor: arity = 3; break;
+        case AtomicBuiltin::CompareExchangeWeak:
+        case AtomicBuiltin::CompareExchangeStrong: arity = 5; break;
+        default: break;
+    }
+    if (node.args.size() != arity) {
+        emitError("'" + node.callee + "' expects " + std::to_string(arity) +
+                      " argument(s), got " + std::to_string(node.args.size()),
+                  node);
+        return fail();
+    }
+
+    // Resolve every argument type first; this also marks enum constants.
+    for (auto& arg : node.args) getExprType(*arg);
+
+    auto evalOrder = [&](size_t index, int& out) -> bool {
+        ExprAST& expr = *node.args[index];
+        long long value = 0;
+        if (auto* n = dynamic_cast<NumberExprAST*>(&expr)) {
+            if (n->valueHi != 0) {
+                emitError("atomic memory order must be 0..5", expr);
+                return false;
+            }
+            value = n->value;
+        } else if (auto* b = dynamic_cast<BoolLiteralExprAST*>(&expr)) {
+            value = b->value ? 1 : 0;
+        } else if (auto* v = dynamic_cast<VariableExprAST*>(&expr)) {
+            if (!v->isEnumConstant) {
+                emitError("atomic memory order must be a compile-time constant",
+                          expr);
+                return false;
+            }
+            value = v->enumValue;
+        } else {
+            emitError("atomic memory order must be a compile-time constant",
+                      expr);
+            return false;
+        }
+        if (value < 0 || value > 5) {
+            emitError("atomic memory order must be 0..5", expr);
+            return false;
+        }
+        out = static_cast<int>(value);
+        return true;
+    };
+
+    auto validLoadOrder = [](int o) {
+        return o == 0 || o == 1 || o == 2 || o == 5;
+    };
+    auto validStoreOrder = [](int o) {
+        return o == 0 || o == 3 || o == 5;
+    };
+    auto validFailureOrder = [](int o) {
+        return o == 0 || o == 1 || o == 2 || o == 5;
+    };
+    auto orderStrength = [](int o) {
+        switch (o) {
+            case 0: return 0;
+            case 1: case 2: return 2;
+            case 3: return 3;
+            case 4: return 4;
+            default: return 5;
+        }
+    };
+
+    if (kind == AtomicBuiltin::ThreadFence ||
+        kind == AtomicBuiltin::SignalFence) {
+        int order = 0;
+        if (!evalOrder(0, order)) return fail();
+        node.atomicBuiltin = kind;
+        node.atomicOrder = order;
+        node.type = typeCtx->getVoid();
+        node.isLValue = false;
+        return true;
+    }
+
+    Type* pointerType = stripTypedef(node.args[0]->type);
+    Type* valueType = pointerType && pointerType->kind == TypeKind::Pointer
+                          ? stripTypedef(pointerType->base)
+                          : nullptr;
+    unsigned bits = 0;
+    if (!valueType || !atomicValueBits(valueType, bits)) {
+        emitError("atomic builtin requires a pointer to a supported atomic "
+                  "scalar (1/2/4/8-byte integer, bool, pointer, float16/32/64, "
+                  "or enum)",
+                  *node.args[0]);
+        return fail();
+    }
+
+    node.atomicBuiltin = kind;
+    switch (kind) {
+        case AtomicBuiltin::Load: {
+            int order = 0;
+            if (!evalOrder(1, order)) return fail();
+            if (!validLoadOrder(order)) {
+                emitError("invalid memory order for atomic load", *node.args[1]);
+                return fail();
+            }
+            node.atomicOrder = order;
+            node.type = valueType;
+            break;
+        }
+        case AtomicBuiltin::Store: {
+            int order = 0;
+            if (!evalOrder(2, order)) return fail();
+            if (!validStoreOrder(order)) {
+                emitError("invalid memory order for atomic store", *node.args[2]);
+                return fail();
+            }
+            checkAssignmentTypes(valueType, node.args[1]->type, *node.args[1]);
+            node.atomicOrder = order;
+            node.type = typeCtx->getVoid();
+            break;
+        }
+        case AtomicBuiltin::Exchange: {
+            int order = 0;
+            if (!evalOrder(2, order)) return fail();
+            checkAssignmentTypes(valueType, node.args[1]->type, *node.args[1]);
+            node.atomicOrder = order;
+            node.type = valueType;
+            break;
+        }
+        case AtomicBuiltin::CompareExchangeWeak:
+        case AtomicBuiltin::CompareExchangeStrong: {
+            Type* expectedPtr = stripTypedef(node.args[1]->type);
+            Type* expectedType =
+                expectedPtr && expectedPtr->kind == TypeKind::Pointer
+                    ? stripTypedef(expectedPtr->base)
+                    : nullptr;
+            if (!expectedType || !typesEqual(valueType, expectedType)) {
+                emitError("atomic compare-exchange expects a pointer to '" +
+                              typeToString(valueType) + "'",
+                          *node.args[1]);
+                return fail();
+            }
+            checkAssignmentTypes(valueType, node.args[2]->type, *node.args[2]);
+            int success = 0;
+            int failure = 0;
+            if (!evalOrder(3, success) || !evalOrder(4, failure)) return fail();
+            if (!validFailureOrder(failure)) {
+                emitError("invalid failure memory order for atomic "
+                          "compare-exchange",
+                          *node.args[4]);
+                return fail();
+            }
+            if (orderStrength(failure) > orderStrength(success)) {
+                emitError("atomic compare-exchange failure order is stronger "
+                          "than success order",
+                          *node.args[4]);
+                return fail();
+            }
+            node.atomicOrder = success;
+            node.atomicFailureOrder = failure;
+            node.type = typeCtx->getBool();
+            break;
+        }
+        case AtomicBuiltin::FetchAdd:
+        case AtomicBuiltin::FetchSub:
+        case AtomicBuiltin::FetchAnd:
+        case AtomicBuiltin::FetchOr:
+        case AtomicBuiltin::FetchXor: {
+            bool isPointer = valueType->kind == TypeKind::Pointer;
+            bool isAddSub = kind == AtomicBuiltin::FetchAdd ||
+                            kind == AtomicBuiltin::FetchSub;
+            if (isPointer && !isAddSub) {
+                emitError("atomic fetch_and/or/xor requires an integer value",
+                          node);
+                return fail();
+            }
+            if (!isPointer) {
+                if (isAddSub && !isIntegerType(valueType)) {
+                    emitError("atomic fetch_add/sub requires an integer or "
+                              "pointer value",
+                              node);
+                    return fail();
+                }
+                if (!isAddSub &&
+                    (!isIntegerType(valueType) ||
+                     stripTypedef(valueType)->kind == TypeKind::Bool)) {
+                    emitError("atomic fetch_and/or/xor requires an integer "
+                              "value (bool is not supported)",
+                              node);
+                    return fail();
+                }
+            }
+            if (isPointer) {
+                if (!isIntegerType(node.args[1]->type)) {
+                    emitError("atomic pointer fetch_add/sub requires an integer "
+                              "delta",
+                              *node.args[1]);
+                    return fail();
+                }
+            } else {
+                checkAssignmentTypes(valueType, node.args[1]->type,
+                                     *node.args[1]);
+            }
+            int order = 0;
+            if (!evalOrder(2, order)) return fail();
+            node.atomicOrder = order;
+            node.type = valueType;
+            break;
+        }
+        default:
+            return fail();
+    }
+    node.isLValue = false;
+    return true;
+}
+
 bool SemanticAnalyzer::tryAnalyzePrintCall(CallExprAST& node) {
     node.type = nullptr;
     node.isLValue = false;
@@ -3968,6 +4260,16 @@ void SemanticAnalyzer::visit(CallExprAST& node) {
 
     // Resolve a namespace-qualified or namespace-local callee to its mangled key.
     node.callee = resolveNamespaceName(node.callee);
+
+    // Internal atomic builtins used by libs/std/atomic.smc. A user-defined
+    // function with the same name wins, mirroring print/assert.
+    if (atomicBuiltinForName(node.callee) != AtomicBuiltin::None) {
+        OverloadSet* userDefined = currentScope->lookupOverload(node.callee);
+        if (!userDefined || userDefined->empty()) {
+            tryAnalyzeAtomicBuiltin(node);
+            return;
+        }
+    }
 
     // General expression callee: `arr[0](1)`, `get()(1)`. The parser stores
     // the callee expression; sema types it as a function pointer and records

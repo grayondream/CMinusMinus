@@ -855,7 +855,172 @@ static std::string nodeSourcePrefix(const ASTNode& node) {
     return node.sourceFile + ":" + std::to_string(node.sourceLine);
 }
 
+static llvm::AtomicOrdering toLLVMAtomicOrder(int order) {
+    switch (order) {
+        case 0: return llvm::AtomicOrdering::Monotonic;
+        case 1: return llvm::AtomicOrdering::Acquire; // consume -> acquire
+        case 2: return llvm::AtomicOrdering::Acquire;
+        case 3: return llvm::AtomicOrdering::Release;
+        case 4: return llvm::AtomicOrdering::AcquireRelease;
+        default: return llvm::AtomicOrdering::SequentiallyConsistent;
+    }
+}
+
+// Lower one internal __smc_atomic_* call. Sema has already checked arity,
+// pointer/value types and memory-order constants.
+static llvm::Value* emitAtomicBuiltin(CodegenContext& ctx, CallExprAST& node) {
+    auto& builder = ctx.getBuilder();
+    auto evalArg = [&](size_t index) -> llvm::Value* {
+        llvm::Value* v = node.args[index]->codegen(ctx);
+        if (!v) return nullptr;
+        return emitRValue(ctx, *node.args[index], v);
+    };
+
+    if (node.atomicBuiltin == AtomicBuiltin::ThreadFence ||
+        node.atomicBuiltin == AtomicBuiltin::SignalFence) {
+        llvm::AtomicOrdering order = toLLVMAtomicOrder(node.atomicOrder);
+        if (node.atomicBuiltin == AtomicBuiltin::SignalFence) {
+            builder.CreateFence(order, llvm::SyncScope::SingleThread);
+        } else {
+            builder.CreateFence(order);
+        }
+        return nullptr;
+    }
+
+    Type* pointerType = node.args[0]->type;
+    while (pointerType && pointerType->kind == TypeKind::Typedef) {
+        pointerType = static_cast<TypedefType*>(pointerType)->aliasedType;
+    }
+    Type* valueType =
+        pointerType && pointerType->kind == TypeKind::Pointer
+            ? pointerType->base
+            : nullptr;
+    while (valueType && valueType->kind == TypeKind::Typedef) {
+        valueType = static_cast<TypedefType*>(valueType)->aliasedType;
+    }
+    unsigned bits = 0;
+    llvm::Type* carrier = ctx.getAtomicCarrierType(valueType, bits);
+    if (!valueType || !carrier) return nullptr;
+    llvm::Align align(bits / 8);
+    llvm::AtomicOrdering order = toLLVMAtomicOrder(node.atomicOrder);
+
+    llvm::Value* ptr = evalArg(0);
+    if (!ptr) return nullptr;
+
+    auto castToValueType = [&](llvm::Value* v, size_t argIndex) {
+        if (!v) return v;
+        return ctx.castValue(v, node.args[argIndex]->type,
+                             ctx.getLLVMType(valueType));
+    };
+
+    switch (node.atomicBuiltin) {
+        case AtomicBuiltin::Load: {
+            llvm::LoadInst* load = builder.CreateLoad(carrier, ptr, "atomic.load");
+            load->setAtomic(order);
+            load->setAlignment(align);
+            return ctx.valueFromAtomicCarrier(load, valueType, carrier);
+        }
+        case AtomicBuiltin::Store: {
+            llvm::Value* value = castToValueType(evalArg(1), 1);
+            if (!value) return nullptr;
+            llvm::Value* carrierValue =
+                ctx.valueToAtomicCarrier(value, valueType, carrier);
+            llvm::StoreInst* store =
+                builder.CreateStore(carrierValue, ptr);
+            store->setAtomic(order);
+            store->setAlignment(align);
+            return nullptr;
+        }
+        case AtomicBuiltin::Exchange: {
+            llvm::Value* value = castToValueType(evalArg(1), 1);
+            if (!value) return nullptr;
+            llvm::Value* carrierValue =
+                ctx.valueToAtomicCarrier(value, valueType, carrier);
+            llvm::Value* old = builder.CreateAtomicRMW(
+                llvm::AtomicRMWInst::Xchg, ptr, carrierValue,
+                llvm::MaybeAlign(bits / 8), order);
+            return ctx.valueFromAtomicCarrier(old, valueType, carrier);
+        }
+        case AtomicBuiltin::CompareExchangeWeak:
+        case AtomicBuiltin::CompareExchangeStrong: {
+            llvm::Value* expectedPtr = evalArg(1);
+            llvm::Value* expectedValue =
+                expectedPtr ? ctx.loadValue(expectedPtr, valueType) : nullptr;
+            llvm::Value* desired = castToValueType(evalArg(2), 2);
+            if (!expectedPtr || !expectedValue || !desired) return nullptr;
+            llvm::Value* expectedCarrier =
+                ctx.valueToAtomicCarrier(expectedValue, valueType, carrier);
+            llvm::Value* desiredCarrier =
+                ctx.valueToAtomicCarrier(desired, valueType, carrier);
+            llvm::AtomicOrdering success = toLLVMAtomicOrder(node.atomicOrder);
+            llvm::AtomicOrdering failure =
+                toLLVMAtomicOrder(node.atomicFailureOrder);
+            llvm::Value* result = builder.CreateAtomicCmpXchg(
+                ptr, expectedCarrier, desiredCarrier,
+                llvm::MaybeAlign(bits / 8), success, failure);
+            llvm::Value* old =
+                builder.CreateExtractValue(result, 0, "atomic.cas.old");
+            llvm::Value* ok =
+                builder.CreateExtractValue(result, 1, "atomic.cas.ok");
+
+            llvm::Function* fn = builder.GetInsertBlock()->getParent();
+            llvm::BasicBlock* failBB =
+                llvm::BasicBlock::Create(ctx.getContext(), "atomic.cas.fail", fn);
+            llvm::BasicBlock* contBB =
+                llvm::BasicBlock::Create(ctx.getContext(), "atomic.cas.cont", fn);
+            builder.CreateCondBr(ok, contBB, failBB);
+            builder.SetInsertPoint(failBB);
+            llvm::Value* oldValue =
+                ctx.valueFromAtomicCarrier(old, valueType, carrier);
+            builder.CreateStore(oldValue, expectedPtr);
+            builder.CreateBr(contBB);
+            builder.SetInsertPoint(contBB);
+            return ok;
+        }
+        case AtomicBuiltin::FetchAdd:
+        case AtomicBuiltin::FetchSub:
+        case AtomicBuiltin::FetchAnd:
+        case AtomicBuiltin::FetchOr:
+        case AtomicBuiltin::FetchXor: {
+            bool isPointer = valueType->kind == TypeKind::Pointer;
+            llvm::Value* operand = nullptr;
+            if (isPointer) {
+                llvm::Value* delta = evalArg(1);
+                if (!delta) return nullptr;
+                delta = ctx.castValue(delta, node.args[1]->type,
+                                      llvm::Type::getInt64Ty(ctx.getContext()));
+                unsigned elemSize = ctx.getPointeeByteSize(valueType);
+                operand = builder.CreateMul(
+                    delta, llvm::ConstantInt::get(
+                               llvm::Type::getInt64Ty(ctx.getContext()),
+                               elemSize),
+                    "atomic.ptr.step");
+            } else {
+                llvm::Value* value = castToValueType(evalArg(1), 1);
+                if (!value) return nullptr;
+                operand = ctx.valueToAtomicCarrier(value, valueType, carrier);
+            }
+            llvm::AtomicRMWInst::BinOp op = llvm::AtomicRMWInst::Add;
+            switch (node.atomicBuiltin) {
+                case AtomicBuiltin::FetchAdd: op = llvm::AtomicRMWInst::Add; break;
+                case AtomicBuiltin::FetchSub: op = llvm::AtomicRMWInst::Sub; break;
+                case AtomicBuiltin::FetchAnd: op = llvm::AtomicRMWInst::And; break;
+                case AtomicBuiltin::FetchOr:  op = llvm::AtomicRMWInst::Or; break;
+                default:                      op = llvm::AtomicRMWInst::Xor; break;
+            }
+            llvm::Value* old = builder.CreateAtomicRMW(
+                op, ptr, operand, llvm::MaybeAlign(bits / 8), order);
+            return ctx.valueFromAtomicCarrier(old, valueType, carrier);
+        }
+        default:
+            return nullptr;
+    }
+}
+
 llvm::Value* CallExprAST::codegen(CodegenContext& ctx) {
+    if (atomicBuiltin != AtomicBuiltin::None) {
+        return emitAtomicBuiltin(ctx, *this);
+    }
     // General expression callee: evaluate the function pointer expression.
     if (isExprCallee) {
         llvm::Value* fnPtr = calleeExpr ? calleeExpr->codegen(ctx) : nullptr;

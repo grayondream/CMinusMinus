@@ -217,6 +217,15 @@ public:
     llvm::Value* codegen(CodegenContext& ctx) override;
 };
 
+// Internal LLVM-atomic lowering selected by sema for the `__smc_atomic_*`
+// library intrinsics. These are not part of the user-facing surface.
+enum class AtomicBuiltin {
+    None, Load, Store, Exchange,
+    CompareExchangeWeak, CompareExchangeStrong,
+    FetchAdd, FetchSub, FetchAnd, FetchOr, FetchXor,
+    ThreadFence, SignalFence
+};
+
 class CallExprAST : public ExprAST {
 public:
     std::string callee;
@@ -252,6 +261,10 @@ public:
     // SEM-17: `(expr)(args)` where `expr` yields a function pointer — the
     // callee is an arbitrary expression (`arr[0](1)`, `get()(1)`).
     bool isExprCallee = false;
+    // Internal atomic builtin selected by sema (see AtomicBuiltin).
+    AtomicBuiltin atomicBuiltin = AtomicBuiltin::None;
+    int atomicOrder = 5;
+    int atomicFailureOrder = 5;
     // Set by semantic analysis when this is the builtin `print`/`println`.
     bool isPrint = false;
     bool printNewline = false;
