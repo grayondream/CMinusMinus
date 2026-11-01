@@ -1,0 +1,539 @@
+// ===== std.atomic — C++-capability atomics without C++ syntax =====
+// Import with `import std.atomic;` and use `std::Atomic<T>` or the
+// per-order free functions. The compiler provides only the internal
+// `__smc_atomic_*` lowering; all API shape lives here.
+module std.atomic;
+
+export namespace std {
+
+// Explicit memory orders. `MemoryOrderConsume` lowers to acquire because
+// LLVM has no consume ordering.
+enum MemoryOrder : int32 {
+    MemoryOrderRelaxed = 0,
+    MemoryOrderConsume = 1,
+    MemoryOrderAcquire = 2,
+    MemoryOrderRelease = 3,
+    MemoryOrderAcqRel = 4,
+    MemoryOrderSeqCst = 5
+};
+
+// ----- load -----
+
+template<typename T> T atomic_load_relaxed(T* p) {
+    return __smc_atomic_load(p, std::MemoryOrderRelaxed);
+}
+template<typename T> T atomic_load_consume(T* p) {
+    return __smc_atomic_load(p, std::MemoryOrderConsume);
+}
+template<typename T> T atomic_load_acquire(T* p) {
+    return __smc_atomic_load(p, std::MemoryOrderAcquire);
+}
+template<typename T> T atomic_load_seq_cst(T* p) {
+    return __smc_atomic_load(p, std::MemoryOrderSeqCst);
+}
+
+// ----- store -----
+
+template<typename T> void atomic_store_relaxed(T* p, T value) {
+    __smc_atomic_store(p, value, std::MemoryOrderRelaxed);
+}
+template<typename T> void atomic_store_release(T* p, T value) {
+    __smc_atomic_store(p, value, std::MemoryOrderRelease);
+}
+template<typename T> void atomic_store_seq_cst(T* p, T value) {
+    __smc_atomic_store(p, value, std::MemoryOrderSeqCst);
+}
+
+// ----- exchange -----
+
+template<typename T> T atomic_exchange_relaxed(T* p, T value) {
+    return __smc_atomic_exchange(p, value, std::MemoryOrderRelaxed);
+}
+template<typename T> T atomic_exchange_acquire(T* p, T value) {
+    return __smc_atomic_exchange(p, value, std::MemoryOrderAcquire);
+}
+template<typename T> T atomic_exchange_release(T* p, T value) {
+    return __smc_atomic_exchange(p, value, std::MemoryOrderRelease);
+}
+template<typename T> T atomic_exchange_acq_rel(T* p, T value) {
+    return __smc_atomic_exchange(p, value, std::MemoryOrderAcqRel);
+}
+template<typename T> T atomic_exchange_seq_cst(T* p, T value) {
+    return __smc_atomic_exchange(p, value, std::MemoryOrderSeqCst);
+}
+
+// ----- fetch_add -----
+
+template<typename T> T atomic_fetch_add_relaxed(T* p, isize delta) {
+    return __smc_atomic_fetch_add(p, delta, std::MemoryOrderRelaxed);
+}
+template<typename T> T atomic_fetch_add_acquire(T* p, isize delta) {
+    return __smc_atomic_fetch_add(p, delta, std::MemoryOrderAcquire);
+}
+template<typename T> T atomic_fetch_add_release(T* p, isize delta) {
+    return __smc_atomic_fetch_add(p, delta, std::MemoryOrderRelease);
+}
+template<typename T> T atomic_fetch_add_acq_rel(T* p, isize delta) {
+    return __smc_atomic_fetch_add(p, delta, std::MemoryOrderAcqRel);
+}
+template<typename T> T atomic_fetch_add_seq_cst(T* p, isize delta) {
+    return __smc_atomic_fetch_add(p, delta, std::MemoryOrderSeqCst);
+}
+
+// ----- fetch_sub -----
+
+template<typename T> T atomic_fetch_sub_relaxed(T* p, isize delta) {
+    return __smc_atomic_fetch_sub(p, delta, std::MemoryOrderRelaxed);
+}
+template<typename T> T atomic_fetch_sub_acquire(T* p, isize delta) {
+    return __smc_atomic_fetch_sub(p, delta, std::MemoryOrderAcquire);
+}
+template<typename T> T atomic_fetch_sub_release(T* p, isize delta) {
+    return __smc_atomic_fetch_sub(p, delta, std::MemoryOrderRelease);
+}
+template<typename T> T atomic_fetch_sub_acq_rel(T* p, isize delta) {
+    return __smc_atomic_fetch_sub(p, delta, std::MemoryOrderAcqRel);
+}
+template<typename T> T atomic_fetch_sub_seq_cst(T* p, isize delta) {
+    return __smc_atomic_fetch_sub(p, delta, std::MemoryOrderSeqCst);
+}
+
+// ----- fetch_and -----
+
+template<typename T> T atomic_fetch_and_relaxed(T* p, T operand) {
+    return __smc_atomic_fetch_and(p, operand, std::MemoryOrderRelaxed);
+}
+template<typename T> T atomic_fetch_and_acquire(T* p, T operand) {
+    return __smc_atomic_fetch_and(p, operand, std::MemoryOrderAcquire);
+}
+template<typename T> T atomic_fetch_and_release(T* p, T operand) {
+    return __smc_atomic_fetch_and(p, operand, std::MemoryOrderRelease);
+}
+template<typename T> T atomic_fetch_and_acq_rel(T* p, T operand) {
+    return __smc_atomic_fetch_and(p, operand, std::MemoryOrderAcqRel);
+}
+template<typename T> T atomic_fetch_and_seq_cst(T* p, T operand) {
+    return __smc_atomic_fetch_and(p, operand, std::MemoryOrderSeqCst);
+}
+
+// ----- fetch_or -----
+
+template<typename T> T atomic_fetch_or_relaxed(T* p, T operand) {
+    return __smc_atomic_fetch_or(p, operand, std::MemoryOrderRelaxed);
+}
+template<typename T> T atomic_fetch_or_acquire(T* p, T operand) {
+    return __smc_atomic_fetch_or(p, operand, std::MemoryOrderAcquire);
+}
+template<typename T> T atomic_fetch_or_release(T* p, T operand) {
+    return __smc_atomic_fetch_or(p, operand, std::MemoryOrderRelease);
+}
+template<typename T> T atomic_fetch_or_acq_rel(T* p, T operand) {
+    return __smc_atomic_fetch_or(p, operand, std::MemoryOrderAcqRel);
+}
+template<typename T> T atomic_fetch_or_seq_cst(T* p, T operand) {
+    return __smc_atomic_fetch_or(p, operand, std::MemoryOrderSeqCst);
+}
+
+// ----- fetch_xor -----
+
+template<typename T> T atomic_fetch_xor_relaxed(T* p, T operand) {
+    return __smc_atomic_fetch_xor(p, operand, std::MemoryOrderRelaxed);
+}
+template<typename T> T atomic_fetch_xor_acquire(T* p, T operand) {
+    return __smc_atomic_fetch_xor(p, operand, std::MemoryOrderAcquire);
+}
+template<typename T> T atomic_fetch_xor_release(T* p, T operand) {
+    return __smc_atomic_fetch_xor(p, operand, std::MemoryOrderRelease);
+}
+template<typename T> T atomic_fetch_xor_acq_rel(T* p, T operand) {
+    return __smc_atomic_fetch_xor(p, operand, std::MemoryOrderAcqRel);
+}
+template<typename T> T atomic_fetch_xor_seq_cst(T* p, T operand) {
+    return __smc_atomic_fetch_xor(p, operand, std::MemoryOrderSeqCst);
+}
+
+// ----- compare-exchanges: common success/failure pairs -----
+
+template<typename T> bool atomic_compare_exchange_weak_relaxed(
+    T* p, T* expected, T desired) {
+    return __smc_atomic_compare_exchange_weak(
+        p, expected, desired,
+        std::MemoryOrderRelaxed, std::MemoryOrderRelaxed);
+}
+template<typename T> bool atomic_compare_exchange_weak_acquire(
+    T* p, T* expected, T desired) {
+    return __smc_atomic_compare_exchange_weak(
+        p, expected, desired,
+        std::MemoryOrderAcquire, std::MemoryOrderAcquire);
+}
+template<typename T> bool atomic_compare_exchange_weak_release(
+    T* p, T* expected, T desired) {
+    return __smc_atomic_compare_exchange_weak(
+        p, expected, desired,
+        std::MemoryOrderRelease, std::MemoryOrderRelaxed);
+}
+template<typename T> bool atomic_compare_exchange_weak_acq_rel(
+    T* p, T* expected, T desired) {
+    return __smc_atomic_compare_exchange_weak(
+        p, expected, desired,
+        std::MemoryOrderAcqRel, std::MemoryOrderAcquire);
+}
+template<typename T> bool atomic_compare_exchange_weak_seq_cst(
+    T* p, T* expected, T desired) {
+    return __smc_atomic_compare_exchange_weak(
+        p, expected, desired,
+        std::MemoryOrderSeqCst, std::MemoryOrderSeqCst);
+}
+
+template<typename T> bool atomic_compare_exchange_strong_relaxed(
+    T* p, T* expected, T desired) {
+    return __smc_atomic_compare_exchange_strong(
+        p, expected, desired,
+        std::MemoryOrderRelaxed, std::MemoryOrderRelaxed);
+}
+template<typename T> bool atomic_compare_exchange_strong_acquire(
+    T* p, T* expected, T desired) {
+    return __smc_atomic_compare_exchange_strong(
+        p, expected, desired,
+        std::MemoryOrderAcquire, std::MemoryOrderAcquire);
+}
+template<typename T> bool atomic_compare_exchange_strong_release(
+    T* p, T* expected, T desired) {
+    return __smc_atomic_compare_exchange_strong(
+        p, expected, desired,
+        std::MemoryOrderRelease, std::MemoryOrderRelaxed);
+}
+template<typename T> bool atomic_compare_exchange_strong_acq_rel(
+    T* p, T* expected, T desired) {
+    return __smc_atomic_compare_exchange_strong(
+        p, expected, desired,
+        std::MemoryOrderAcqRel, std::MemoryOrderAcquire);
+}
+template<typename T> bool atomic_compare_exchange_strong_seq_cst(
+    T* p, T* expected, T desired) {
+    return __smc_atomic_compare_exchange_strong(
+        p, expected, desired,
+        std::MemoryOrderSeqCst, std::MemoryOrderSeqCst);
+}
+
+// Arbitrary success/failure pairs: both orders are compile-time template
+// arguments. Type and orders must be explicit (partial template arguments
+// are not supported by the language yet).
+template<typename T, int32 Success, int32 Failure>
+bool atomic_compare_exchange_weak_explicit(T* p, T* expected, T desired) {
+    return __smc_atomic_compare_exchange_weak(
+        p, expected, desired, Success, Failure);
+}
+template<typename T, int32 Success, int32 Failure>
+bool atomic_compare_exchange_strong_explicit(T* p, T* expected, T desired) {
+    return __smc_atomic_compare_exchange_strong(
+        p, expected, desired, Success, Failure);
+}
+
+// ----- fences -----
+
+template<int32 Order> void atomic_thread_fence() {
+    __smc_atomic_thread_fence(Order);
+}
+template<int32 Order> void atomic_signal_fence() {
+    __smc_atomic_signal_fence(Order);
+}
+void atomic_thread_fence_seq_cst() {
+    __smc_atomic_thread_fence(std::MemoryOrderSeqCst);
+}
+void atomic_signal_fence_seq_cst() {
+    __smc_atomic_signal_fence(std::MemoryOrderSeqCst);
+}
+
+// ----- Atomic<T> -----
+
+template<typename T> struct Atomic {
+    T value;
+
+    void init(T initial) {
+        this->value = initial;
+    }
+
+    T load() {
+        return std::atomic_load_seq_cst(&this->value);
+    }
+
+    void store(T desired) {
+        std::atomic_store_seq_cst(&this->value, desired);
+    }
+
+    T exchange(T desired) {
+        return std::atomic_exchange_seq_cst(&this->value, desired);
+    }
+
+    bool compare_exchange_weak(T* expected, T desired) {
+        return std::atomic_compare_exchange_weak_seq_cst(
+            &this->value, expected, desired);
+    }
+
+    bool compare_exchange_strong(T* expected, T desired) {
+        return std::atomic_compare_exchange_strong_seq_cst(
+            &this->value, expected, desired);
+    }
+
+    T fetch_add(isize delta) {
+        compile_time.if ((compile_time.is_integer(T) &&
+                          !compile_time.is_bool(T) &&
+                          !compile_time.is_enum(T)) ||
+                         compile_time.is_pointer(T)) {
+            return std::atomic_fetch_add_seq_cst(&this->value, delta);
+        } else {
+            panic("Atomic<T>::fetch_add requires integer or pointer T");
+            return this->load();
+        }
+    }
+
+    T fetch_sub(isize delta) {
+        compile_time.if ((compile_time.is_integer(T) &&
+                          !compile_time.is_bool(T) &&
+                          !compile_time.is_enum(T)) ||
+                         compile_time.is_pointer(T)) {
+            return std::atomic_fetch_sub_seq_cst(&this->value, delta);
+        } else {
+            panic("Atomic<T>::fetch_sub requires integer or pointer T");
+            return this->load();
+        }
+    }
+
+    T fetch_and(T operand) {
+        compile_time.if (compile_time.is_integer(T) &&
+                         !compile_time.is_bool(T) &&
+                         !compile_time.is_enum(T)) {
+            return std::atomic_fetch_and_seq_cst(&this->value, operand);
+        } else {
+            panic("Atomic<T>::fetch_and requires non-bool integer T");
+            return this->load();
+        }
+    }
+
+    T fetch_or(T operand) {
+        compile_time.if (compile_time.is_integer(T) &&
+                         !compile_time.is_bool(T) &&
+                         !compile_time.is_enum(T)) {
+            return std::atomic_fetch_or_seq_cst(&this->value, operand);
+        } else {
+            panic("Atomic<T>::fetch_or requires non-bool integer T");
+            return this->load();
+        }
+    }
+
+    T fetch_xor(T operand) {
+        compile_time.if (compile_time.is_integer(T) &&
+                         !compile_time.is_bool(T) &&
+                         !compile_time.is_enum(T)) {
+            return std::atomic_fetch_xor_seq_cst(&this->value, operand);
+        } else {
+            panic("Atomic<T>::fetch_xor requires non-bool integer T");
+            return this->load();
+        }
+    }
+
+    T load_order(std::MemoryOrder order) {
+        if (order == std::MemoryOrderRelaxed) {
+            return std::atomic_load_relaxed(&this->value);
+        }
+        if (order == std::MemoryOrderConsume) {
+            return std::atomic_load_consume(&this->value);
+        }
+        if (order == std::MemoryOrderAcquire) {
+            return std::atomic_load_acquire(&this->value);
+        }
+        if (order == std::MemoryOrderSeqCst) {
+            return std::atomic_load_seq_cst(&this->value);
+        }
+        panic("invalid memory order for Atomic<T>::load_order");
+        return this->load();
+    }
+
+    void store_order(T desired, std::MemoryOrder order) {
+        if (order == std::MemoryOrderRelaxed) {
+            std::atomic_store_relaxed(&this->value, desired);
+        } else if (order == std::MemoryOrderRelease) {
+            std::atomic_store_release(&this->value, desired);
+        } else if (order == std::MemoryOrderSeqCst) {
+            std::atomic_store_seq_cst(&this->value, desired);
+        } else {
+            panic("invalid memory order for Atomic<T>::store_order");
+        }
+    }
+
+    T exchange_order(T desired, std::MemoryOrder order) {
+        if (order == std::MemoryOrderRelaxed) {
+            return std::atomic_exchange_relaxed(&this->value, desired);
+        }
+        if (order == std::MemoryOrderAcquire) {
+            return std::atomic_exchange_acquire(&this->value, desired);
+        }
+        if (order == std::MemoryOrderRelease) {
+            return std::atomic_exchange_release(&this->value, desired);
+        }
+        if (order == std::MemoryOrderAcqRel) {
+            return std::atomic_exchange_acq_rel(&this->value, desired);
+        }
+        if (order == std::MemoryOrderSeqCst) {
+            return std::atomic_exchange_seq_cst(&this->value, desired);
+        }
+        panic("invalid memory order for Atomic<T>::exchange_order");
+        return this->load();
+    }
+
+    T fetch_add_order(isize delta, std::MemoryOrder order) {
+        compile_time.if ((compile_time.is_integer(T) &&
+                          !compile_time.is_bool(T) &&
+                          !compile_time.is_enum(T)) ||
+                         compile_time.is_pointer(T)) {
+            if (order == std::MemoryOrderRelaxed) {
+                return std::atomic_fetch_add_relaxed(&this->value, delta);
+            }
+            if (order == std::MemoryOrderAcquire) {
+                return std::atomic_fetch_add_acquire(&this->value, delta);
+            }
+            if (order == std::MemoryOrderRelease) {
+                return std::atomic_fetch_add_release(&this->value, delta);
+            }
+            if (order == std::MemoryOrderAcqRel) {
+                return std::atomic_fetch_add_acq_rel(&this->value, delta);
+            }
+            if (order == std::MemoryOrderSeqCst) {
+                return std::atomic_fetch_add_seq_cst(&this->value, delta);
+            }
+            panic("invalid memory order for Atomic<T>::fetch_add_order");
+            return this->load();
+        } else {
+            panic("Atomic<T>::fetch_add_order requires integer or pointer T");
+            return this->load();
+        }
+    }
+
+    T fetch_sub_order(isize delta, std::MemoryOrder order) {
+        compile_time.if ((compile_time.is_integer(T) &&
+                          !compile_time.is_bool(T) &&
+                          !compile_time.is_enum(T)) ||
+                         compile_time.is_pointer(T)) {
+            if (order == std::MemoryOrderRelaxed) {
+                return std::atomic_fetch_sub_relaxed(&this->value, delta);
+            }
+            if (order == std::MemoryOrderAcquire) {
+                return std::atomic_fetch_sub_acquire(&this->value, delta);
+            }
+            if (order == std::MemoryOrderRelease) {
+                return std::atomic_fetch_sub_release(&this->value, delta);
+            }
+            if (order == std::MemoryOrderAcqRel) {
+                return std::atomic_fetch_sub_acq_rel(&this->value, delta);
+            }
+            if (order == std::MemoryOrderSeqCst) {
+                return std::atomic_fetch_sub_seq_cst(&this->value, delta);
+            }
+            panic("invalid memory order for Atomic<T>::fetch_sub_order");
+            return this->load();
+        } else {
+            panic("Atomic<T>::fetch_sub_order requires integer or pointer T");
+            return this->load();
+        }
+    }
+
+    T fetch_and_order(T operand, std::MemoryOrder order) {
+        compile_time.if (compile_time.is_integer(T) &&
+                         !compile_time.is_bool(T) &&
+                         !compile_time.is_enum(T)) {
+            if (order == std::MemoryOrderRelaxed) {
+                return std::atomic_fetch_and_relaxed(&this->value, operand);
+            }
+            if (order == std::MemoryOrderAcquire) {
+                return std::atomic_fetch_and_acquire(&this->value, operand);
+            }
+            if (order == std::MemoryOrderRelease) {
+                return std::atomic_fetch_and_release(&this->value, operand);
+            }
+            if (order == std::MemoryOrderAcqRel) {
+                return std::atomic_fetch_and_acq_rel(&this->value, operand);
+            }
+            if (order == std::MemoryOrderSeqCst) {
+                return std::atomic_fetch_and_seq_cst(&this->value, operand);
+            }
+            panic("invalid memory order for Atomic<T>::fetch_and_order");
+            return this->load();
+        } else {
+            panic("Atomic<T>::fetch_and_order requires non-bool integer T");
+            return this->load();
+        }
+    }
+
+    T fetch_or_order(T operand, std::MemoryOrder order) {
+        compile_time.if (compile_time.is_integer(T) &&
+                         !compile_time.is_bool(T) &&
+                         !compile_time.is_enum(T)) {
+            if (order == std::MemoryOrderRelaxed) {
+                return std::atomic_fetch_or_relaxed(&this->value, operand);
+            }
+            if (order == std::MemoryOrderAcquire) {
+                return std::atomic_fetch_or_acquire(&this->value, operand);
+            }
+            if (order == std::MemoryOrderRelease) {
+                return std::atomic_fetch_or_release(&this->value, operand);
+            }
+            if (order == std::MemoryOrderAcqRel) {
+                return std::atomic_fetch_or_acq_rel(&this->value, operand);
+            }
+            if (order == std::MemoryOrderSeqCst) {
+                return std::atomic_fetch_or_seq_cst(&this->value, operand);
+            }
+            panic("invalid memory order for Atomic<T>::fetch_or_order");
+            return this->load();
+        } else {
+            panic("Atomic<T>::fetch_or_order requires non-bool integer T");
+            return this->load();
+        }
+    }
+
+    T fetch_xor_order(T operand, std::MemoryOrder order) {
+        compile_time.if (compile_time.is_integer(T) &&
+                         !compile_time.is_bool(T) &&
+                         !compile_time.is_enum(T)) {
+            if (order == std::MemoryOrderRelaxed) {
+                return std::atomic_fetch_xor_relaxed(&this->value, operand);
+            }
+            if (order == std::MemoryOrderAcquire) {
+                return std::atomic_fetch_xor_acquire(&this->value, operand);
+            }
+            if (order == std::MemoryOrderRelease) {
+                return std::atomic_fetch_xor_release(&this->value, operand);
+            }
+            if (order == std::MemoryOrderAcqRel) {
+                return std::atomic_fetch_xor_acq_rel(&this->value, operand);
+            }
+            if (order == std::MemoryOrderSeqCst) {
+                return std::atomic_fetch_xor_seq_cst(&this->value, operand);
+            }
+            panic("invalid memory order for Atomic<T>::fetch_xor_order");
+            return this->load();
+        } else {
+            panic("Atomic<T>::fetch_xor_order requires non-bool integer T");
+            return this->load();
+        }
+    }
+
+    bool is_lock_free() {
+        compile_time.static_assert(
+            compile_time.size_of(T) == 1 || compile_time.size_of(T) == 2 ||
+                compile_time.size_of(T) == 4 || compile_time.size_of(T) == 8,
+            "Atomic<T> supports only 1/2/4/8-byte scalar types");
+        return true;
+    }
+
+    bool is_always_lock_free() {
+        compile_time.static_assert(
+            compile_time.size_of(T) == 1 || compile_time.size_of(T) == 2 ||
+                compile_time.size_of(T) == 4 || compile_time.size_of(T) == 8,
+            "Atomic<T> supports only 1/2/4/8-byte scalar types");
+        return true;
+    }
+};
+
+} // namespace std
