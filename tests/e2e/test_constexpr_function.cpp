@@ -97,12 +97,67 @@ int32 main() {
 }
 
 TEST_F(ConstexprFunctionE2E, ConstexprForLoop) {
-    GTEST_SKIP() << "For-loops inside constexpr functions cause a hang; "
-                     "recursion is used as the workaround in the compiler.";
+    EXPECT_EQ(runSource(R"(
+constexpr int32 sumTo(int32 n) {
+    int32 total = 0;
+    for (int32 i = 0; i < n; i = i + 1) total = total + i;
+    return total;
+}
+int32 main() { constexpr int32 x = sumTo(10); return x - 45; }
+)", "test_constexpr_for.c"), 0);
 }
 
 TEST_F(ConstexprFunctionE2E, ConstexprNestedCall) {
-    GTEST_SKIP() << "Calling one constexpr function from another causes "
-                     "an LLVM IR assertion failure.";
+    EXPECT_EQ(runSource(R"(
+constexpr int32 inc(int32 x) { return x + 1; }
+constexpr int32 twice(int32 x) { return inc(x) * 2; }
+int32 main() { constexpr int32 x = twice(20); return x - 42; }
+)", "test_constexpr_nested.c"), 0);
+}
+
+TEST_F(ConstexprFunctionE2E, ConstexprWhileLoop) {
+    EXPECT_EQ(runSource(R"(
+constexpr int32 countBits(uint32 v) {
+    int32 n = 0;
+    while (v != 0) {
+        n = n + (int32)(v & 1);
+        v = v >> 1;
+    }
+    return n;
+}
+int32 main() { constexpr int32 x = countBits(0xF0u); return x - 4; }
+)", "test_constexpr_while.c"), 0);
+}
+
+TEST_F(ConstexprFunctionE2E, ConstexprDoWhileAndBreakContinue) {
+    EXPECT_EQ(runSource(R"(
+constexpr int32 sumOdd(int32 n) {
+    int32 total = 0;
+    int32 i = 0;
+    do {
+        i = i + 1;
+        if (i > n) break;
+        if ((i & 1) == 0) continue;
+        total = total + i;
+    } while (i < 100);
+    return total;
+}
+int32 main() { constexpr int32 x = sumOdd(9); return x - 25; }
+)", "test_constexpr_do_while.c"), 0);
+}
+
+TEST_F(ConstexprFunctionE2E, ConstexprCompoundAssignAndInc) {
+    EXPECT_EQ(runSource(R"(
+constexpr int32 calc() {
+    int32 x = 1;
+    x += 4;
+    x *= 3;
+    x -= 2;
+    x++;
+    ++x;
+    return x;
+}
+int32 main() { constexpr int32 x = calc(); return x - 15; }
+)", "test_constexpr_assign.c"), 0);
 }
 

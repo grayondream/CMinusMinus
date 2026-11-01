@@ -218,8 +218,11 @@ private:
     bool currentDeclExported = false;
     bool namespaceExported = false;
 
+    enum class CtFlow { Normal, Break, Continue, Return };
+
     std::optional<ConstValue> evalConstexprCall(CallExprAST& call, int depth);
-    std::optional<ConstValue> evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth);
+    std::optional<ConstValue> evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
+                                                CtFlow& flow);
     static bool constValueTruthy(const ConstValue& v);
 
     void visit(TranslationUnitAST& node);
@@ -356,5 +359,11 @@ private:
     ConstEnv* activeEnv = nullptr; // innermost constexpr call environment
     int constexprCallDepth = 0;    // guards runaway constexpr recursion
     static constexpr int kConstexprMaxDepth = 128;
+    // CT step budget: bounds compile-time loops and deep expressions.
+    static constexpr std::size_t kConstexprStepLimit = 1000000;
+    std::size_t ctSteps = 0;
+    int ctEvalDepth = 0;
+    bool ctStepReported = false;
+    bool ctStepAllowance(ASTNode& at);
     std::string namespacePrefix;   // e.g. "A_B_" while analyzing namespace A::B
 };

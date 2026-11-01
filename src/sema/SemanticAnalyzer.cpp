@@ -1472,19 +1472,47 @@ SemanticAnalyzer::evalConstexprCallCT(CallExprAST& call,
     }
     ConstEnv env = activeEnv ? *activeEnv : ConstEnv{};
     for (size_t i = 0; i < fn->params.size(); ++i) {
-        env[fn->params[i]->name] = argValues[i];
+        env[fn->params[i]->name] = ctClone(argValues[i]);
     }
     ConstEnv* saved = activeEnv;
     activeEnv = &env;
+    if (ctEvalDepth == 0) {
+        ctSteps = 0;
+        ctStepReported = false;
+    }
     constexprCallDepth++;
-    auto result = evalConstexprStmt(fn->body.get(), env, 1);
+    CtFlow flow = CtFlow::Normal;
+    auto result = evalConstexprStmt(fn->body.get(), env, 1, flow);
     constexprCallDepth--;
     activeEnv = saved;
-    return result;
+    return flow == CtFlow::Return ? result : std::nullopt;
+}
+
+bool SemanticAnalyzer::ctStepAllowance(ASTNode& at) {
+    if (++ctSteps <= kConstexprStepLimit) {
+        return true;
+    }
+    if (!ctStepReported) {
+        ctStepReported = true;
+        emitError("compile-time evaluation step limit exceeded (1000000)", at);
+    }
+    return false;
 }
 
 std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(ExprAST* expr) {
     if (!expr) return std::nullopt;
+
+    struct DepthGuard {
+        int& depth;
+        ~DepthGuard() { --depth; }
+    } guard{ctEvalDepth};
+    if (ctEvalDepth++ == 0) {
+        ctSteps = 0;
+        ctStepReported = false;
+    }
+    if (!ctStepAllowance(*expr)) {
+        return std::nullopt;
+    }
 
     // P1-04 / CT-12: 表达式树含 compile_time 根 → 整树委托编译期求值器
     // （含 target/build 值与字符串运算；DEC-05 共享内核由此对接）。
@@ -1493,18 +1521,23 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
     }
 
     if (auto* num = dynamic_cast<NumberExprAST*>(expr)) {
-        ConstValue cv;
-        cv.type = ConstValue::INT;
-        cv.intVal = num->value;
-        return cv;
+        unsigned bits = 32;
+        bool isUnsigned = false;
+        switch (num->literalKind) {
+            case LiteralKind::UInt: bits = 32; isUnsigned = true; break;
+            case LiteralKind::Long: bits = 64; isUnsigned = false; break;
+            case LiteralKind::ULong: bits = 64; isUnsigned = true; break;
+            case LiteralKind::Int:
+                bits = (num->value >= INT32_MIN && num->value <= INT32_MAX) ? 32 : 64;
+                break;
+            default: break;
+        }
+        return ctInt(num->value, bits, isUnsigned);
     }
 
     // Found issue: bool 字面量按整数（0/1）参与 constexpr 折叠。
     if (auto* bl = dynamic_cast<BoolLiteralExprAST*>(expr)) {
-        ConstValue cv;
-        cv.type = ConstValue::INT;
-        cv.intVal = bl->value ? 1 : 0;
-        return cv;
+        return ctInt(bl->value ? 1 : 0, 1, true, true);
     }
 
     if (auto* chr = dynamic_cast<CharExprAST*>(expr)) {
@@ -1519,6 +1552,59 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
         cv.type = ConstValue::DOUBLE;
         cv.doubleVal = flt->value;
         return cv;
+    }
+
+    if (auto* assign = dynamic_cast<AssignmentExprAST*>(expr)) {
+        if (!activeEnv) return std::nullopt;
+        auto* var = dynamic_cast<VariableExprAST*>(assign->lhs.get());
+        if (!var) return std::nullopt;
+        auto slot = activeEnv->find(var->name);
+        if (slot == activeEnv->end()) return std::nullopt;
+
+        auto rhs = evaluateConstexpr(assign->rhs.get());
+        if (!rhs) return std::nullopt;
+
+        if (assign->op == AssignOp::Assign) {
+            slot->second = ctClone(*rhs);
+            return slot->second;
+        }
+
+        BinaryOp op = BinaryOp::Invalid;
+        switch (assign->op) {
+            case AssignOp::AddAssign: op = BinaryOp::Add; break;
+            case AssignOp::SubAssign: op = BinaryOp::Sub; break;
+            case AssignOp::MulAssign: op = BinaryOp::Mul; break;
+            case AssignOp::DivAssign: op = BinaryOp::Div; break;
+            case AssignOp::ModAssign: op = BinaryOp::Mod; break;
+            case AssignOp::BitAndAssign: op = BinaryOp::BitAnd; break;
+            case AssignOp::BitOrAssign: op = BinaryOp::BitOr; break;
+            case AssignOp::BitXorAssign: op = BinaryOp::BitXor; break;
+            case AssignOp::LShiftAssign: op = BinaryOp::LShift; break;
+            case AssignOp::RShiftAssign: op = BinaryOp::RShift; break;
+            default: return std::nullopt;
+        }
+        auto folded = ctBinary(slot->second, *rhs, static_cast<int>(op),
+                               assign->lhs->type);
+        if (!folded) return std::nullopt;
+        slot->second = *folded;
+        return slot->second;
+    }
+
+    if (auto* post = dynamic_cast<PostfixIncDecExprAST*>(expr)) {
+        if (!activeEnv) return std::nullopt;
+        auto* var = dynamic_cast<VariableExprAST*>(post->operand.get());
+        if (!var) return std::nullopt;
+        auto slot = activeEnv->find(var->name);
+        if (slot == activeEnv->end()) return std::nullopt;
+        ConstValue old = slot->second;
+        auto delta = ctInt(1, slot->second.bits, slot->second.isUnsigned);
+        auto folded = ctBinary(slot->second, delta,
+                               static_cast<int>(post->isIncrement ? BinaryOp::Add
+                                                                  : BinaryOp::Sub),
+                               post->operand->type);
+        if (!folded) return std::nullopt;
+        slot->second = *folded;
+        return old;
     }
 
     if (auto* bin = dynamic_cast<BinaryExprAST*>(expr)) {
@@ -1539,6 +1625,24 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
     if (auto* unary = dynamic_cast<UnaryExprAST*>(expr)) {
         auto operand = evaluateConstexpr(unary->operand.get());
         if (!operand) return std::nullopt;
+
+        if (unary->op == UnaryOp::PreInc || unary->op == UnaryOp::PreDec) {
+            if (!activeEnv) return std::nullopt;
+            auto* var = dynamic_cast<VariableExprAST*>(unary->operand.get());
+            if (!var) return std::nullopt;
+            auto slot = activeEnv->find(var->name);
+            if (slot == activeEnv->end()) return std::nullopt;
+            const long long one = 1;
+            auto delta = ctInt(one, slot->second.bits, slot->second.isUnsigned);
+            auto folded = ctBinary(slot->second, delta,
+                                   static_cast<int>(unary->op == UnaryOp::PreInc
+                                                        ? BinaryOp::Add
+                                                        : BinaryOp::Sub),
+                                   unary->operand->type);
+            if (!folded) return std::nullopt;
+            slot->second = *folded;
+            return slot->second;
+        }
 
         if (operand->type == ConstValue::INT || operand->type == ConstValue::CHAR) {
             const bool isChar = operand->type == ConstValue::CHAR;
@@ -1614,12 +1718,7 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
 }
 
 bool SemanticAnalyzer::constValueTruthy(const ConstValue& v) {
-    switch (v.type) {
-        case ConstValue::INT:    return v.intVal != 0;
-        case ConstValue::CHAR:   return v.charVal != 0;
-        case ConstValue::DOUBLE: return v.doubleVal != 0.0;
-    }
-    return false;
+    return ctTruthy(v);
 }
 
 std::optional<SemanticAnalyzer::ConstValue>
@@ -1651,39 +1750,49 @@ SemanticAnalyzer::evalConstexprCall(CallExprAST& call, int depth) {
         if (!arg) {
             return std::nullopt;
         }
-        env[fn->params[i]->name] = *arg;
+        env[fn->params[i]->name] = ctClone(*arg);
     }
 
     ConstEnv* saved = activeEnv;
     activeEnv = &env;
     constexprCallDepth++;
-    auto result = evalConstexprStmt(fn->body.get(), env, depth + 1);
+    CtFlow flow = CtFlow::Normal;
+    auto result = evalConstexprStmt(fn->body.get(), env, depth + 1, flow);
     constexprCallDepth--;
     activeEnv = saved;
-    return result;
+    return flow == CtFlow::Return ? result : std::nullopt;
 }
 
 std::optional<SemanticAnalyzer::ConstValue>
-SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth) {
+SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
+                                    CtFlow& flow) {
+    flow = CtFlow::Normal;
     if (!stmt || depth > kConstexprMaxDepth) {
         return std::nullopt;
     }
-    (void)env;
+    if (!ctStepAllowance(*stmt)) {
+        return std::nullopt;
+    }
 
     if (auto* ret = dynamic_cast<ReturnStmtAST*>(stmt)) {
-        ConstValue zero;
-        zero.type = ConstValue::INT;
-        zero.intVal = 0;
-        return ret->value ? evaluateConstexpr(ret->value.get()) : std::optional<ConstValue>(zero);
+        flow = CtFlow::Return;
+        if (!ret->value) {
+            return ctInt(0);
+        }
+        return evaluateConstexpr(ret->value.get());
     }
 
     if (auto* block = dynamic_cast<CompoundStmtAST*>(stmt)) {
+        std::optional<ConstValue> result;
         for (auto& inner : block->stmts) {
-            if (auto result = evalConstexprStmt(inner.get(), env, depth + 1)) {
+            CtFlow innerFlow = CtFlow::Normal;
+            result = evalConstexprStmt(inner.get(), env, depth + 1, innerFlow);
+            if (innerFlow != CtFlow::Normal) {
+                flow = innerFlow;
                 return result;
             }
         }
-        return std::nullopt;
+        return result;
     }
 
     if (auto* ifs = dynamic_cast<IfStmtAST*>(stmt)) {
@@ -1691,18 +1800,99 @@ SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth) {
         if (!cond) {
             return std::nullopt;
         }
-        if (constValueTruthy(*cond)) {
-            return evalConstexprStmt(ifs->thenStmt.get(), env, depth + 1);
+        if (ctTruthy(*cond)) {
+            return evalConstexprStmt(ifs->thenStmt.get(), env, depth + 1, flow);
         }
-        return evalConstexprStmt(ifs->elseStmt.get(), env, depth + 1);
+        return evalConstexprStmt(ifs->elseStmt.get(), env, depth + 1, flow);
+    }
+
+    if (auto* wh = dynamic_cast<WhileStmtAST*>(stmt)) {
+        while (true) {
+            auto cond = evaluateConstexpr(wh->cond.get());
+            if (!cond) return std::nullopt;
+            if (!ctTruthy(*cond)) break;
+            if (!ctStepAllowance(*stmt)) return std::nullopt;
+            CtFlow bodyFlow = CtFlow::Normal;
+            auto result = evalConstexprStmt(wh->body.get(), env, depth + 1, bodyFlow);
+            if (bodyFlow == CtFlow::Break) break;
+            if (bodyFlow == CtFlow::Return) {
+                flow = CtFlow::Return;
+                return result;
+            }
+            // Continue and Normal both proceed to the next condition check.
+        }
+        return std::nullopt;
+    }
+
+    if (auto* dw = dynamic_cast<DoWhileStmtAST*>(stmt)) {
+        while (true) {
+            if (!ctStepAllowance(*stmt)) return std::nullopt;
+            CtFlow bodyFlow = CtFlow::Normal;
+            auto result = evalConstexprStmt(dw->body.get(), env, depth + 1, bodyFlow);
+            if (bodyFlow == CtFlow::Break) break;
+            if (bodyFlow == CtFlow::Return) {
+                flow = CtFlow::Return;
+                return result;
+            }
+            auto cond = evaluateConstexpr(dw->cond.get());
+            if (!cond) return std::nullopt;
+            if (!ctTruthy(*cond)) break;
+        }
+        return std::nullopt;
+    }
+
+    if (auto* fr = dynamic_cast<ForStmtAST*>(stmt)) {
+        CtFlow initFlow = CtFlow::Normal;
+        if (fr->init) {
+            evalConstexprStmt(fr->init.get(), env, depth + 1, initFlow);
+            if (initFlow == CtFlow::Return) {
+                flow = CtFlow::Return;
+                return std::nullopt;
+            }
+        }
+        while (true) {
+            if (fr->cond) {
+                auto cond = evaluateConstexpr(fr->cond.get());
+                if (!cond) return std::nullopt;
+                if (!ctTruthy(*cond)) break;
+            }
+            if (!ctStepAllowance(*stmt)) return std::nullopt;
+            CtFlow bodyFlow = CtFlow::Normal;
+            auto result = evalConstexprStmt(fr->body.get(), env, depth + 1, bodyFlow);
+            if (bodyFlow == CtFlow::Break) break;
+            if (bodyFlow == CtFlow::Return) {
+                flow = CtFlow::Return;
+                return result;
+            }
+            if (fr->inc) {
+                if (!evaluateConstexpr(fr->inc.get())) return std::nullopt;
+            }
+        }
+        return std::nullopt;
+    }
+
+    if (dynamic_cast<BreakStmtAST*>(stmt)) {
+        flow = CtFlow::Break;
+        return std::nullopt;
+    }
+
+    if (dynamic_cast<ContinueStmtAST*>(stmt)) {
+        flow = CtFlow::Continue;
+        return std::nullopt;
+    }
+
+    if (dynamic_cast<NullStmtAST*>(stmt)) {
+        return std::nullopt;
     }
 
     if (auto* ds = dynamic_cast<DeclStmtAST*>(stmt)) {
         if (auto* vd = dynamic_cast<VarDeclAST*>(ds->decl.get())) {
             if (vd->initExpr) {
                 if (auto value = evaluateConstexpr(vd->initExpr.get())) {
-                    env[vd->name] = *value;
+                    env[vd->name] = ctClone(*value);
                 }
+            } else {
+                env[vd->name] = ctDefaultValue(vd->type);
             }
         }
         return std::nullopt;
