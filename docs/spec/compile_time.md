@@ -141,6 +141,10 @@ compile_time.if (compile_time.target.os == "linux") {
 | `is_convertible(A,B)`、`is_assignable(A,B)` | 基于现有隐式转换秩 |
 | `template_name_of(T)`、`template_arg_count(T)`、`template_arg_name(T,i)` | 模板实例占位内省 |
 
+`template_*` 读取的是 parse 期的 `TypeInstance` 占位；布局/字段查询仍要求已解析的具体类型，
+因此 `size_of(Box<int32>)` 这类查询当前应改用显式实例化后的类型名，或等待后续把
+`TypeInstance` 解析为实例类型。
+
 类型值不得逃逸到运行时；`compile-time type value cannot be used in runtime context`。
 
 ### 7.4 编译期重复展开
