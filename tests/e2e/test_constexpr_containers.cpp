@@ -111,6 +111,50 @@ static int runWithImports(const std::string& source, const std::string& filename
     return ((int (*)()) (intptr_t) sym->getValue())();
 }
 
+static std::vector<std::string> analyzeWithImports(const std::string& source,
+                                                   const std::string& filename) {
+    Lexer lexer(filename, source);
+    auto tokens = lexer.tokenize();
+    std::vector<std::string> errors;
+    for (auto& d : lexer.getDiagnostics()) errors.push_back(d.formatWithSeverity());
+
+    smc::ModuleSearchPaths paths{{STD_DIR}};
+    std::set<std::string> loaded;
+    std::vector<std::unique_ptr<DeclAST>> importedDecls;
+    smc::preloadImports(smc::collectImportSpecifiers(tokens), ".", paths, loaded,
+                        importedDecls, errors);
+    if (!errors.empty()) return errors;
+
+    Parser parser(tokens);
+    auto ast = parser.parse();
+    if (!ast) {
+        errors.push_back("parse failed");
+        return errors;
+    }
+    for (auto& d : parser.getErrors()) errors.push_back(d.formatWithSeverity());
+    if (!errors.empty()) return errors;
+    if (!importedDecls.empty()) {
+        ast->declarations.insert(ast->declarations.begin(),
+                                 std::make_move_iterator(importedDecls.begin()),
+                                 std::make_move_iterator(importedDecls.end()));
+    }
+    smc::processImports(*ast, ".", paths, loaded, errors);
+    if (!errors.empty()) return errors;
+
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    for (auto& d : analyzer.getErrors()) errors.push_back(d.format());
+    return errors;
+}
+
+static bool hasErrorContaining(const std::vector<std::string>& errors,
+                               const std::string& needle) {
+    for (const auto& e : errors) {
+        if (e.find(needle) != std::string::npos) return true;
+    }
+    return false;
+}
+
 } // namespace
 
 TEST_F(ConstexprContainersTest, VecSumInConstexpr) {
@@ -254,4 +298,71 @@ TEST_F(ConstexprContainersTest, DequeRingInConstexpr) {
         }
         int32 main() { constexpr int64 x = dequeSum(); return (int32)x; }
     )", "ct_deque_ring.c"), 0);
+}
+
+TEST_F(ConstexprContainersTest, AcceptsContainerConstexprFunction) {
+    auto errors = analyzeWithImports(R"(
+        import std.collections;
+        constexpr std::Vec<int32> make() {
+            std::Vec<int32> v;
+            v.init();
+            v.push(1);
+            return v;
+        }
+        constexpr std::Vec<int32> T = make();
+        constexpr std::Vec<int32> B = T;
+        int32 main() { return T.get(0) + B.get(0) - 2; }
+    )", "ct_accept_vec.c");
+    for (auto& e : errors) std::cerr << "sema: " << e << "\n";
+    EXPECT_TRUE(errors.empty());
+}
+
+TEST_F(ConstexprContainersTest, RejectsMutationOfConstexprContainer) {
+    auto errors = analyzeWithImports(R"(
+        import std.collections;
+        constexpr std::Vec<int32> make() {
+            std::Vec<int32> v;
+            v.init();
+            return v;
+        }
+        constexpr std::Vec<int32> T = make();
+        int32 main() { T.push(1); return 0; }
+    )", "ct_mutate_vec.c");
+    EXPECT_TRUE(hasErrorContaining(errors, "constexpr container"));
+}
+
+TEST_F(ConstexprContainersTest, RejectsFieldWriteOnConstexprContainer) {
+    auto errors = analyzeWithImports(R"(
+        import std.collections;
+        constexpr std::Vec<int32> make() {
+            std::Vec<int32> v;
+            v.init();
+            return v;
+        }
+        constexpr std::Vec<int32> T = make();
+        int32 main() { T.len = 0; return 0; }
+    )", "ct_mutate_field.c");
+    EXPECT_TRUE(hasErrorContaining(errors, "constexpr container"));
+}
+
+TEST_F(ConstexprContainersTest, RejectsMutableCopyOfConstexprContainer) {
+    auto errors = analyzeWithImports(R"(
+        import std.collections;
+        constexpr std::Vec<int32> make() {
+            std::Vec<int32> v;
+            v.init();
+            return v;
+        }
+        constexpr std::Vec<int32> T = make();
+        int32 main() { std::Vec<int32> M = T; return 0; }
+    )", "ct_copy_vec.c");
+    EXPECT_TRUE(hasErrorContaining(errors, "read-only"));
+}
+
+TEST_F(ConstexprContainersTest, StillRejectsStringConstexprFunction) {
+    auto errors = analyzeWithImports(R"(
+        constexpr string make() { return string.new("x"); }
+        int32 main() { return 0; }
+    )", "ct_string_constexpr.c");
+    EXPECT_TRUE(hasErrorContaining(errors, "literal return type"));
 }

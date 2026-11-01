@@ -4,8 +4,10 @@
 #include <vector>
 #include <optional>
 #include <unordered_map>
+#include <memory>
 #include "Stmt.h"
 #include "Annotation.h"
+#include "CtValue.h"
 
 // PAR-08: aggregate initializer emitters shared with compound-literal codegen
 // (Expr.cpp). Definitions live in Decl.cpp (see the forward decls there).
@@ -51,6 +53,9 @@ public:
     std::unique_ptr<ExprAST> initExpr;
     bool isConstexpr = false;
     std::optional<FoldedValue> foldedValue;
+    // Constexpr container value; codegen materializes it as immutable
+    // constant arrays + a constant container struct.
+    std::shared_ptr<CtContainer> foldedContainer;
     // P1-05 / ANN-03: [[align(N)]] 折叠值（sema 写入，codegen setAlignment）。
     uint64_t declAlign = 0;
     // CON-04: `thread_local` storage class — emitted as an LLVM thread-local

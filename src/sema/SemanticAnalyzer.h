@@ -375,6 +375,9 @@ private:
     // evaluator uses this to interpret side-effect-free callbacks such as
     // std.hash's equality functions, which are not marked constexpr.
     std::unordered_map<std::string, FunctionDeclAST*> m_allFunctions;
+    // Names of namespace/block-scope constexpr container variables. Their
+    // materialized storage is read-only, so mutating/copying checks use this.
+    std::unordered_set<std::string> constexprContainerVars;
     ConstEnv* activeEnv = nullptr; // innermost constexpr call environment
     int constexprCallDepth = 0;    // guards runaway constexpr recursion
     static constexpr int kConstexprMaxDepth = 128;

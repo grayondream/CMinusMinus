@@ -2818,6 +2818,27 @@ static bool rootsAtGlobalVariable(
     return false;
 }
 
+// Root variable of an lvalue path (`v`, `v.len`, `v.data[i]`, `*p`).
+static const VariableExprAST* rootVariableOf(const ExprAST* e) {
+    if (auto* v = dynamic_cast<const VariableExprAST*>(e)) return v;
+    if (auto* m = dynamic_cast<const MemberAccessExprAST*>(e))
+        return rootVariableOf(m->object.get());
+    if (auto* a = dynamic_cast<const ArrayAccessExprAST*>(e))
+        return rootVariableOf(a->array.get());
+    if (auto* u = dynamic_cast<const UnaryExprAST*>(e)) {
+        if (u->op == UnaryOp::Deref) return rootVariableOf(u->operand.get());
+    }
+    return nullptr;
+}
+
+static bool isMutatingContainerMethod(const std::string& name) {
+    return name == "init" || name == "destroy" || name == "reserve" ||
+           name == "push" || name == "pop" || name == "set" || name == "clear" ||
+           name == "insert" || name == "remove" || name == "swap" ||
+           name == "put" || name == "push_back" || name == "push_front" ||
+           name == "pop_back" || name == "pop_front";
+}
+
 // SEM-17: operand kinds that may carry user-defined operator overloads
 // (mirrors the aggregate check used by the binary-operator call site).
 static bool isOperatorOverloadOperand(Type* t) {    while (t && t->kind == TypeKind::Typedef)
@@ -4204,6 +4225,16 @@ bool SemanticAnalyzer::tryAnalyzeTemplateCall(CallExprAST& node) {
 }
 
 void SemanticAnalyzer::visit(AssignmentExprAST& node) {
+    if (auto* root = rootVariableOf(node.lhs.get())) {
+        if (constexprContainerVars.count(root->name)) {
+            emitError("cannot mutate constexpr container '" + root->name +
+                          "' (materialized constexpr containers are read-only)",
+                      node);
+            node.type = nullptr;
+            node.isLValue = false;
+            return;
+        }
+    }
     Type* lhsType = getExprType(*node.lhs);
     if (lhsType && lhsType->isConst) {
         emitError("cannot assign to const variable", node);
@@ -4876,6 +4907,18 @@ void SemanticAnalyzer::visit(MethodCallExprAST& node) {
     // before object resolution (mirrors the compile_time chain special case).
     if (tryAnalyzeStringStaticCall(node)) {
         return;
+    }
+
+    if (auto* root = rootVariableOf(node.object.get())) {
+        if (constexprContainerVars.count(root->name) &&
+            isMutatingContainerMethod(node.methodName)) {
+            emitError("cannot mutate constexpr container '" + root->name +
+                          "' (materialized constexpr containers are read-only)",
+                      node);
+            node.type = nullptr;
+            node.isLValue = false;
+            return;
+        }
     }
 
     Type* objType = getExprType(*node.object);
@@ -6131,15 +6174,34 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
                 emitError("constexpr variable '" + node.name + "' must be initialized with a constant expression", node);
             } else {
                 constexprValues[node.name] = *folded;
-                FoldedValue fv;
-                fv.type = static_cast<FoldedValue::Type>(folded->type);
-                switch (folded->type) {
-                    case ConstValue::INT: fv.intVal = folded->intVal; break;
-                    case ConstValue::DOUBLE: fv.doubleVal = folded->doubleVal; break;
-                    case ConstValue::CHAR: fv.charVal = folded->charVal; break;
+                if (folded->type == ConstValue::CONTAINER) {
+                    node.foldedContainer = folded->container;
+                    constexprContainerVars.insert(node.name);
+                } else {
+                    FoldedValue fv;
+                    fv.type = static_cast<FoldedValue::Type>(folded->type);
+                    switch (folded->type) {
+                        case ConstValue::INT: fv.intVal = folded->intVal; break;
+                        case ConstValue::DOUBLE: fv.doubleVal = folded->doubleVal; break;
+                        case ConstValue::CHAR: fv.charVal = folded->charVal; break;
+                        default: break;
+                    }
+                    node.foldedValue = fv;
                 }
-                node.foldedValue = fv;
             }
+        }
+    }
+
+    if (node.initExpr && !node.isConstexpr) {
+        auto* root = rootVariableOf(node.initExpr.get());
+        Type* declared = node.type;
+        while (declared && declared->kind == TypeKind::Typedef)
+            declared = static_cast<TypedefType*>(declared)->aliasedType;
+        if (root && constexprContainerVars.count(root->name) &&
+            declared && !declared->isConst) {
+            emitError("cannot copy read-only constexpr container '" + root->name +
+                          "' into a mutable variable",
+                      node);
         }
     }
 
@@ -7085,16 +7147,20 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
     checkDeprecatedTypeUse(node.returnType, node);
     for (auto& p : node.params) checkDeprecatedTypeUse(p->type, node);
 
-    // Validate constexpr function constraints
+    // Validate constexpr function constraints. Container types are allowed so
+    // compile-time construction can return/move a table; other aggregates keep
+    // the historical literal-type restriction.
     if (node.isConstexpr) {
-        // Return type must be arithmetic (literal type)
-        if (!isIntegerType(node.returnType) && !isFloatType(node.returnType)) {
+        auto isCtLiteral = [this](Type* t) {
+            return isIntegerType(t) || isFloatType(t) ||
+                   ctContainerInfo(t).has_value();
+        };
+        if (!isCtLiteral(node.returnType)) {
             emitError("constexpr function '" + node.name + "' must have literal return type", node);
         }
 
-        // All parameters must be arithmetic types
         for (auto& param : node.params) {
-            if (!isIntegerType(param->type) && !isFloatType(param->type)) {
+            if (!isCtLiteral(param->type)) {
                 emitError("constexpr function '" + node.name + "' parameter '" + param->name + "' must have literal type", node);
             }
         }
