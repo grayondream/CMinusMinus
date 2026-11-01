@@ -443,3 +443,67 @@ TEST_F(ConstexprContainersTest, StringViewTableIsReadableAtRuntime) {
         }
     )", "ct_table_str.c"), 0);
 }
+
+TEST_F(ConstexprContainersTest, HashMapTableIsReadableAtRuntime) {
+    EXPECT_EQ(runWithImports(R"(
+        import std.collections;
+        import std.hash;
+        constexpr std::HashMap<uint32,int32> make() {
+            std::HashMap<uint32,int32> m;
+            m.init(std::hash_key_u32, std::equal_u32);
+            for (uint32 i = 0; i < 64; i = i + 1) m.put(i, (int32)(i * 2));
+            return m;
+        }
+        constexpr std::HashMap<uint32,int32> T = make();
+        int32 main() {
+            int32 out = 0;
+            if (!T.get(17, &out) || out != 34) return 1;
+            if (T.size() != 64) return 2;
+            if (!T.contains(63)) return 3;
+            return 0;
+        }
+    )", "ct_table_map.c"), 0);
+}
+
+TEST_F(ConstexprContainersTest, HashSetTableIsReadableAtRuntime) {
+    EXPECT_EQ(runWithImports(R"(
+        import std.collections;
+        import std.hash;
+        constexpr std::HashSet<uint64> make() {
+            std::HashSet<uint64> s;
+            s.init(std::hash_key_u64, std::equal_u64);
+            for (uint64 i = 0; i < 32; i = i + 1) s.insert(i * 3);
+            return s;
+        }
+        constexpr std::HashSet<uint64> T = make();
+        int32 main() {
+            if (T.size() != 32) return 1;
+            if (!T.contains(30)) return 2;
+            if (T.contains(31)) return 3;
+            return 0;
+        }
+    )", "ct_table_set.c"), 0);
+}
+
+TEST_F(ConstexprContainersTest, StringViewMapTableIsReadableAtRuntime) {
+    EXPECT_EQ(runWithImports(R"(
+        import std.collections;
+        import std.hash;
+        constexpr std::HashMap<string_view,int32> make() {
+            std::HashMap<string_view,int32> m;
+            m.init(std::hash_key_string, std::equal_string);
+            m.put("one", 1);
+            m.put("two", 2);
+            m.put("three", 3);
+            return m;
+        }
+        constexpr std::HashMap<string_view,int32> T = make();
+        int32 main() {
+            int32 out = 0;
+            if (!T.get("two", &out) || out != 2) return 1;
+            if (!T.contains("three")) return 2;
+            if (T.contains("four")) return 3;
+            return 0;
+        }
+    )", "ct_table_strmap.c"), 0);
+}

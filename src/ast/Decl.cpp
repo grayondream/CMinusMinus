@@ -1042,9 +1042,37 @@ static llvm::Constant* buildCtContainerConstant(CodegenContext& ctx, Type* type,
     }
 
     llvm::Constant* data = nullptr;
-    if ((c.kind == CtContainer::Vec || c.kind == CtContainer::Deque) &&
-        c.elementType) {
-        data = ctArrayConstant(ctx, c.elementType, storage, cap, "__smc_ct_data");
+    llvm::Constant* keys = nullptr;
+    llvm::Constant* values = nullptr;
+    llvm::Constant* states = nullptr;
+    llvm::Constant* hashFn = nullptr;
+    llvm::Constant* eqFn = nullptr;
+
+    if (c.kind == CtContainer::Vec || c.kind == CtContainer::Deque) {
+        if (c.elementType) {
+            data = ctArrayConstant(ctx, c.elementType, storage, cap, "__smc_ct_data");
+        }
+    } else {
+        if (c.keyType) {
+            keys = ctArrayConstant(ctx, c.keyType, c.keys, cap, "__smc_ct_keys");
+        }
+        if (c.kind == CtContainer::HashMap && c.valueType) {
+            values = ctArrayConstant(ctx, c.valueType, c.values, cap, "__smc_ct_values");
+        }
+        std::vector<CtValue> stateValues;
+        stateValues.reserve(cap);
+        for (std::size_t i = 0; i < cap; ++i) {
+            const uint8_t state = i < c.states.size() ? c.states[i] : 0;
+            stateValues.push_back(ctInt(state, 8, true));
+        }
+        states = ctArrayConstant(ctx, TypeContext::instance().getUInt8(),
+                                 stateValues, cap, "__smc_ct_states");
+        auto lookupFn = [&](const std::string& name) -> llvm::Constant* {
+            if (name.empty()) return nullptr;
+            return ctx.getModule().getFunction(name);
+        };
+        hashFn = lookupFn(c.hashFn);
+        eqFn = lookupFn(c.eqFn);
     }
 
     auto i64 = [&](std::size_t v) {
@@ -1056,8 +1084,7 @@ static llvm::Constant* buildCtContainerConstant(CodegenContext& ctx, Type* type,
     for (const auto& f : *fields) {
         llvm::Constant* value = nullptr;
         if (f.name == "data") {
-            value = data ? data
-                         : llvm::Constant::getNullValue(st->getElementType(elems.size()));
+            value = data;
         } else if (f.name == "len") {
             value = i64(c.len);
         } else if (f.name == "cap") {
@@ -1066,6 +1093,16 @@ static llvm::Constant* buildCtContainerConstant(CodegenContext& ctx, Type* type,
             value = i64(0);
         } else if (f.name == "tombstones") {
             value = i64(c.tombstones);
+        } else if (f.name == "keys") {
+            value = keys;
+        } else if (f.name == "values") {
+            value = values;
+        } else if (f.name == "states") {
+            value = states;
+        } else if (f.name == "hash_fn") {
+            value = hashFn;
+        } else if (f.name == "eq_fn") {
+            value = eqFn;
         }
         if (!value) value = llvm::Constant::getNullValue(st->getElementType(elems.size()));
         elems.push_back(value);
