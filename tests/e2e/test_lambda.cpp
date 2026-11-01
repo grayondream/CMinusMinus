@@ -70,7 +70,7 @@ static int runSource(const std::string& source, const std::string& filename) {
 static int runWithPrelude(const std::string& source, const std::string& filename) {
     auto ast = smc::parseStdCPrelude(source, filename);
     if (!ast) return -1;
-    auto prelude = smc::parseStdCPrelude(smc::builtinStdCPrelude(), "<std.c>");
+    auto prelude = smc::parseStdCPrelude(smc::loadStdCPrelude({STD_DIR}), "<std.c>");
     if (!prelude) return -1;
     smc::prependDeclarations(*ast, *prelude);
 

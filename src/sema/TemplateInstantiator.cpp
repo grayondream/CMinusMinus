@@ -86,6 +86,22 @@ Type* TemplateInstantiator::rewrite(Type* t) {
             p->isRestrict = t->isRestrict;
             return p;
         }
+        case TypeKind::Function: {
+            // GEN-09: a template type parameter may appear inside a function
+            // type (e.g. `bool (*eq)(T, T)` in Vec<T>::contains). Rewrite the
+            // signature too, otherwise the call site sees TypeVar => i32 and
+            // the IR verifier rejects a string_view argument.
+            auto* ft = static_cast<FunctionType*>(t);
+            Type* ret = rewrite(ft->returnType);
+            std::vector<Type*> params;
+            params.reserve(ft->paramTypes.size());
+            for (Type* p : ft->paramTypes) params.push_back(rewrite(p));
+            if (ret == ft->returnType && params == ft->paramTypes) return t;
+            auto* fn = new FunctionType(ret, std::move(params), ft->isVarArg);
+            fn->isConst = t->isConst;
+            fn->isVolatile = t->isVolatile;
+            return fn;
+        }
         case TypeKind::Array: {
             auto* arr = static_cast<ArrayType*>(t);
             Type* elem = rewrite(arr->elementType);
@@ -170,6 +186,8 @@ std::unique_ptr<ExprAST> TemplateInstantiator::cloneExpr(const ExprAST* e) {
     std::unique_ptr<ExprAST> out;
     if (auto* n = dynamic_cast<const NumberExprAST*>(e)) {
         out = std::make_unique<NumberExprAST>(n->value, n->literalKind);
+    } else if (auto* b = dynamic_cast<const BoolLiteralExprAST*>(e)) {
+        out = std::make_unique<BoolLiteralExprAST>(b->value);
     } else if (auto* f = dynamic_cast<const FloatExprAST*>(e)) {
         out = std::make_unique<FloatExprAST>(f->value, f->literalKind);
     } else if (auto* c = dynamic_cast<const CharExprAST*>(e)) {
@@ -356,6 +374,24 @@ std::unique_ptr<StmtAST> TemplateInstantiator::cloneStmt(const StmtAST* s) {
         out = std::make_unique<ContinueStmtAST>();
     } else if (dynamic_cast<const NullStmtAST*>(s)) {
         out = std::make_unique<NullStmtAST>();
+    } else if (auto* ci = dynamic_cast<const CompileTimeIfStmtAST*>(s)) {
+        auto* cloned = new CompileTimeIfStmtAST();
+        cloned->cond = cloneExpr(ci->cond.get());
+        cloned->thenStmt = std::unique_ptr<CompoundStmtAST>(
+            static_cast<CompoundStmtAST*>(cloneStmt(ci->thenStmt.get()).release()));
+        cloned->elseStmt = std::unique_ptr<CompoundStmtAST>(
+            static_cast<CompoundStmtAST*>(cloneStmt(ci->elseStmt.get()).release()));
+        cloned->ctResolved = ci->ctResolved;
+        cloned->selectedThen = ci->selectedThen;
+        out = std::unique_ptr<StmtAST>(cloned);
+    } else if (auto* cr = dynamic_cast<const CompileTimeRepeatStmtAST*>(s)) {
+        auto* cloned = new CompileTimeRepeatStmtAST();
+        cloned->count = cloneExpr(cr->count.get());
+        cloned->body = std::unique_ptr<CompoundStmtAST>(
+            static_cast<CompoundStmtAST*>(cloneStmt(cr->body.get()).release()));
+        cloned->ctResolved = cr->ctResolved;
+        cloned->iterations = cr->iterations;
+        out = std::unique_ptr<StmtAST>(cloned);
     } else if (auto* df = dynamic_cast<const DeferStmtAST*>(s)) {
         out = std::make_unique<DeferStmtAST>(cloneExpr(df->callExpr.get()));
     } else if (auto* ds = dynamic_cast<const DeclStmtAST*>(s)) {

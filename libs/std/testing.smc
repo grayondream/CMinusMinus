@@ -1,0 +1,48 @@
+// ===== std.testing — runtime test assertions =====
+// Import with `import std.testing;`. Failures write a diagnostic to stderr and
+// abort (same non-recoverable policy as the language's assert/panic).
+module std.testing;
+
+import std.parse;
+
+extern int32 dprintf(int32 fd, const char* format, ...);
+extern void abort();
+
+export namespace std {
+
+void fail(string_view message) {
+    dprintf(2, "test failure: %.*s\n", (int32)message.len, message.data);
+    abort();
+}
+
+void expect(bool condition, string_view message) {
+    if (!condition) {
+        fail(message);
+    }
+}
+
+void expect_eq_i64(int64 actual, int64 expected, string_view message) {
+    if (actual != expected) {
+        string a = to_string_i64(actual, 10);
+        string e = to_string_i64(expected, 10);
+        dprintf(2, "test failure: %.*s (actual=%.*s expected=%.*s)\n",
+                (int32)message.len, message.data,
+                (int32)a.len, a.data,
+                (int32)e.len, e.data);
+        a.destroy();
+        e.destroy();
+        abort();
+    }
+}
+
+void expect_eq_str(string_view actual, string_view expected, string_view message) {
+    if (!(actual == expected)) {
+        dprintf(2, "test failure: %.*s (actual=%.*s expected=%.*s)\n",
+                (int32)message.len, message.data,
+                (int32)actual.len, actual.data,
+                (int32)expected.len, expected.data);
+        abort();
+    }
+}
+
+} // namespace std

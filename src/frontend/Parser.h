@@ -78,6 +78,7 @@ private:
     bool isCompileTimeDeclStart() const;
     std::unique_ptr<DeclAST> parseCompileTimeIf();
     std::unique_ptr<StmtAST> parseCompileTimeIfStmt();
+    std::unique_ptr<StmtAST> parseCompileTimeRepeatStmt();
     std::unique_ptr<DeclAST> parseCompileTimeAssert();
 
     // 模板参数作用域栈：模板体 parse 期间，参数名解析为 TypeVarType /

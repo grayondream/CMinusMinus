@@ -1050,6 +1050,9 @@ llvm::Function* CodegenContext::getFormatDynFn() {
     builder.SetInsertPoint(done);
     {
         auto* wriD = builder.CreateLoad(i64Ty, wriAddr, "fd.wri.final");
+        builder.CreateStore(
+            llvm::ConstantInt::get(i8Ty, 0),
+            builder.CreateGEP(i8Ty, buf, wriD, "fd.end"));
         llvm::Value* v = llvm::Constant::getNullValue(retTy);
         v = builder.CreateInsertValue(v, buf, {0});
         v = builder.CreateInsertValue(v, wriD, {1});
@@ -1491,14 +1494,17 @@ llvm::Function* CodegenContext::getStringCopyFn() {
     auto* sptr = builder.CreateExtractValue(src, 0, "copy.sptr");
     auto* slen = builder.CreateExtractValue(src, 1, "copy.slen");
     auto* one = llvm::ConstantInt::get(i64Ty, 1);
-    auto* cap = builder.CreateSelect(
-        builder.CreateICmpUGT(slen, one, "copy.gt1"), slen, one, "copy.cap");
+    auto* cap = builder.CreateAdd(slen, one, "copy.len1");
+    cap = builder.CreateSelect(
+        builder.CreateICmpUGT(cap, one, "copy.gt1"), cap, one, "copy.cap");
     auto mallocFn = module->getOrInsertFunction(
         "malloc", llvm::FunctionType::get(ptrTy, {i64Ty}, false));
     auto memcpyFn = module->getOrInsertFunction(
         "memcpy", llvm::FunctionType::get(ptrTy, {ptrTy, ptrTy, i64Ty}, false));
     auto* nptr = builder.CreateCall(mallocFn, {cap}, "copy.nptr");
     builder.CreateCall(memcpyFn, {nptr, sptr, slen});
+    auto* end = builder.CreateGEP(llvm::Type::getInt8Ty(c), nptr, slen, "copy.end");
+    builder.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt8Ty(c), 0), end);
     llvm::Value* v = llvm::Constant::getNullValue(strTy);
     v = builder.CreateInsertValue(v, nptr, {0});
     v = builder.CreateInsertValue(v, slen, {1});

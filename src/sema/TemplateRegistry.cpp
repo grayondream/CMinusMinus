@@ -11,32 +11,60 @@ TemplateRegistry& TemplateRegistry::instance() {
     return reg;
 }
 
-void TemplateRegistry::registerTemplate(TemplateDeclAST* decl) {
-    std::string name;
-    if (auto* fn = dynamic_cast<FunctionDeclAST*>(decl->decl.get())) {
-        name = fn->name;
-    } else if (auto* st = dynamic_cast<StructDeclAST*>(decl->decl.get())) {
-        name = st->name;
-    } else if (auto* ud = dynamic_cast<UsingDeclAST*>(decl->decl.get())) {
-        name = ud->name;
+void TemplateRegistry::registerTemplate(TemplateDeclAST* decl,
+                                        const std::string& qualifiedName) {
+    std::string name = qualifiedName;
+    if (name.empty()) {
+        if (auto* fn = dynamic_cast<FunctionDeclAST*>(decl->decl.get())) {
+            name = fn->name;
+        } else if (auto* st = dynamic_cast<StructDeclAST*>(decl->decl.get())) {
+            name = st->name;
+        } else if (auto* ud = dynamic_cast<UsingDeclAST*>(decl->decl.get())) {
+            name = ud->name;
+        }
     }
     m_templates[name] = decl;
+    // Namespaced templates are registered under the parser's flattened key
+    // (`std_Box`); also accept the source spelling as a defensive alias.
+    m_templates[canonicalName(name)] = decl;
 
     // 模板体 parse 走了普通声明路径，把类型名注册成了占位 StructType/
     // ClassType——撤销，保证裸模板名（无实参）在类型位置报错而非静默解析。
     TypeContext::instance().removeStruct(name);
     TypeContext::instance().removeClass(name);
+    TypeContext::instance().removeStruct(canonicalName(name));
+    TypeContext::instance().removeClass(canonicalName(name));
+}
+
+std::string TemplateRegistry::canonicalName(const std::string& name) {
+    std::string out;
+    out.reserve(name.size());
+    for (size_t i = 0; i < name.size(); ++i) {
+        if (name[i] == ':' && i + 1 < name.size() && name[i + 1] == ':') {
+            out.push_back('_');
+            ++i;
+        } else if (name[i] == '.') {
+            out.push_back('_');
+        } else {
+            out.push_back(name[i]);
+        }
+    }
+    return out;
 }
 
 TemplateDeclAST* TemplateRegistry::find(const std::string& name) const {
     auto it = m_templates.find(name);
+    if (it != m_templates.end()) return it->second;
+    std::string canonical = canonicalName(name);
+    if (canonical == name) return nullptr;
+    it = m_templates.find(canonical);
     return it != m_templates.end() ? it->second : nullptr;
 }
 
 std::string TemplateRegistry::instanceName(const std::string& name,
                                            const std::vector<Type*>& typeArgs,
                                            const std::vector<long long>& valueArgs) {
-    std::string s = name;
+    std::string s = canonicalName(name);
     for (auto* t : typeArgs)
         if (t) s += "$" + typeToMangled(t);
     for (auto v : valueArgs) s += "$" + std::to_string(v);
@@ -74,8 +102,16 @@ DeclAST* TemplateRegistry::instantiateByKey(
     m_states[key] = State::Instantiating;
     m_depth++;
 
+    std::string tplKey = canonicalName(tplName);
+    auto tplIt = m_templates.find(tplKey);
+    if (tplIt == m_templates.end()) {
+        m_depth--;
+        m_states[key] = State::NotInstantiated;
+        m_errors.push_back("unknown template '" + tplName + "'");
+        return nullptr;
+    }
     auto cloned = TemplateInstantiator(typeArgMap, valueArgMap)
-                      .cloneDecl(*m_templates[tplName]->decl);
+                      .cloneDecl(*tplIt->second->decl);
     m_depth--;
     m_states[key] = State::Done;
 

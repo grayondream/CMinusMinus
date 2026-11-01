@@ -1115,3 +1115,89 @@
 - **SG-07 相邻字符串拼接**：parser 字符串主表达式拼接相邻 token（含 raw/多行），`"ab" "cd"` → `"abcd"`。
 - **示例**：`all_features.c`、`full_feature.c` 新增第 27 节覆盖上述 7 项。
 - **验证**：新增 7 个 `SyntaxGapsE2E` 回归测试；全量 `ctest --test-dir build -j8` **1611/1611** 通过（2 个既有 `GTEST_SKIP`）；两个示例输出 `ALL FEATURES OK` / `FULL FEATURE OK`。
+
+## 2026-11-01 — compile_time 开发体验（CTX-01，CT-15 ~ CT-21）
+
+- 背景：按已确认的 1 → 2 → 3 计划，为 `compile_time` 补充开发期便利设施；所有新增标量查询必须停留在编译期，不能引入运行时调用或运行时循环。
+- 完成事项：
+  - **第一批（CT-15/16/17/18）**：`file/line/column/function`；`fail/warn/debug`；`assert_eq/ne/size/align/offset`；`is_same`/`is_*` 类型谓词；`int_min/max`、`uint_max`、`bit_width`、`float_epsilon/max/digits`；`has_field`/`field_*`；`has_attribute`/`attribute_*`；`target.endian/pointer_width/triple/has_feature/is`；`build.mode/compiler/host_*`、`version.major/minor/patch/at_least`。
+  - **第二批（CT-17/19）**：`size_of(expr)`/`align_of(expr)`、`offset_of(T,"a.b")`、裸字段名、`bit_size_of`、`padding_of`、`is_packed`、`type_name_of`/`type_kind_of`、`enum_*`、`method_*`/`base_name_of`/`is_base_of`、`layout_size_of/align_of`、`format`/`to_string`。
+  - **第三批（CT-20/21）**：`type_of/array_of/pointer_to/const_of` 编译期类型值；`is_convertible/is_assignable`；`template_name_of/template_arg_count/template_arg_name`；`compile_time.repeat(N) { ... }` 编译期展开（上限 1024，零运行时循环）。
+  - 性能：`CompileTimeEvaluator` 新增按 `Type*` 的 `LayoutBuilder` 缓存；标量查询继续走 `ctInt/ctFloat` 的 LLVM 常量路径；仅 `fields_of/attributes_of` 保留运行时只读表。
+- 关键文件：`src/frontend/Parser.{h,cpp}`（`CTArgPolicy`、repeat 解析）、`src/sema/CompileTimeEvaluator.{h,cpp}`（查询分派/布局缓存/字段/枚举/类/格式化/类型值）、`src/sema/SemanticAnalyzer.{h,cpp}`（诊断/断言/布尔与无符号映射/repeat）、`src/ast/Type.h`（字段注解保留、`Type::annotations`）、`src/ast/Decl.{h,cpp}`（`CompileTimeRepeatStmtAST`）、`src/sema/CompileTimeEvaluator.h`（`ConstValue::TYPE`）。
+- 测试：新增 `tests/sema/test_compile_time_ergonomics.cpp`（36 个 case）、`tests/frontend/test_compile_time_parse.cpp` 的 `IsSameWrapsBothTypeArgs`/`AssertSizeFirstTypeRestExpr`/`FailTakesExpressionArg`/`RepeatParses`、`tests/e2e/test_compile_time.cpp` 的 `ErgonomicsScalarQueries`/`ErgonomicsReflectionQueries`/`ErgonomicsBatch2Queries`/`RepeatUnrollsAtCompileTime`。
+- 验证：`ctest --test-dir build -j8` → **1658/1658** 通过，2 个既有 `GTEST_SKIP` 不变。
+- 文档：`docs/spec/compile_time.md`（§4/§5/§7/§9 扩展）、`docs/spec/grammar.ebnf`（compile-time-member/repeat）、`TODO.md`（CT-15 ~ CT-22）、本文件。
+- 遗留：**CT-22** `compile_time.for_fields(T, f)` / `for_enum_values(E, v)` 未实现——直接复用同一 body AST 无法为每个字段/枚举值生成不同的运行时绑定，需要 AST 克隆或 codegen 特化；不以运行时循环冒充编译期展开。**CT-09** 哈希缓存仍未做（当前仅 Type* 布局缓存）。
+
+## 2026-11-01 — 标准库补全 + mimalloc 后端
+
+- 背景：用户要求完善标准库；能用 `compile_time` 的场合使用编译期求值；内存库切换已引入的 mimalloc；语法不再改动；容器等 std 不得实现在编译器内，已内嵌/不合适的部分迁出。
+- 架构决策：
+  - 容器/算法/解析/路径/文件/时间/环境/测试辅助全部放在 `libs/std/*.smc`，编译器只保留语言类型（string/optional/result/slice）与需要调用点信息的 `print/format/assert/panic` 内建。
+  - `std.c` 删除编译器内嵌副本，改为只从 `<std>/c.smc` 载入；缺失安装时驱动显式报错（`--no-prelude` 仍可关闭）。
+  - mimalloc 以静态库 + `MI_OVERRIDE=ON` 接入编译器、测试与生成程序；Debug 构建关闭 mimalloc 的 guard/stats/profile 以保持性能。
+- 完成事项：
+  - **构建/驱动**：`CMakeLists.txt` 接入 `thirdparty/mimalloc`（`libmimalloc.a`）；`CompilerDriver` 支持 `-M`/安装目录/可执行文件相对路径查找标准库；`-l/-L` 真正传入 `Linker`，自动追加 `-lm` 与 `-lmimalloc`；Linker 做 shell quoting。
+  - **std.mem**：`mi_malloc/mi_calloc/mi_realloc/mi_free/mi_malloc_aligned`；`bytes_copy/move/set/compare`（STD-03）；`Allocator` 接口、`Arena`（bump + create/destroy/reset）、`Pool`（free list）；`backend_name()=="mimalloc"`；模块级 `compile_time.static_assert` 校验 usize/指针宽度。
+  - **std.collections**：`Vec<T>`、`Deque<T>`、`HashMap<K,V>`、`HashSet<K>`；显式 `init/destroy`、容量增长、开放寻址 + 墓碑 + 0.7 负载；哈希/相等通过函数指针回调注入。
+  - **新增模块**：`std.hash`（FNV-1a + splitmix64 + combine + 容器适配器）、`std.sort`（泛型稳定插入排序/二分查找）、`std.parse`（2..36 进制整数、浮点、bool、整数渲染）、`std.ascii`、`std.path`（编译期选择平台分隔符）、`std.fs`、`std.time`、`std.os`、`std.testing`。
+  - **编译器缺陷修复（阻塞 stdlib 的部分）**：
+    1. `TemplateInstantiator::cloneExpr` 漏掉 `BoolLiteralExprAST`，模板方法中的 `return true/false` 被当成裸 return，非 void 方法误报。
+    2. 模板注册表未按 Parser 的扁平命名空间键登记限定模板，`std::Box<T>`/`std::id<T>` 无法实例化；`instanceName` 统一 canonicalName，避免 `std::Box` 与命名空间内 `Box` 生成两个实例。
+    3. `string` 缓冲区不写 NUL，`string.data` 传给 libc 不是合法 C 字符串；`string.new/append/push`、string copy helper、format/动态 format 全部维护终止符。
+- 测试：
+  - 新增 `tests/e2e/test_std_collections.cpp`（4）、`test_std_text.cpp`（4）、`test_std_system.cpp`（2）、`test_std_mem.cpp` 扩展（Allocator/Arena/Pool/backend）、`test_string.cpp` NUL 回归、`test_generics.cpp` 模板布尔/命名空间查找回归、Linker/StdPrelude 回归。
+  - 新测试 harness 先 `preloadImports` 再 parse，确保模块导出类型/模板在 parse 期可见。
+- 验证：
+  - `ctest --test-dir build -j8` → **1679/1679** 通过，2 个既有 `GTEST_SKIP` 不变。
+  - `std.io::read_line`/`file_read_line` 对 `cap<=0` 增加空指针/容量守卫（避免 OOB 写）。
+  - `examples/all_features.c` → `ALL FEATURES OK`；`examples/full_feature.c` → `FULL FEATURE OK`。
+- 文档：`docs/spec/stdlib.md` 更新 mem/collections/hash/sort/parse/ascii/path/fs/time/os/testing 与内建边界；`TODO.md` 更新 STD-03/05/06/07/08/09/15~22、P1-09、P2-02 与进度快照。
+- 遗留：placement 分配、`List`/`BTree`、`std.unicode`、完整目录遍历/stat、argv/进程控制、`smc test` runner；CT-22 仍待 AST 克隆/codegen 特化。
+
+
+## 2026-11-01 — 示例收敛
+
+- 删除 `examples/full_feature.c`，仅保留 `examples/all_features.c` 作为唯一验收示例。
+- 原因：两份示例覆盖高度重叠，同步维护成本高；`all_features.c` 已覆盖当前实现的全部公开特性并通过 `ALL FEATURES OK`。
+- 验证：`build/bin/my_llvm_c examples/all_features.c` 运行输出 `ALL FEATURES OK`；全量 `ctest --test-dir build -j8` **1679/1679** 通过（2 个既有 `GTEST_SKIP`）。
+
+
+## 2026-11-01 — 移除 libsafec
+
+- 删除 `src/libsafec/`（`safec.h`、`malloc.cpp`、`printf.cpp`、`string.cpp`）与 `tests/libsafec/`（malloc/printf/string 测试）。
+- 移除 `src/CMakeLists.txt` 中的 `safec` 库目标与源文件排除规则，移除 `tests/CMakeLists.txt` 对 `safec` 的链接。
+- 依据：全仓库只有 `tests/libsafec` 引用 `safec::`；编译器、JIT、生成程序与 `libs/std` 均不依赖。它是早期 1 MB bump allocator + 精简 libc 包装，已被 mimalloc + `std.mem`/`std.string` 取代。
+- 验证：全量 `ctest --test-dir build -j8` **1657/1657** 通过（2 个既有 `GTEST_SKIP`；减少的 22 个测试全部来自被删除的 `libsafec` 自身测试）；`examples/all_features.c` 仍输出 `ALL FEATURES OK`。
+
+## 2026-11-01 — std.collections 容器拆分
+
+- 将 `libs/std/collections.smc` 按容器拆为独立模块：
+  - `libs/std/collections/vec.smc` → `module std.collections.vec;`
+  - `libs/std/collections/deque.smc` → `module std.collections.deque;`
+  - `libs/std/collections/hashmap.smc` → `module std.collections.hashmap;`
+  - `libs/std/collections/hashset.smc` → `module std.collections.hashset;`
+- `libs/std/collections.smc` 保留为汇总模块，仅 `import` 上述四个模块并保留 `uint8` 宽度静态断言；`import std.collections;` 的既有用法不变。
+- 新增 `StdCollectionsTest.DirectContainerModuleImports`，验证四个容器模块可脱离汇总模块直接导入并使用。
+- 文档：`docs/spec/stdlib.md` §14 更新模块布局与导入方式。
+- 验证：`ctest --test-dir build -j8` → **1658/1658** 通过（2 个既有 `GTEST_SKIP`，新增 1 个测试）；`examples/all_features.c` → `ALL FEATURES OK`。
+
+## 2026-11-01 — constexpr 容器与常量表
+
+- **求值器**：`CtValue`/`CtContainer` 共享值模型（`src/ast/CtValue.*`）；`constexpr` 解释器支持 block/if/while/do/for/break/continue/return、赋值/复合赋值、`++`/`--`、`&local` 出参、字符串字面量与 `string_view.len()/char_at()`。
+- **容器执行**：`Vec`/`Deque`/`HashMap`/`HashSet` 的 `constexpr` 语义在 `SemanticAnalyzer` 中按运行时 API 执行；HashMap/HashSet 复刻开放寻址/墓碑/0.7 负载，并通过解释器调用 hash/equality 回调。支持标量、enum、`string_view` 元素。
+- **常量表逃逸**：`constexpr std::Vec/Deque/HashMap/HashSet` 变量在 codegen 中物化为私有只读常量数组 + 与运行时 ABI 一致的常量结构体（`src/ast/Decl.cpp`）；支持全局、static 与局部 constexpr 容器。物化表只读：修改方法/字段赋值/可变拷贝均诊断拒绝。
+- **限制**：求值步数上限 1,000,000；回调须可编译期求值；暂不支持任意指针、嵌套容器、`string` 元素、128 位整数常量。
+- **顺带修复**：`typeToMangled` 补 `Str`/`String`（此前 `Vec<string_view>` 实例化为 `std_Vec$unknown`）；`TemplateInstantiator::rewrite` 递归替换函数类型内的 `TypeVar`（`bool (*)(T,T)` 的回调调用不再产生 IR 签名不匹配）。
+- **测试**：新增 `tests/e2e/test_constexpr_containers.cpp`（constexpr Vec/Deque/HashMap/HashSet、string_view、出参、步数上限、只读检查、Vec/Deque/HashMap/HashSet/string_view 常量表运行时读取）；`tests/ast/test_type_nodes.cpp` 增加字符串 mangling 回归；重启用 `ConstexprForLoop`/`ConstexprNestedCall`。
+- **终审修复**：
+  - `get_ptr`/`.data` 指针逃逸：constexpr 表禁止 `get_ptr`，禁止把 `.data`/指针算术结果装入可变指针；按值传给可变形参也诊断拒绝。
+  - 只读检查改用 `Symbol::isConstexprContainer` 身份而非变量名，修复同名局部变量的误报；`T.len`/`T.data[i]` 等标量读取恢复允许。
+  - 赋值/局部初始化/形参绑定统一做声明类型转换（`ctBindValue`），修复 `int8 x = 300` 的折叠值不截断。
+  - `constexpr` 重载按 mangled 签名登记与查找，修复同名重载折叠到最后一份实现。
+  - 修复 `INT64_MIN / -1` 在 Parser 常量求值与 `CtValue` 中的有符号溢出崩溃。
+  - 普通 constexpr 辅助函数的 `&out` 实现 copy-in/copy-out（`*p = v` 写回调用者局部）。
+  - 循环体失败立即中止，避免误报为步数超限。
+- **验证**：全量 `ctest --test-dir build -j8` **1699/1699** 通过（2 个既有 `GTEST_SKIP`）；`examples/all_features.c` → `ALL FEATURES OK`。
+- 文档：`docs/spec/compile_time.md` §7.5、`docs/spec/stdlib.md` §14。

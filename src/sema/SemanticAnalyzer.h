@@ -218,8 +218,27 @@ private:
     bool currentDeclExported = false;
     bool namespaceExported = false;
 
+    enum class CtFlow { Normal, Break, Continue, Return };
+
     std::optional<ConstValue> evalConstexprCall(CallExprAST& call, int depth);
-    std::optional<ConstValue> evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth);
+    std::optional<ConstValue> evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
+                                                CtFlow& flow);
+    std::optional<ConstValue> evalContainerMethod(MethodCallExprAST& call,
+                                                  ConstValue& object,
+                                                  const std::vector<ConstValue>& args,
+                                                  ASTNode& at);
+    std::optional<ConstValue> evalContainerMember(MemberAccessExprAST& node,
+                                                  ConstValue& object);
+    bool isConstexprContainerExpr(const ExprAST* expr);
+    FunctionDeclAST* findCtFunction(const std::string& name);
+    std::optional<ConstValue> evalCtFunction(FunctionDeclAST* fn,
+                                             const std::vector<ConstValue>& args,
+                                             int depth);
+    bool ctCallEq(CtContainer& c, const ConstValue& a, const ConstValue& b, bool& out);
+    std::optional<uint64_t> ctCallHash(CtContainer& c, const ConstValue& key);
+    bool ctHashRehash(CtContainer& c, std::size_t newCap);
+    void ctHashPutRaw(CtContainer& c, const ConstValue& key, const ConstValue& value);
+    std::optional<std::size_t> ctHashFind(CtContainer& c, const ConstValue& key);
     static bool constValueTruthy(const ConstValue& v);
 
     void visit(TranslationUnitAST& node);
@@ -236,6 +255,7 @@ private:
     // P1-04 / CT-03: compile_time.if 条件编译——求值条件、选分支、原位展开。
     void visit(CompileTimeIfDeclAST& node);
     void visit(CompileTimeIfStmtAST& node);
+    void visit(CompileTimeRepeatStmtAST& node);
 
     // Shared top-level dispatcher (translation unit and namespace bodies).
     void analyzeTopLevelDecl(DeclAST& decl);
@@ -346,11 +366,31 @@ private:
     // P1-04 / CT-04/05: build 查询注入值与惰性求值器。
     bool m_ctBuildDebug = false;
     std::string m_ctBuildOptimize = "O0";
+    // CTX-01: static/thread_local locals inside compile_time.repeat would be
+    // emitted once per unrolled iteration; diagnose instead of miscompiling.
+    int m_ctRepeatDepth = 0;
     std::unique_ptr<CompileTimeEvaluator> m_ctEval;
     std::unordered_set<std::string> definedFunctions;
     std::unordered_map<std::string, FunctionDeclAST*> constexprFunctions;
+    // All user functions (by source and mangled name). The compile-time
+    // evaluator uses this to interpret side-effect-free callbacks such as
+    // std.hash's equality functions, which are not marked constexpr.
+    std::unordered_map<std::string, FunctionDeclAST*> m_allFunctions;
     ConstEnv* activeEnv = nullptr; // innermost constexpr call environment
     int constexprCallDepth = 0;    // guards runaway constexpr recursion
     static constexpr int kConstexprMaxDepth = 128;
+    // CT step budget: bounds compile-time loops and deep expressions.
+    static constexpr std::size_t kConstexprStepLimit = 1000000;
+    std::size_t ctSteps = 0;
+    int ctEvalDepth = 0;
+    bool ctStepReported = false;
+    // True while interpreting a function body for constant evaluation. Only
+    // then may a non-constexpr helper (e.g. std.hash callbacks) be evaluated;
+    // top-level constexpr initializers still require constant expressions.
+    bool m_ctInFunctionBody = false;
+    // Set when a statement-level expression cannot be evaluated. The body
+    // interpreter aborts instead of silently skipping unsupported operations.
+    bool m_ctFailed = false;
+    bool ctStepAllowance(ASTNode& at);
     std::string namespacePrefix;   // e.g. "A_B_" while analyzing namespace A::B
 };

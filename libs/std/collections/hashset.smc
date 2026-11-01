@@ -1,0 +1,176 @@
+// ===== std.collections.hashset — HashSet<K> (open addressing) =====
+module std.collections.hashset;
+
+import std.mem;
+
+export namespace std {
+
+// ===== HashSet<K> =====
+
+template<typename K> struct HashSet {
+    K* keys;
+    uint8* states;
+    usize cap;
+    usize len;
+    usize tombstones;
+    usize (*hash_fn)(K);
+    bool (*eq_fn)(K, K);
+
+    void init(usize (*hash)(K), bool (*eq)(K, K)) {
+        this->keys = null;
+        this->states = null;
+        this->cap = 0;
+        this->len = 0;
+        this->tombstones = 0;
+        this->hash_fn = hash;
+        this->eq_fn = eq;
+    }
+
+    void destroy() {
+        if (this->keys != null) {
+            std::dealloc(this->keys);
+            std::dealloc(this->states);
+        }
+        this->keys = null;
+        this->states = null;
+        this->cap = 0;
+        this->len = 0;
+        this->tombstones = 0;
+    }
+
+    bool is_empty() {
+        return this->len == 0;
+    }
+
+    usize size() {
+        return this->len;
+    }
+
+    bool rehash(usize newCap) {
+        K* oldKeys = this->keys;
+        uint8* oldStates = this->states;
+        usize oldCap = this->cap;
+        K* newKeys = (K*)std::alloc_zeroed(newCap, compile_time.size_of(K));
+        uint8* newStates = (uint8*)std::alloc_zeroed(newCap, compile_time.size_of(uint8));
+        if (newKeys == null || newStates == null) {
+            if (newKeys != null) std::dealloc(newKeys);
+            if (newStates != null) std::dealloc(newStates);
+            return false;
+        }
+        this->keys = newKeys;
+        this->states = newStates;
+        this->cap = newCap;
+        this->len = 0;
+        this->tombstones = 0;
+        usize i = 0;
+        while (i < oldCap) {
+            if (oldStates[i] == 1) {
+                this->insert_raw(oldKeys[i]);
+            }
+            i = i + 1;
+        }
+        if (oldKeys != null) {
+            std::dealloc(oldKeys);
+            std::dealloc(oldStates);
+        }
+        return true;
+    }
+
+    void insert_raw(K key) {
+        usize (*hf)(K) = this->hash_fn;
+        if (hf == null) return;
+        usize at = hf(key) % this->cap;
+        usize probes = 0;
+        while (probes < this->cap) {
+            uint8 state = this->states[at];
+            if (state == 0 || state == 2) {
+                this->keys[at] = key;
+                this->states[at] = 1;
+                this->len = this->len + 1;
+                if (state == 2) {
+                    this->tombstones = this->tombstones - 1;
+                }
+                return;
+            }
+            at = (at + 1) % this->cap;
+            probes = probes + 1;
+        }
+    }
+
+    bool insert(K key) {
+        if (this->cap == 0) {
+            if (!this->rehash(8 * 2)) {
+                return false;
+            }
+        } else if ((this->len + 1) * 10 >=
+                   this->cap * 7) {
+            if (!this->rehash(this->cap * 2)) {
+                return false;
+            }
+        }
+        if (this->contains(key)) {
+            return true;
+        }
+        this->insert_raw(key);
+        return true;
+    }
+
+    bool contains(K key) {
+        if (this->cap == 0) {
+            return false;
+        }
+        usize (*hf)(K) = this->hash_fn;
+        bool (*ef)(K, K) = this->eq_fn;
+        if (hf == null || ef == null) return false;
+        usize at = hf(key) % this->cap;
+        usize probes = 0;
+        while (probes < this->cap) {
+            uint8 state = this->states[at];
+            if (state == 0) {
+                return false;
+            }
+            if (state == 1 && ef(this->keys[at], key)) {
+                return true;
+            }
+            at = (at + 1) % this->cap;
+            probes = probes + 1;
+        }
+        return false;
+    }
+
+    bool remove(K key) {
+        if (this->cap == 0) {
+            return false;
+        }
+        usize (*hf)(K) = this->hash_fn;
+        bool (*ef)(K, K) = this->eq_fn;
+        if (hf == null || ef == null) return false;
+        usize at = hf(key) % this->cap;
+        usize probes = 0;
+        while (probes < this->cap) {
+            uint8 state = this->states[at];
+            if (state == 0) {
+                return false;
+            }
+            if (state == 1 && ef(this->keys[at], key)) {
+                this->states[at] = 2;
+                this->len = this->len - 1;
+                this->tombstones = this->tombstones + 1;
+                return true;
+            }
+            at = (at + 1) % this->cap;
+            probes = probes + 1;
+        }
+        return false;
+    }
+
+    void clear() {
+        if (this->states != null) {
+            std::bytes_set(this->states, 0, this->cap * compile_time.size_of(uint8));
+        }
+        this->len = 0;
+        this->tombstones = 0;
+    }
+};
+
+} // namespace std

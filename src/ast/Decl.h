@@ -4,8 +4,10 @@
 #include <vector>
 #include <optional>
 #include <unordered_map>
+#include <memory>
 #include "Stmt.h"
 #include "Annotation.h"
+#include "CtValue.h"
 
 // PAR-08: aggregate initializer emitters shared with compound-literal codegen
 // (Expr.cpp). Definitions live in Decl.cpp (see the forward decls there).
@@ -51,6 +53,9 @@ public:
     std::unique_ptr<ExprAST> initExpr;
     bool isConstexpr = false;
     std::optional<FoldedValue> foldedValue;
+    // Constexpr container value; codegen materializes it as immutable
+    // constant arrays + a constant container struct.
+    std::shared_ptr<CtContainer> foldedContainer;
     // P1-05 / ANN-03: [[align(N)]] 折叠值（sema 写入，codegen setAlignment）。
     uint64_t declAlign = 0;
     // CON-04: `thread_local` storage class — emitted as an LLVM thread-local
@@ -312,6 +317,17 @@ public:
     std::unique_ptr<CompoundStmtAST> elseStmt;
     bool ctResolved = false;
     bool selectedThen = true;
+    llvm::Value* codegen(CodegenContext& ctx) override;
+};
+
+// CTX-01 / E2: compile-time repeat — the body is emitted `iterations` times at
+// codegen time; no runtime loop or counter is generated.
+class CompileTimeRepeatStmtAST : public StmtAST {
+public:
+    std::unique_ptr<ExprAST> count;
+    std::unique_ptr<CompoundStmtAST> body;
+    bool ctResolved = false;
+    int iterations = 0;
     llvm::Value* codegen(CodegenContext& ctx) override;
 };
 

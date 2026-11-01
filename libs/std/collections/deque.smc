@@ -1,0 +1,133 @@
+// ===== std.collections.deque — Deque<T> (ring buffer) =====
+module std.collections.deque;
+
+import std.mem;
+
+export namespace std {
+
+// ===== Deque<T> (ring buffer) =====
+
+template<typename T> struct Deque {
+    T* data;
+    usize cap;
+    usize head;
+    usize len;
+
+    void init() {
+        this->data = null;
+        this->cap = 0;
+        this->head = 0;
+        this->len = 0;
+    }
+
+    void destroy() {
+        if (this->data != null) {
+            std::dealloc(this->data);
+        }
+        this->data = null;
+        this->cap = 0;
+        this->head = 0;
+        this->len = 0;
+    }
+
+    bool is_empty() {
+        return this->len == 0;
+    }
+
+    usize capacity() {
+        return this->cap;
+    }
+
+    bool reserve(usize want) {
+        if (want <= this->cap) {
+            return true;
+        }
+        usize nc = this->cap == 0 ? 8 : this->cap;
+        while (nc < want) {
+            nc = nc * 2;
+        }
+        T* np = (T*)std::alloc_zeroed(nc, compile_time.size_of(T));
+        if (np == null) {
+            return false;
+        }
+        usize i = 0;
+        while (i < this->len) {
+            usize src = (this->head + i) % this->cap;
+            np[i] = this->data[src];
+            i = i + 1;
+        }
+        if (this->data != null) {
+            std::dealloc(this->data);
+        }
+        this->data = np;
+        this->cap = nc;
+        this->head = 0;
+        return true;
+    }
+
+    bool push_back(T value) {
+        if (!this->reserve(this->len + 1)) {
+            return false;
+        }
+        usize tail = (this->head + this->len) % this->cap;
+        this->data[tail] = value;
+        this->len = this->len + 1;
+        return true;
+    }
+
+    bool push_front(T value) {
+        if (!this->reserve(this->len + 1)) {
+            return false;
+        }
+        this->head = (this->head + this->cap - 1) % this->cap;
+        this->data[this->head] = value;
+        this->len = this->len + 1;
+        return true;
+    }
+
+    bool pop_back(T* out) {
+        if (this->len == 0) {
+            return false;
+        }
+        usize tail = (this->head + this->len - 1) % this->cap;
+        this->len = this->len - 1;
+        if (out != null) {
+            *out = this->data[tail];
+        }
+        return true;
+    }
+
+    bool pop_front(T* out) {
+        if (this->len == 0) {
+            return false;
+        }
+        if (out != null) {
+            *out = this->data[this->head];
+        }
+        this->head = (this->head + 1) % this->cap;
+        this->len = this->len - 1;
+        return true;
+    }
+
+    T get(usize index) {
+        usize at = (this->head + index) % this->cap;
+        return this->data[at];
+    }
+
+    T* get_ptr(usize index) {
+        usize at = (this->head + index) % this->cap;
+        return &this->data[at];
+    }
+
+    void set(usize index, T value) {
+        usize at = (this->head + index) % this->cap;
+        this->data[at] = value;
+    }
+
+    void clear() {
+        this->head = 0;
+        this->len = 0;
+    }
+};
+
+} // namespace std

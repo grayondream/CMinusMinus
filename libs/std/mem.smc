@@ -1,75 +1,248 @@
-// ===== std.mem — 内存分配包装与对齐工具 (P1-09 / STD-05) =====
+// ===== std.mem — mimalloc-backed allocator + arena/pool utilities =====
 // Import with `import std.mem;` and use as `std::alloc(...)` etc.
-// 纯函数层（范围 a）：分配/释放包装 + 对齐运算 + 对齐分配。
-// 语义与 C 一致：分配失败返回 null（调用方检查），不抛异常不 abort。
-// Allocator 接口 / Arena / Pool 需类型，因「类型无法跨模块导出」挂账
-// （语言层修复后另行落地），接口草案见 docs/spec/stdlib.md。
-// libc 声明自包含（io.smc 先例），模块私有。
+//
+// The backing allocator is mimalloc (bundled in thirdparty/mimalloc and linked
+// by the driver). Allocation failure returns null; no exceptions/abort.
+// Owned containers use explicit init/destroy (C semantics).
 module std.mem;
 
-extern void*  malloc(usize size);
-extern void*  calloc(usize count, usize size);
-extern void*  realloc(void* ptr, usize size);
-extern void   free(void* ptr);
-extern int32  posix_memalign(void** memptr, usize alignment, usize size);
+extern void* mi_malloc(usize size);
+extern void* mi_calloc(usize count, usize size);
+extern void* mi_realloc(void* ptr, usize size);
+extern void  mi_free(void* ptr);
+extern void* mi_malloc_aligned(usize size, usize alignment);
+extern void* memcpy(void* dst, void* src, usize n);
+extern void* memmove(void* dst, void* src, usize n);
+extern void* memset(void* dst, int32 value, usize n);
+extern int32 memcmp(void* a, void* b, usize n);
 
 export namespace std {
 
-// ----- 分配包装 -----
+// The module is only meaningful when usize matches the target pointer width.
+compile_time.static_assert(
+    compile_time.size_of(usize) == compile_time.target.pointer_width / 8,
+    "std.mem: usize must match the target pointer width");
 
-// malloc 包装：返回 size 字节未初始化内存，失败返回 null。
+// ----- raw allocation (mimalloc) -----
+
 void* alloc(usize size) {
-    return malloc(size);
+    return mi_malloc(size);
 }
 
-// calloc 包装：count*size 字节零初始化内存，失败返回 null。
 void* alloc_zeroed(usize count, usize size) {
-    return calloc(count, size);
+    return mi_calloc(count, size);
 }
 
-// realloc 包装：调整分配大小，保留原内容（新块扩展部分未初始化），失败返回
-// null（原指针仍有效）。
 void* resize(void* ptr, usize size) {
-    return realloc(ptr, size);
+    return mi_realloc(ptr, size);
 }
 
-// free 包装：释放 alloc/alloc_zeroed/resize/aligned_alloc 返回的块。
 void dealloc(void* ptr) {
-    free(ptr);
+    mi_free(ptr);
 }
 
-// ----- 对齐工具 -----
+// ----- raw byte operations (STD-03) -----
+// These are thin libc bindings used by containers for relocation. They do not
+// run element destructors/copy constructors (C semantics).
 
-// 向上取整到 align 的倍数。align 须为 2 的幂（非 2 的幂行为未定义）。
+void* bytes_copy(void* dst, void* src, usize n) {
+    return memcpy(dst, src, n);
+}
+
+void* bytes_move(void* dst, void* src, usize n) {
+    return memmove(dst, src, n);
+}
+
+void* bytes_set(void* dst, int32 value, usize n) {
+    return memset(dst, value, n);
+}
+
+int32 bytes_compare(void* a, void* b, usize n) {
+    return memcmp(a, b, n);
+}
+
+// Allocator backend identity (compile-time constant visible to callers).
+string_view backend_name() {
+    return "mimalloc";
+}
+
+// ----- alignment helpers -----
+
 usize align_up(usize n, usize align) {
     return (n + align - 1) & ~(align - 1);
 }
 
-// 向下取整到 align 的倍数。align 须为 2 的幂（非 2 的幂行为未定义）。
 usize align_down(usize n, usize align) {
     return n & ~(align - 1);
 }
 
-// 指针是否按 align 对齐（align 须为 2 的幂）。
 bool is_aligned(void* p, usize align) {
     return ((usize)p & (align - 1)) == 0;
 }
 
-// ----- 对齐分配 -----
-
-// posix_memalign 包装：返回按 align 对齐的 size 字节内存，失败返回 null。
-// align 须为 2 的幂且为 sizeof(void*) 的倍数（POSIX 要求，违反返回 null）。
 void* aligned_alloc(usize align, usize size) {
-    void* ptr = null;
-    if (posix_memalign(&ptr, align, size) != 0) {
+    if (align == 0 || (align & (align - 1)) != 0) {
         return null;
     }
-    return ptr;
+    return mi_malloc_aligned(size, align);
 }
 
-// 释放 aligned_alloc 返回的块（posix_memalign 分配的块可经 free 释放）。
 void aligned_free(void* p) {
-    free(p);
+    mi_free(p);
+}
+
+// ----- Allocator interface (explicit context, no hidden global state) -----
+
+struct Allocator {
+    void* (*alloc_fn)(void* ctx, usize size);
+    void* (*resize_fn)(void* ctx, void* ptr, usize size);
+    void  (*free_fn)(void* ctx, void* ptr);
+    void* ctx;
+};
+
+void* default_alloc(void* ctx, usize size) {
+    return mi_malloc(size);
+}
+
+void* default_resize(void* ctx, void* ptr, usize size) {
+    return mi_realloc(ptr, size);
+}
+
+void default_free(void* ctx, void* ptr) {
+    mi_free(ptr);
+}
+
+Allocator allocator_default() {
+    Allocator a;
+    a.alloc_fn = default_alloc;
+    a.resize_fn = default_resize;
+    a.free_fn = default_free;
+    a.ctx = null;
+    return a;
+}
+
+void* allocator_alloc(Allocator* a, usize size) {
+    if (a == null) return null;
+    void* (*fn)(void*, usize) = a->alloc_fn;
+    if (fn == null) return null;
+    return fn(a->ctx, size);
+}
+
+void* allocator_resize(Allocator* a, void* ptr, usize size) {
+    if (a == null) return null;
+    void* (*fn)(void*, void*, usize) = a->resize_fn;
+    if (fn == null) return null;
+    return fn(a->ctx, ptr, size);
+}
+
+void allocator_free(Allocator* a, void* ptr) {
+    if (a == null) return;
+    void (*fn)(void*, void*) = a->free_fn;
+    if (fn == null) return;
+    fn(a->ctx, ptr);
+}
+
+// ----- Arena (bump allocator over caller-provided storage) -----
+
+struct Arena {
+    void* base;
+    usize cap;
+    usize used;
+};
+
+void arena_init(Arena* a, void* base, usize cap) {
+    a->base = base;
+    a->cap = cap;
+    a->used = 0;
+}
+
+void* arena_alloc(Arena* a, usize size, usize align) {
+    if (align == 0) {
+        align = 1;
+    }
+    usize start = align_up(a->used, align);
+    if (start > a->cap) {
+        return null;
+    }
+    if (size > a->cap - start) {
+        return null;
+    }
+    char* p = (char*)a->base;
+    a->used = start + size;
+    return (void*)(p + start);
+}
+
+usize arena_remaining(Arena* a) {
+    if (a->used > a->cap) {
+        return 0;
+    }
+    return a->cap - a->used;
+}
+
+void arena_reset(Arena* a) {
+    a->used = 0;
+}
+
+// Allocate the backing storage with mimalloc. Caller must arena_destroy().
+Arena arena_create(usize cap) {
+    Arena a;
+    a.base = mi_malloc(cap);
+    a.cap = a.base == null ? 0 : cap;
+    a.used = 0;
+    return a;
+}
+
+void arena_destroy(Arena* a) {
+    if (a->base != null) {
+        mi_free(a->base);
+    }
+    a->base = null;
+    a->cap = 0;
+    a->used = 0;
+}
+
+// ----- Pool (fixed-size free list) -----
+// pool_alloc returns one block; pool_free returns it to the free list.
+// pool_destroy frees only blocks currently on the free list: all outstanding
+// blocks must be returned first (C ownership contract).
+
+struct Pool {
+    void* free_list;
+    usize block_size;
+    usize block_align;
+};
+
+void pool_init(Pool* p, usize block_size, usize align) {
+    p->free_list = null;
+    p->block_size = block_size;
+    p->block_align = align == 0 ? 1 : align;
+}
+
+void* pool_alloc(Pool* p) {
+    if (p->free_list != null) {
+        void* block = p->free_list;
+        p->free_list = *(void**)block;
+        return block;
+    }
+    return mi_malloc_aligned(p->block_size, p->block_align);
+}
+
+void pool_free(Pool* p, void* block) {
+    if (block == null) {
+        return;
+    }
+    *(void**)block = p->free_list;
+    p->free_list = block;
+}
+
+void pool_destroy(Pool* p) {
+    void* cur = p->free_list;
+    while (cur != null) {
+        void* next = *(void**)cur;
+        mi_free(cur);
+        cur = next;
+    }
+    p->free_list = null;
 }
 
 } // namespace std

@@ -12,64 +12,6 @@
 
 namespace smc {
 
-// NOTE: keep this parseable with the current grammar. `usize` is the platform
-// size type (see docs/spec/abi.md §1); `char*` is the C string type.
-const char* builtinStdCPrelude() {
-    return R"PRELUDE(
-// ===== std.c — built-in libc binding layer (MOD-09 / STD-23) =====
-// Declarations only: the linker resolves them against the C library.
-extern int32  printf(const char* format, ...);
-extern int32  puts(const char* s);
-extern int32  putchar(int32 c);
-extern int32  getchar();
-
-extern void*  malloc(usize size);
-extern void*  calloc(usize count, usize size);
-extern void*  realloc(void* ptr, usize size);
-extern void   free(void* ptr);
-
-// Aligned allocation (STD-05): POSIX posix_memalign — align must be a power of
-// two and a multiple of sizeof(void*); returns 0 on success, else an errno.
-extern int32  posix_memalign(void** memptr, usize alignment, usize size);
-
-extern usize  strlen(const char* s);
-extern int32  strcmp(const char* a, const char* b);
-extern int32  strncmp(const char* a, const char* b, usize n);
-extern char*  strcpy(char* dst, const char* src);
-extern void*  memcpy(void* dst, void* src, usize n);
-extern void*  memset(void* dst, int32 value, usize n);
-extern void*  memmove(void* dst, void* src, usize n);
-extern int32  memcmp(void* a, void* b, usize n);
-
-extern int32  abs(int32 x);
-extern void   exit(int32 status);
-extern void   abort();
-
-// stderr without exposing the `FILE` type: dprintf(2, ...) writes to stderr.
-extern int32  dprintf(int32 fd, const char* format, ...);
-
-// Buffered file I/O. A `FILE*` is passed around as an opaque `void*`.
-extern void*  fopen(const char* path, const char* mode);
-extern int32  fclose(void* stream);
-extern usize  fread(void* ptr, usize size, usize count, void* stream);
-extern usize  fwrite(void* ptr, usize size, usize count, void* stream);
-extern char*  fgets(char* str, int32 n, void* stream);
-extern int32  fputs(const char* s, void* stream);
-extern int32  fgetc(void* stream);
-extern int32  fputc(int32 c, void* stream);
-extern int32  fprintf(void* stream, const char* format, ...);
-
-// Formatted input from stdin.
-extern int32  scanf(const char* format, ...);
-
-// Callback-taking libc APIs (MEM-10). Function-pointer parameters are supported
-// in `extern` declarations, so a user function can be passed directly.
-extern void   qsort(void* base, usize count, usize size, int32 (*compare)(void*, void*));
-extern void*  bsearch(void* key, void* base, usize count, usize size, int32 (*compare)(void*, void*));
-extern int32  atexit(void (*func)(void));
-)PRELUDE";
-}
-
 std::string loadStdCPrelude(const std::vector<std::string>& dirs) {
     for (const std::string& dir : dirs) {
         std::filesystem::path candidate =
@@ -86,7 +28,7 @@ std::string loadStdCPrelude(const std::vector<std::string>& dirs) {
         ss << in.rdbuf();
         return ss.str();
     }
-    return builtinStdCPrelude();
+    return {};
 }
 
 std::unique_ptr<TranslationUnitAST> parseStdCPrelude(const std::string& source,

@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include "ast/Mangle.h"
 #include "ast/Type.h"
 
 class TypeNodeTest : public ::testing::Test {
@@ -96,6 +97,13 @@ TEST_F(TypeNodeTest, TypeVolatile) {
     EXPECT_FALSE(type->isConst);
     EXPECT_TRUE(type->isVolatile);
     delete type;
+}
+
+TEST_F(TypeNodeTest, ManglesStringViewAndOwningString) {
+    EXPECT_EQ(typeToMangled(typeCtx->getStrType()), "str");
+    EXPECT_EQ(typeToMangled(typeCtx->getStringType()), "string");
+    Type* ptr = new Type(TypeKind::Pointer, typeCtx->getStrType());
+    EXPECT_EQ(typeToMangled(ptr), "strptr");
 }
 
 TEST_F(TypeNodeTest, PointerType) {

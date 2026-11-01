@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <climits>
 #include <functional>
+#include <sstream>
 #include <unordered_map>
 
 // Strip any number of typedef/alias layers, returning the underlying type.
@@ -905,9 +906,47 @@ bool SemanticAnalyzer::containsCompileTimeRoot(const ExprAST* expr) {
 }
 
 // INT 结果的节点类型映射：按值域 int32/int64（spec §4）。
-static Type* ctIntTypeFor(TypeContext* typeCtx, long long v) {
+// CTX-01: unsigned limits (uint_max) keep their unsigned type.
+static Type* ctIntTypeFor(TypeContext* typeCtx, long long v,
+                          bool isUnsigned = false) {
+    if (isUnsigned) return typeCtx->getUInt64();
     return (v < -2147483648LL || v > 2147483647LL)
         ? typeCtx->getInt64() : typeCtx->getInt32();
+}
+
+// CTX-01: scalar boolean queries. Keeping their AST type bool lets users
+// assign the result to a bool parameter without an extra cast.
+static bool ctBoolQuery(const std::string& name) {
+    return name == "is_same" || name == "is_integer" || name == "is_float" ||
+           name == "is_bool" || name == "is_pointer" || name == "is_array" ||
+           name == "is_aggregate" || name == "is_class" || name == "is_struct" ||
+           name == "is_union" || name == "is_enum" || name == "is_void" ||
+           name == "is_signed" || name == "is_convertible" ||
+           name == "is_assignable" || name == "has_field" ||
+           name == "has_attribute" || name == "field_is_bitfield" ||
+           name == "has_method" || name == "is_base_of" || name == "is" ||
+           name == "at_least" ||
+           name == "has_feature" || name == "debug";
+}
+
+// CTX-01: human-readable value for assertion diagnostics.
+static std::string ctValueToString(const CompileTimeEvaluator::ConstValue& v) {
+    switch (v.type) {
+        case CompileTimeEvaluator::ConstValue::INT:
+            return std::to_string(v.intVal);
+        case CompileTimeEvaluator::ConstValue::DOUBLE: {
+            std::ostringstream os;
+            os << v.doubleVal;
+            return os.str();
+        }
+        case CompileTimeEvaluator::ConstValue::CHAR:
+            return std::string("'") + v.charVal + "'";
+        case CompileTimeEvaluator::ConstValue::STR:
+            return "\"" + v.strVal + "\"";
+        case CompileTimeEvaluator::ConstValue::TYPE:
+            return "<type>";
+    }
+    return "?";
 }
 
 // P1-04 评审 I3: 沿 typedef/指针/数组包装层检查毒化标志，返回毒化层
@@ -1115,10 +1154,15 @@ bool SemanticAnalyzer::tryAnalyzeCompileTimeChain(MemberAccessExprAST& node) {
     switch (v->type) {
         case ConstValue::INT:
             node.ctInt = v->intVal;
-            // 成员值类型映射（spec §4）：build.debug → bool，其余按值域。
-            node.type = (members.size() == 2 && members[0] == "build" && members[1] == "debug")
-                ? typeCtx->getBool()
-                : ctIntTypeFor(typeCtx, v->intVal);
+            // 成员值类型映射（spec §4）：bool 查询 → bool，无符号极限 →
+            // uint64，其余按值域。
+            if (!members.empty() && ctBoolQuery(members.back())) {
+                node.type = typeCtx->getBool();
+            } else if (v->isUnsigned) {
+                node.type = typeCtx->getUInt64();
+            } else {
+                node.type = ctIntTypeFor(typeCtx, v->intVal);
+            }
             break;
         case ConstValue::DOUBLE:
             node.ctFloat = v->doubleVal;
@@ -1126,6 +1170,10 @@ bool SemanticAnalyzer::tryAnalyzeCompileTimeChain(MemberAccessExprAST& node) {
             break;
         case ConstValue::CHAR:
             // CHAR 有运行时类型——防御回退（评审 I2）。
+            node.type = nullptr;
+            break;
+        case ConstValue::TYPE:
+            emitError("compile-time type value cannot be used in runtime context", node);
             node.type = nullptr;
             break;
         default: // STR
@@ -1173,6 +1221,129 @@ bool SemanticAnalyzer::tryAnalyzeCompileTimeCall(MethodCallExprAST& node) {
         return true;
     }
 
+    // CTX-01: compile-time diagnostics.
+    if (node.methodName == "fail" || node.methodName == "warn" ||
+        node.methodName == "debug") {
+        if (node.args.size() != 1) {
+            emitError("compile_time." + node.methodName + " requires exactly one message", node);
+            node.type = nullptr;
+            return true;
+        }
+        auto msg = ctEval().eval(node.args[0].get(), node);
+        if (!msg || msg->type != ConstValue::STR) {
+            emitError("compile_time." + node.methodName + " message must be a compile-time string",
+                      node);
+            node.type = nullptr;
+            return true;
+        }
+        if (node.methodName == "fail") {
+            emitError("compile_time.fail: " + msg->strVal, node);
+        } else if (node.methodName == "warn") {
+            emitWarning("compile_time.warn: " + msg->strVal, node);
+        } else if (m_ctBuildDebug) {
+            emitWarning("compile_time.debug: " + msg->strVal, node);
+        }
+        node.type = nullptr;
+        return true;
+    }
+
+    // CTX-01: assertion helpers. They are sema-only and emit no runtime code.
+    if (node.methodName == "assert_eq" || node.methodName == "assert_ne") {
+        if (node.args.size() != 2) {
+            emitError("compile_time." + node.methodName + " requires (left, right)", node);
+            node.type = nullptr;
+            return true;
+        }
+        auto left = ctEval().eval(node.args[0].get(), node);
+        auto right = ctEval().eval(node.args[1].get(), node);
+        if (!left || !right) {
+            emitError("compile_time." + node.methodName +
+                          " arguments must be compile-time constants",
+                      node);
+            node.type = nullptr;
+            return true;
+        }
+        bool equal = left->type == right->type;
+        if (equal) {
+            switch (left->type) {
+                case ConstValue::INT: equal = left->intVal == right->intVal; break;
+                case ConstValue::DOUBLE: equal = left->doubleVal == right->doubleVal; break;
+                case ConstValue::CHAR: equal = left->charVal == right->charVal; break;
+                case ConstValue::STR: equal = left->strVal == right->strVal; break;
+                case ConstValue::TYPE:
+                    equal = left->typeVal && right->typeVal &&
+                            typeToString(left->typeVal) == typeToString(right->typeVal);
+                    break;
+            }
+        }
+        const bool wantEqual = node.methodName == "assert_eq";
+        if (equal != wantEqual) {
+            emitError("compile_time." + node.methodName + " failed: " +
+                          ctValueToString(*left) + " vs " + ctValueToString(*right),
+                      node);
+        }
+        node.type = nullptr;
+        return true;
+    }
+    if (node.methodName == "assert_size" || node.methodName == "assert_align" ||
+        node.methodName == "assert_offset") {
+        const bool isOffset = node.methodName == "assert_offset";
+        const size_t expectedArgs = isOffset ? 3 : 2;
+        if (node.args.size() != expectedArgs) {
+            emitError("compile_time." + node.methodName + " has the wrong argument count", node);
+            node.type = nullptr;
+            return true;
+        }
+        Type* argType = nullptr;
+        if (auto* sized = dynamic_cast<SizeofExprAST*>(node.args[0].get()))
+            argType = sized->sizeofType;
+        else if (auto* name = dynamic_cast<VariableExprAST*>(node.args[0].get()))
+            argType = resolveTypeByName(name->name);
+        if (!argType) {
+            emitError("unknown type in compile_time." + node.methodName, node);
+            node.type = nullptr;
+            return true;
+        }
+        std::string field;
+        if (isOffset) {
+            if (auto* s = dynamic_cast<StringExprAST*>(node.args[1].get())) field = s->value;
+            else if (auto* v = dynamic_cast<VariableExprAST*>(node.args[1].get())) field = v->name;
+            else {
+                emitError("compile_time.assert_offset field must be a string literal", node);
+                node.type = nullptr;
+                return true;
+            }
+        }
+        auto expected = ctEval().eval(node.args[expectedArgs - 1].get(), node);
+        if (!expected || expected->type != ConstValue::INT) {
+            emitError("compile_time." + node.methodName +
+                          " expected value must be a compile-time integer",
+                      node);
+            node.type = nullptr;
+            return true;
+        }
+        auto layoutCall = std::make_unique<MethodCallExprAST>(
+            std::make_unique<VariableExprAST>("compile_time"),
+            isOffset ? "offset_of" : (node.methodName == "assert_size" ? "size_of" : "align_of"),
+            std::vector<std::unique_ptr<ExprAST>>{});
+        layoutCall->args.push_back(std::make_unique<SizeofExprAST>(argType, nullptr));
+        if (isOffset) layoutCall->args.push_back(std::make_unique<StringExprAST>(field));
+        auto actual = ctEval().eval(layoutCall.get(), node);
+        if (!actual || actual->type != ConstValue::INT) {
+            node.type = nullptr;
+            return true;
+        }
+        if (actual->intVal != expected->intVal) {
+            emitError("compile_time." + node.methodName + " failed for '" +
+                          typeToString(argType) + "': expected " +
+                          std::to_string(expected->intVal) + ", got " +
+                          std::to_string(actual->intVal),
+                      node);
+        }
+        node.type = nullptr;
+        return true;
+    }
+
     // CT-07: compile_time reflection — name_of / fields_of / attributes_of.
     if (node.methodName == "name_of" || node.methodName == "fields_of" ||
         node.methodName == "attributes_of") {
@@ -1182,13 +1353,22 @@ bool SemanticAnalyzer::tryAnalyzeCompileTimeCall(MethodCallExprAST& node) {
     auto v = ctEval().eval(&node, node);
     if (v && v->type == ConstValue::INT) {
         node.ctInt = v->intVal;
-        node.type = ctIntTypeFor(typeCtx, v->intVal);
+        if (ctBoolQuery(node.methodName)) {
+            node.type = typeCtx->getBool();
+        } else if (v->isUnsigned) {
+            node.type = typeCtx->getUInt64();
+        } else {
+            node.type = ctIntTypeFor(typeCtx, v->intVal);
+        }
     } else if (v && v->type == ConstValue::DOUBLE) {
         node.ctFloat = v->doubleVal;
         node.type = typeCtx->getFloat64();
     } else if (v && v->type == ConstValue::STR) {
         // STR 结果逃逸（理由同链形钩子）。
         emitError("compile-time string value cannot be used in runtime context", node);
+        node.type = nullptr;
+    } else if (v && v->type == ConstValue::TYPE) {
+        emitError("compile-time type value cannot be used in runtime context", node);
         node.type = nullptr;
     } else if (v) {
         // CHAR：有运行时类型，防御回退（评审 I2）。
@@ -1274,37 +1454,125 @@ bool SemanticAnalyzer::analyzeReflectionCall(MethodCallExprAST& node) {
     node.type = nullptr;
     return true;
 }
+namespace {
+
+std::optional<std::size_t> ctIndexValue(const CtValue& v) {
+    if (v.type != CtValue::INT) return std::nullopt;
+    if (v.isUnsigned) {
+        return static_cast<std::size_t>(static_cast<uint64_t>(v.intVal));
+    }
+    if (v.intVal < 0) return std::nullopt;
+    return static_cast<std::size_t>(v.intVal);
+}
+
+CtValue ctBindValue(const CtValue& value, Type* target) {
+    if (!target) return ctClone(value);
+    if (value.type == CtValue::INT || value.type == CtValue::CHAR ||
+        value.type == CtValue::DOUBLE) {
+        if (auto converted = ctCast(value, target)) return *converted;
+    }
+    return ctClone(value);
+}
+
+CtValue ctVoidResult() { return ctInt(0); }
+
+CtValue ctBoolResult(bool value) { return ctInt(value ? 1 : 0, 1, true, true); }
+
+CtValue ctUsizeResult(std::size_t value) {
+    return ctInt(static_cast<long long>(static_cast<uint64_t>(value)), 64, true);
+}
+
+} // namespace
+
 std::optional<SemanticAnalyzer::ConstValue>
 SemanticAnalyzer::evalConstexprCallCT(CallExprAST& call,
                                       const std::vector<ConstValue>& argValues) {
+    auto lookup = [&](const std::string& name) -> FunctionDeclAST* {
+        auto ct = constexprFunctions.find(name);
+        if (ct != constexprFunctions.end()) return ct->second;
+        if (m_ctInFunctionBody) {
+            auto all = m_allFunctions.find(name);
+            if (all != m_allFunctions.end()) return all->second;
+        }
+        return nullptr;
+    };
     std::string calleeName = call.callee;
-    auto it = constexprFunctions.find(calleeName);
-    if (it == constexprFunctions.end()) {
-        calleeName = resolveNamespaceName(calleeName);
-        it = constexprFunctions.find(calleeName);
+    FunctionDeclAST* fn = nullptr;
+    // Prefer the sema-resolved signature so overloads do not collapse to the
+    // last function registered under the bare name.
+    if (!call.resolvedParamTypes.empty()) {
+        fn = lookup(mangleFunction(call.callee, call.resolvedParamTypes));
     }
-    if (it == constexprFunctions.end()) {
+    if (!fn) fn = lookup(calleeName);
+    if (!fn) {
+        calleeName = resolveNamespaceName(calleeName);
+        fn = lookup(calleeName);
+    }
+    if (!fn) {
         return std::nullopt;
     }
-    FunctionDeclAST* fn = it->second;
     if (!fn->body || argValues.size() != fn->params.size()) {
         return std::nullopt;
     }
     ConstEnv env = activeEnv ? *activeEnv : ConstEnv{};
     for (size_t i = 0; i < fn->params.size(); ++i) {
-        env[fn->params[i]->name] = argValues[i];
+        env[fn->params[i]->name] = ctBindValue(argValues[i], fn->params[i]->type);
     }
     ConstEnv* saved = activeEnv;
     activeEnv = &env;
+    if (ctEvalDepth == 0) {
+        ctSteps = 0;
+        ctStepReported = false;
+        m_ctFailed = false;
+    }
     constexprCallDepth++;
-    auto result = evalConstexprStmt(fn->body.get(), env, 1);
+    bool savedInBody = m_ctInFunctionBody;
+    m_ctInFunctionBody = true;
+    CtFlow flow = CtFlow::Normal;
+    auto result = evalConstexprStmt(fn->body.get(), env, 1, flow);
+    m_ctInFunctionBody = savedInBody;
     constexprCallDepth--;
+    if (!m_ctFailed && saved) {
+        for (size_t i = 0; i < argValues.size(); ++i) {
+            if (argValues[i].type != ConstValue::PTR || argValues[i].ptrName.empty()) {
+                continue;
+            }
+            auto it = env.find(argValues[i].ptrName);
+            if (it != env.end()) (*saved)[argValues[i].ptrName] = ctClone(it->second);
+        }
+    }
     activeEnv = saved;
-    return result;
+    if (m_ctFailed) return std::nullopt;
+    if (flow != CtFlow::Return || !result) return std::nullopt;
+    return ctBindValue(*result, fn->returnType);
+}
+
+bool SemanticAnalyzer::ctStepAllowance(ASTNode& at) {
+    if (++ctSteps <= kConstexprStepLimit) {
+        return true;
+    }
+    if (!ctStepReported) {
+        ctStepReported = true;
+        emitError("compile-time evaluation step limit exceeded (1000000)", at);
+    }
+    return false;
 }
 
 std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(ExprAST* expr) {
     if (!expr) return std::nullopt;
+
+    struct DepthGuard {
+        int& depth;
+        ~DepthGuard() { --depth; }
+    } guard{ctEvalDepth};
+    if (ctEvalDepth++ == 0) {
+        ctSteps = 0;
+        ctStepReported = false;
+        m_ctFailed = false;
+    }
+    if (!ctStepAllowance(*expr)) {
+        return std::nullopt;
+    }
 
     // P1-04 / CT-12: 表达式树含 compile_time 根 → 整树委托编译期求值器
     // （含 target/build 值与字符串运算；DEC-05 共享内核由此对接）。
@@ -1313,18 +1581,23 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
     }
 
     if (auto* num = dynamic_cast<NumberExprAST*>(expr)) {
-        ConstValue cv;
-        cv.type = ConstValue::INT;
-        cv.intVal = num->value;
-        return cv;
+        unsigned bits = 32;
+        bool isUnsigned = false;
+        switch (num->literalKind) {
+            case LiteralKind::UInt: bits = 32; isUnsigned = true; break;
+            case LiteralKind::Long: bits = 64; isUnsigned = false; break;
+            case LiteralKind::ULong: bits = 64; isUnsigned = true; break;
+            case LiteralKind::Int:
+                bits = (num->value >= INT32_MIN && num->value <= INT32_MAX) ? 32 : 64;
+                break;
+            default: break;
+        }
+        return ctInt(num->value, bits, isUnsigned);
     }
 
     // Found issue: bool 字面量按整数（0/1）参与 constexpr 折叠。
     if (auto* bl = dynamic_cast<BoolLiteralExprAST*>(expr)) {
-        ConstValue cv;
-        cv.type = ConstValue::INT;
-        cv.intVal = bl->value ? 1 : 0;
-        return cv;
+        return ctInt(bl->value ? 1 : 0, 1, true, true);
     }
 
     if (auto* chr = dynamic_cast<CharExprAST*>(expr)) {
@@ -1341,81 +1614,251 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
         return cv;
     }
 
+    if (auto* str = dynamic_cast<StringExprAST*>(expr)) {
+        ConstValue cv;
+        cv.type = ConstValue::STR;
+        cv.strVal = str->value;
+        return cv;
+    }
+
+    if (auto* assign = dynamic_cast<AssignmentExprAST*>(expr)) {
+        if (!activeEnv) return std::nullopt;
+        if (assign->op == AssignOp::Assign) {
+            if (auto* un = dynamic_cast<UnaryExprAST*>(assign->lhs.get());
+                un && un->op == UnaryOp::Deref) {
+                auto ptr = evaluateConstexpr(un->operand.get());
+                if (!ptr || ptr->type != ConstValue::PTR) return std::nullopt;
+                auto rhs = evaluateConstexpr(assign->rhs.get());
+                if (!rhs) return std::nullopt;
+                ConstValue converted = ctBindValue(*rhs, assign->lhs->type);
+                if (!ptr->ptrName.empty()) {
+                    auto slot = activeEnv->find(ptr->ptrName);
+                    if (slot == activeEnv->end()) return std::nullopt;
+                    slot->second = converted;
+                    return slot->second;
+                }
+                if (ptr->container) {
+                    CtContainer& c = *ptr->container;
+                    const std::size_t index =
+                        static_cast<std::size_t>(ptr->ptrIndex);
+                    if (c.kind == CtContainer::HashMap) {
+                        if (index >= c.values.size()) return std::nullopt;
+                        c.values[index] = converted;
+                    } else {
+                        if (index >= c.items.size()) return std::nullopt;
+                        c.items[index] = converted;
+                    }
+                    return converted;
+                }
+                return std::nullopt;
+            }
+        }
+        auto* var = dynamic_cast<VariableExprAST*>(assign->lhs.get());
+        if (!var) return std::nullopt;
+        auto slot = activeEnv->find(var->name);
+        if (slot == activeEnv->end()) return std::nullopt;
+
+        auto rhs = evaluateConstexpr(assign->rhs.get());
+        if (!rhs) return std::nullopt;
+
+        if (assign->op == AssignOp::Assign) {
+            slot->second = ctBindValue(*rhs, assign->lhs->type);
+            return slot->second;
+        }
+
+        BinaryOp op = BinaryOp::Invalid;
+        switch (assign->op) {
+            case AssignOp::AddAssign: op = BinaryOp::Add; break;
+            case AssignOp::SubAssign: op = BinaryOp::Sub; break;
+            case AssignOp::MulAssign: op = BinaryOp::Mul; break;
+            case AssignOp::DivAssign: op = BinaryOp::Div; break;
+            case AssignOp::ModAssign: op = BinaryOp::Mod; break;
+            case AssignOp::BitAndAssign: op = BinaryOp::BitAnd; break;
+            case AssignOp::BitOrAssign: op = BinaryOp::BitOr; break;
+            case AssignOp::BitXorAssign: op = BinaryOp::BitXor; break;
+            case AssignOp::LShiftAssign: op = BinaryOp::LShift; break;
+            case AssignOp::RShiftAssign: op = BinaryOp::RShift; break;
+            default: return std::nullopt;
+        }
+        auto folded = ctBinary(slot->second, *rhs, static_cast<int>(op),
+                               assign->lhs->type);
+        if (!folded) return std::nullopt;
+        slot->second = *folded;
+        return slot->second;
+    }
+
+    if (auto* post = dynamic_cast<PostfixIncDecExprAST*>(expr)) {
+        if (!activeEnv) return std::nullopt;
+        auto* var = dynamic_cast<VariableExprAST*>(post->operand.get());
+        if (!var) return std::nullopt;
+        auto slot = activeEnv->find(var->name);
+        if (slot == activeEnv->end()) return std::nullopt;
+        ConstValue old = slot->second;
+        auto delta = ctInt(1, slot->second.bits, slot->second.isUnsigned);
+        auto folded = ctBinary(slot->second, delta,
+                               static_cast<int>(post->isIncrement ? BinaryOp::Add
+                                                                  : BinaryOp::Sub),
+                               post->operand->type);
+        if (!folded) return std::nullopt;
+        slot->second = *folded;
+        return old;
+    }
+
     if (auto* bin = dynamic_cast<BinaryExprAST*>(expr)) {
         auto left = evaluateConstexpr(bin->left.get());
+        if (!left) return std::nullopt;
+        if (bin->op == BinaryOp::And || bin->op == BinaryOp::Or) {
+            const bool truth = ctTruthy(*left);
+            if ((bin->op == BinaryOp::And && !truth) ||
+                (bin->op == BinaryOp::Or && truth)) {
+                return ctInt(truth ? 1 : 0, 1, true, true);
+            }
+        }
         auto right = evaluateConstexpr(bin->right.get());
-        if (!left || !right) return std::nullopt;
+        if (!right) return std::nullopt;
+        return ctBinary(*left, *right, static_cast<int>(bin->op), bin->type);
+    }
 
-        if (left->type == ConstValue::INT && right->type == ConstValue::INT) {
-            ConstValue cv;
-            cv.type = ConstValue::INT;
-            switch (bin->op) {
-                case BinaryOp::Add: cv.intVal = left->intVal + right->intVal; break;
-                case BinaryOp::Sub: cv.intVal = left->intVal - right->intVal; break;
-                case BinaryOp::Mul: cv.intVal = left->intVal * right->intVal; break;
-                case BinaryOp::Div:
-                    if (right->intVal == 0) return std::nullopt;
-                    cv.intVal = left->intVal / right->intVal;
-                    break;
-                case BinaryOp::Mod:
-                    if (right->intVal == 0) return std::nullopt;
-                    cv.intVal = left->intVal % right->intVal;
-                    break;
-                case BinaryOp::Eq: cv.intVal = left->intVal == right->intVal; break;
-                case BinaryOp::NotEq: cv.intVal = left->intVal != right->intVal; break;
-                case BinaryOp::Lt: cv.intVal = left->intVal < right->intVal; break;
-                case BinaryOp::Gt: cv.intVal = left->intVal > right->intVal; break;
-                case BinaryOp::Le: cv.intVal = left->intVal <= right->intVal; break;
-                case BinaryOp::Ge: cv.intVal = left->intVal >= right->intVal; break;
-                case BinaryOp::And: cv.intVal = left->intVal && right->intVal; break;
-                case BinaryOp::Or: cv.intVal = left->intVal || right->intVal; break;
-                case BinaryOp::BitAnd: cv.intVal = left->intVal & right->intVal; break;
-                case BinaryOp::BitOr: cv.intVal = left->intVal | right->intVal; break;
-                case BinaryOp::BitXor: cv.intVal = left->intVal ^ right->intVal; break;
-                case BinaryOp::LShift: cv.intVal = left->intVal << right->intVal; break;
-                case BinaryOp::RShift: cv.intVal = left->intVal >> right->intVal; break;
-                default: return std::nullopt;
-            }
-            return cv;
+    if (auto* ternary = dynamic_cast<TernaryExprAST*>(expr)) {
+        auto cond = evaluateConstexpr(ternary->cond.get());
+        if (!cond) return std::nullopt;
+        return ctTruthy(*cond) ? evaluateConstexpr(ternary->then.get())
+                               : evaluateConstexpr(ternary->elseExpr.get());
+    }
+
+    if (auto* member = dynamic_cast<MemberAccessExprAST*>(expr)) {
+        auto object = evaluateConstexpr(member->object.get());
+        if (!object || object->type != ConstValue::CONTAINER) {
+            return std::nullopt;
         }
+        return evalContainerMember(*member, *object);
+    }
 
-        if (left->type == ConstValue::DOUBLE && right->type == ConstValue::DOUBLE) {
-            ConstValue cv;
-            cv.type = ConstValue::DOUBLE;
-            switch (bin->op) {
-                case BinaryOp::Add: cv.doubleVal = left->doubleVal + right->doubleVal; break;
-                case BinaryOp::Sub: cv.doubleVal = left->doubleVal - right->doubleVal; break;
-                case BinaryOp::Mul: cv.doubleVal = left->doubleVal * right->doubleVal; break;
-                case BinaryOp::Div:
-                    if (right->doubleVal == 0.0) return std::nullopt;
-                    cv.doubleVal = left->doubleVal / right->doubleVal;
-                    break;
-                case BinaryOp::Eq: cv.intVal = left->doubleVal == right->doubleVal; cv.type = ConstValue::INT; break;
-                case BinaryOp::NotEq: cv.intVal = left->doubleVal != right->doubleVal; cv.type = ConstValue::INT; break;
-                case BinaryOp::Lt: cv.intVal = left->doubleVal < right->doubleVal; cv.type = ConstValue::INT; break;
-                case BinaryOp::Gt: cv.intVal = left->doubleVal > right->doubleVal; cv.type = ConstValue::INT; break;
-                case BinaryOp::Le: cv.intVal = left->doubleVal <= right->doubleVal; cv.type = ConstValue::INT; break;
-                case BinaryOp::Ge: cv.intVal = left->doubleVal >= right->doubleVal; cv.type = ConstValue::INT; break;
-                default: return std::nullopt;
+    if (auto* mc = dynamic_cast<MethodCallExprAST*>(expr)) {
+        auto object = evaluateConstexpr(mc->object.get());
+        if (object && object->type == ConstValue::STR) {
+            switch (mc->builtinMethod) {
+                case BuiltinMethod::StrLen:
+                    return ctUsizeResult(object->strVal.size());
+                case BuiltinMethod::StrCharCount: {
+                    std::size_t count = 0;
+                    for (unsigned char ch : object->strVal) {
+                        if ((ch & 0xC0) != 0x80) ++count;
+                    }
+                    return ctUsizeResult(count);
+                }
+                case BuiltinMethod::StrCharAt: {
+                    if (mc->args.size() != 1) return std::nullopt;
+                    auto index = evaluateConstexpr(mc->args[0].get());
+                    if (!index || index->type != ConstValue::INT) return std::nullopt;
+                    if (index->intVal < 0 ||
+                        static_cast<std::size_t>(index->intVal) >= object->strVal.size()) {
+                        return std::nullopt;
+                    }
+                    ConstValue ch;
+                    ch.type = ConstValue::CHAR;
+                    ch.charVal = object->strVal[static_cast<std::size_t>(index->intVal)];
+                    return ch;
+                }
+                default:
+                    return std::nullopt;
             }
-            return cv;
         }
-
-        return std::nullopt;
+        if (!object || object->type != ConstValue::CONTAINER) {
+            return std::nullopt;
+        }
+        std::vector<ConstValue> args;
+        args.reserve(mc->args.size());
+        for (auto& arg : mc->args) {
+            auto value = evaluateConstexpr(arg.get());
+            if (!value) return std::nullopt;
+            args.push_back(*value);
+        }
+        return evalContainerMethod(*mc, *object, args, *mc);
     }
 
     if (auto* unary = dynamic_cast<UnaryExprAST*>(expr)) {
         auto operand = evaluateConstexpr(unary->operand.get());
         if (!operand) return std::nullopt;
 
-        if (operand->type == ConstValue::INT) {
-            ConstValue cv;
-            cv.type = ConstValue::INT;
+        if (unary->op == UnaryOp::AddressOf) {
+            auto* var = dynamic_cast<VariableExprAST*>(unary->operand.get());
+            if (!var || !activeEnv) return std::nullopt;
+            if (activeEnv->find(var->name) == activeEnv->end()) return std::nullopt;
+            ConstValue ptr;
+            ptr.type = ConstValue::PTR;
+            ptr.ptrName = var->name;
+            return ptr;
+        }
+
+        if (unary->op == UnaryOp::Deref) {
+            if (operand->type != ConstValue::PTR) return std::nullopt;
+            if (!operand->ptrName.empty()) {
+                if (!activeEnv) return std::nullopt;
+                auto slot = activeEnv->find(operand->ptrName);
+                if (slot == activeEnv->end()) return std::nullopt;
+                return slot->second;
+            }
+            if (!operand->container) return std::nullopt;
+            CtContainer& c = *operand->container;
+            if (c.kind == CtContainer::Vec || c.kind == CtContainer::Deque) {
+                if (operand->ptrIndex < 0 ||
+                    static_cast<std::size_t>(operand->ptrIndex) >= c.items.size()) {
+                    return std::nullopt;
+                }
+                return c.items[static_cast<std::size_t>(operand->ptrIndex)];
+            }
+            if (c.kind == CtContainer::HashMap) {
+                if (operand->ptrIndex < 0 ||
+                    static_cast<std::size_t>(operand->ptrIndex) >= c.values.size()) {
+                    return std::nullopt;
+                }
+                return c.values[static_cast<std::size_t>(operand->ptrIndex)];
+            }
+            return std::nullopt;
+        }
+
+        if (unary->op == UnaryOp::PreInc || unary->op == UnaryOp::PreDec) {
+            if (!activeEnv) return std::nullopt;
+            auto* var = dynamic_cast<VariableExprAST*>(unary->operand.get());
+            if (!var) return std::nullopt;
+            auto slot = activeEnv->find(var->name);
+            if (slot == activeEnv->end()) return std::nullopt;
+            const long long one = 1;
+            auto delta = ctInt(one, slot->second.bits, slot->second.isUnsigned);
+            auto folded = ctBinary(slot->second, delta,
+                                   static_cast<int>(unary->op == UnaryOp::PreInc
+                                                        ? BinaryOp::Add
+                                                        : BinaryOp::Sub),
+                                   unary->operand->type);
+            if (!folded) return std::nullopt;
+            slot->second = *folded;
+            return slot->second;
+        }
+
+        if (operand->type == ConstValue::INT || operand->type == ConstValue::CHAR) {
+            const bool isChar = operand->type == ConstValue::CHAR;
+            const long long raw = isChar ? operand->charVal : operand->intVal;
+            const unsigned opBits = isChar ? 8 : operand->bits;
+            const bool opUnsigned = isChar ? false : operand->isUnsigned;
             switch (unary->op) {
-                case UnaryOp::Plus: cv.intVal = operand->intVal; break;
-                case UnaryOp::Minus: cv.intVal = -operand->intVal; break;
-                case UnaryOp::Not: cv.intVal = !operand->intVal; break;
-                case UnaryOp::BitNot: cv.intVal = ~operand->intVal; break;
+                case UnaryOp::Plus: return *operand;
+                case UnaryOp::Minus:
+                    return ctNormalizeInt(static_cast<uint64_t>(-static_cast<uint64_t>(raw)),
+                                          opBits, opUnsigned);
+                case UnaryOp::Not:
+                    return ctInt(!ctTruthy(*operand) ? 1 : 0, 1, true, true);
+                case UnaryOp::BitNot:
+                    return ctNormalizeInt(~static_cast<uint64_t>(raw), opBits, opUnsigned);
+                default: return std::nullopt;
+            }
+        }
+        if (operand->type == ConstValue::DOUBLE) {
+            ConstValue cv;
+            cv.type = ConstValue::DOUBLE;
+            switch (unary->op) {
+                case UnaryOp::Plus:  cv.doubleVal = operand->doubleVal; break;
+                case UnaryOp::Minus: cv.doubleVal = -operand->doubleVal; break;
                 default: return std::nullopt;
             }
             return cv;
@@ -1430,39 +1873,17 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
         if (!operand) return std::nullopt;
         Type* to = stripTypedef(cast->castType);
         if (!to) return std::nullopt;
-
-        ConstValue cv;
-        if (isFloatType(to)) {
-            double d = 0.0;
-            switch (operand->type) {
-                case ConstValue::INT:    d = static_cast<double>(operand->intVal); break;
-                case ConstValue::CHAR:   d = static_cast<double>(operand->charVal); break;
-                case ConstValue::DOUBLE: d = operand->doubleVal; break;
-            }
-            cv.type = ConstValue::DOUBLE;
-            cv.doubleVal = d;
-            return cv;
-        }
-        if (isIntegerType(to)) {
-            long long v = 0;
-            switch (operand->type) {
-                case ConstValue::INT:    v = operand->intVal; break;
-                case ConstValue::CHAR:   v = operand->charVal; break;
-                case ConstValue::DOUBLE: v = static_cast<long long>(operand->doubleVal); break;
-            }
-            if (to->kind == TypeKind::Char) {
-                cv.type = ConstValue::CHAR;
-                cv.charVal = static_cast<char>(v);
-            } else {
-                cv.type = ConstValue::INT;
-                cv.intVal = static_cast<int>(v);
-            }
-            return cv;
-        }
-        return std::nullopt;
+        return ctCast(*operand, to);
     }
 
     if (auto* var = dynamic_cast<VariableExprAST*>(expr)) {
+        if (var->isFunctionRef) {
+            ConstValue fn;
+            fn.type = ConstValue::FUNC;
+            fn.funcName = var->resolvedFunctionName.empty()
+                              ? var->name : var->resolvedFunctionName;
+            return fn;
+        }
         // A parameter/local of the constexpr function being interpreted shadows
         // any module-level constexpr variable.
         if (activeEnv) {
@@ -1496,12 +1917,7 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
 }
 
 bool SemanticAnalyzer::constValueTruthy(const ConstValue& v) {
-    switch (v.type) {
-        case ConstValue::INT:    return v.intVal != 0;
-        case ConstValue::CHAR:   return v.charVal != 0;
-        case ConstValue::DOUBLE: return v.doubleVal != 0.0;
-    }
-    return false;
+    return ctTruthy(v);
 }
 
 std::optional<SemanticAnalyzer::ConstValue>
@@ -1511,90 +1927,826 @@ SemanticAnalyzer::evalConstexprCall(CallExprAST& call, int depth) {
     }
     // The call may not have been through visit(CallExprAST) yet (e.g. a
     // `constexpr` initializer is folded before its subexpressions are typed),
-    // so resolve a namespace-qualified callee here as well.
+    // so resolve a namespace-qualified callee here as well. Callbacks used by
+    // compile-time containers need not be marked constexpr, so fall back to
+    // the all-functions table.
+    auto lookup = [&](const std::string& name) -> FunctionDeclAST* {
+        auto ct = constexprFunctions.find(name);
+        if (ct != constexprFunctions.end()) return ct->second;
+        if (m_ctInFunctionBody) {
+            auto all = m_allFunctions.find(name);
+            if (all != m_allFunctions.end()) return all->second;
+        }
+        return nullptr;
+    };
     std::string calleeName = call.callee;
-    auto it = constexprFunctions.find(calleeName);
-    if (it == constexprFunctions.end()) {
+    FunctionDeclAST* fn = nullptr;
+    // Prefer the sema-resolved signature so overloads do not collapse to the
+    // last function registered under the bare name.
+    if (!call.resolvedParamTypes.empty()) {
+        fn = lookup(mangleFunction(call.callee, call.resolvedParamTypes));
+    }
+    if (!fn) fn = lookup(calleeName);
+    if (!fn) {
         calleeName = resolveNamespaceName(calleeName);
-        it = constexprFunctions.find(calleeName);
+        fn = lookup(calleeName);
     }
-    if (it == constexprFunctions.end()) {
-        return std::nullopt; // not a constexpr function (e.g. a libc call)
+    if (!fn) {
+        return std::nullopt; // not a user function (e.g. a libc call)
     }
-    FunctionDeclAST* fn = it->second;
     if (!fn->body || call.args.size() != fn->params.size()) {
         return std::nullopt;
     }
 
     // Evaluate arguments in the caller's environment, then bind parameters.
     ConstEnv env = activeEnv ? *activeEnv : ConstEnv{};
+    std::vector<ConstValue> argVals(fn->params.size());
     for (size_t i = 0; i < fn->params.size(); ++i) {
         auto arg = evaluateConstexpr(call.args[i].get());
         if (!arg) {
             return std::nullopt;
         }
-        env[fn->params[i]->name] = *arg;
+        argVals[i] = *arg;
+        env[fn->params[i]->name] = ctBindValue(*arg, fn->params[i]->type);
     }
 
     ConstEnv* saved = activeEnv;
     activeEnv = &env;
     constexprCallDepth++;
-    auto result = evalConstexprStmt(fn->body.get(), env, depth + 1);
+    bool savedInBody = m_ctInFunctionBody;
+    m_ctInFunctionBody = true;
+    CtFlow flow = CtFlow::Normal;
+    auto result = evalConstexprStmt(fn->body.get(), env, depth + 1, flow);
+    m_ctInFunctionBody = savedInBody;
     constexprCallDepth--;
+
+    // Copy out `&local` arguments from the callee's copied environment.
+    if (!m_ctFailed && saved) {
+        for (size_t i = 0; i < argVals.size(); ++i) {
+            if (argVals[i].type != ConstValue::PTR || argVals[i].ptrName.empty()) {
+                continue;
+            }
+            auto it = env.find(argVals[i].ptrName);
+            if (it != env.end()) {
+                (*saved)[argVals[i].ptrName] = ctClone(it->second);
+            }
+        }
+    }
     activeEnv = saved;
-    return result;
+    if (m_ctFailed) return std::nullopt;
+    if (flow != CtFlow::Return) return std::nullopt;
+    if (!result) return std::nullopt;
+    return ctBindValue(*result, fn->returnType);
 }
 
 std::optional<SemanticAnalyzer::ConstValue>
-SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth) {
+SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
+                                    CtFlow& flow) {
+    flow = CtFlow::Normal;
     if (!stmt || depth > kConstexprMaxDepth) {
         return std::nullopt;
     }
-    (void)env;
+    if (!ctStepAllowance(*stmt)) {
+        return std::nullopt;
+    }
 
     if (auto* ret = dynamic_cast<ReturnStmtAST*>(stmt)) {
-        ConstValue zero;
-        zero.type = ConstValue::INT;
-        zero.intVal = 0;
-        return ret->value ? evaluateConstexpr(ret->value.get()) : std::optional<ConstValue>(zero);
+        flow = CtFlow::Return;
+        if (!ret->value) {
+            return ctInt(0);
+        }
+        auto result = evaluateConstexpr(ret->value.get());
+        if (!result) m_ctFailed = true;
+        return result;
     }
 
     if (auto* block = dynamic_cast<CompoundStmtAST*>(stmt)) {
+        std::optional<ConstValue> result;
         for (auto& inner : block->stmts) {
-            if (auto result = evalConstexprStmt(inner.get(), env, depth + 1)) {
+            CtFlow innerFlow = CtFlow::Normal;
+            result = evalConstexprStmt(inner.get(), env, depth + 1, innerFlow);
+            if (m_ctFailed) return std::nullopt;
+            if (innerFlow != CtFlow::Normal) {
+                flow = innerFlow;
                 return result;
             }
         }
-        return std::nullopt;
+        return result;
     }
 
     if (auto* ifs = dynamic_cast<IfStmtAST*>(stmt)) {
         auto cond = evaluateConstexpr(ifs->cond.get());
         if (!cond) {
+            m_ctFailed = true;
             return std::nullopt;
         }
-        if (constValueTruthy(*cond)) {
-            return evalConstexprStmt(ifs->thenStmt.get(), env, depth + 1);
+        if (ctTruthy(*cond)) {
+            return evalConstexprStmt(ifs->thenStmt.get(), env, depth + 1, flow);
         }
-        return evalConstexprStmt(ifs->elseStmt.get(), env, depth + 1);
+        return evalConstexprStmt(ifs->elseStmt.get(), env, depth + 1, flow);
     }
 
-    if (auto* ds = dynamic_cast<DeclStmtAST*>(stmt)) {
-        if (auto* vd = dynamic_cast<VarDeclAST*>(ds->decl.get())) {
-            if (vd->initExpr) {
-                if (auto value = evaluateConstexpr(vd->initExpr.get())) {
-                    env[vd->name] = *value;
+    if (auto* wh = dynamic_cast<WhileStmtAST*>(stmt)) {
+        while (true) {
+            auto cond = evaluateConstexpr(wh->cond.get());
+            if (!cond) { m_ctFailed = true; return std::nullopt; }
+            if (!ctTruthy(*cond)) break;
+            if (!ctStepAllowance(*stmt)) return std::nullopt;
+            CtFlow bodyFlow = CtFlow::Normal;
+            auto result = evalConstexprStmt(wh->body.get(), env, depth + 1, bodyFlow);
+            if (m_ctFailed) return std::nullopt;
+            if (bodyFlow == CtFlow::Break) break;
+            if (bodyFlow == CtFlow::Return) {
+                flow = CtFlow::Return;
+                return result;
+            }
+            // Continue and Normal both proceed to the next condition check.
+        }
+        return std::nullopt;
+    }
+
+    if (auto* dw = dynamic_cast<DoWhileStmtAST*>(stmt)) {
+        while (true) {
+            if (!ctStepAllowance(*stmt)) return std::nullopt;
+            CtFlow bodyFlow = CtFlow::Normal;
+            auto result = evalConstexprStmt(dw->body.get(), env, depth + 1, bodyFlow);
+            if (m_ctFailed) return std::nullopt;
+            if (bodyFlow == CtFlow::Break) break;
+            if (bodyFlow == CtFlow::Return) {
+                flow = CtFlow::Return;
+                return result;
+            }
+            auto cond = evaluateConstexpr(dw->cond.get());
+            if (!cond) { m_ctFailed = true; return std::nullopt; }
+            if (!ctTruthy(*cond)) break;
+        }
+        return std::nullopt;
+    }
+
+    if (auto* fr = dynamic_cast<ForStmtAST*>(stmt)) {
+        CtFlow initFlow = CtFlow::Normal;
+        if (fr->init) {
+            evalConstexprStmt(fr->init.get(), env, depth + 1, initFlow);
+            if (initFlow == CtFlow::Return) {
+                flow = CtFlow::Return;
+                return std::nullopt;
+            }
+        }
+        while (true) {
+            if (fr->cond) {
+                auto cond = evaluateConstexpr(fr->cond.get());
+                if (!cond) { m_ctFailed = true; return std::nullopt; }
+                if (!ctTruthy(*cond)) break;
+            }
+            if (!ctStepAllowance(*stmt)) return std::nullopt;
+            CtFlow bodyFlow = CtFlow::Normal;
+            auto result = evalConstexprStmt(fr->body.get(), env, depth + 1, bodyFlow);
+            if (m_ctFailed) return std::nullopt;
+            if (bodyFlow == CtFlow::Break) break;
+            if (bodyFlow == CtFlow::Return) {
+                flow = CtFlow::Return;
+                return result;
+            }
+            if (fr->inc) {
+                if (!evaluateConstexpr(fr->inc.get())) {
+                    m_ctFailed = true;
+                    return std::nullopt;
                 }
             }
         }
         return std::nullopt;
     }
 
-    if (auto* es = dynamic_cast<ExprStmtAST*>(stmt)) {
-        evaluateConstexpr(es->expr.get());
+    if (dynamic_cast<BreakStmtAST*>(stmt)) {
+        flow = CtFlow::Break;
         return std::nullopt;
     }
 
+    if (dynamic_cast<ContinueStmtAST*>(stmt)) {
+        flow = CtFlow::Continue;
+        return std::nullopt;
+    }
+
+    if (dynamic_cast<NullStmtAST*>(stmt)) {
+        return std::nullopt;
+    }
+
+    if (auto* ds = dynamic_cast<DeclStmtAST*>(stmt)) {
+        if (auto* vd = dynamic_cast<VarDeclAST*>(ds->decl.get())) {
+            if (vd->initExpr) {
+                if (auto value = evaluateConstexpr(vd->initExpr.get())) {
+                    env[vd->name] = ctBindValue(*value, vd->type);
+                } else {
+                    m_ctFailed = true;
+                    return std::nullopt;
+                }
+            } else {
+                env[vd->name] = ctDefaultValue(vd->type);
+            }
+        }
+        return std::nullopt;
+    }
+
+    if (auto* es = dynamic_cast<ExprStmtAST*>(stmt)) {
+        if (!evaluateConstexpr(es->expr.get())) {
+            m_ctFailed = true;
+            return std::nullopt;
+        }
+        return std::nullopt;
+    }
+
+    return std::nullopt;
+}
+
+static const VariableExprAST* rootVariableOf(const ExprAST* e);
+
+bool SemanticAnalyzer::isConstexprContainerExpr(const ExprAST* expr) {
+    const VariableExprAST* var = rootVariableOf(expr);
+    if (!var) return false;
+    const std::string key = resolveNamespaceName(var->name);
+    Symbol* sym = currentScope->lookup(key);
+    if (!sym && key != var->name) sym = lookup(var->name);
+    return sym && sym->isConstexprContainer;
+}
+
+std::optional<SemanticAnalyzer::ConstValue>
+SemanticAnalyzer::evalContainerMember(MemberAccessExprAST& node, ConstValue& object) {
+    if (!object.container) return std::nullopt;
+    const CtContainer& c = *object.container;
+    switch (c.kind) {
+        case CtContainer::Vec:
+        case CtContainer::Deque:
+            if (node.memberName == "len") return ctUsizeResult(c.len);
+            if (node.memberName == "cap") return ctUsizeResult(c.cap);
+            if (c.kind == CtContainer::Deque && node.memberName == "head") {
+                return ctUsizeResult(c.head);
+            }
+            return std::nullopt;
+        case CtContainer::HashMap:
+        case CtContainer::HashSet:
+            if (node.memberName == "len") return ctUsizeResult(c.len);
+            if (node.memberName == "cap") return ctUsizeResult(c.cap);
+            if (node.memberName == "tombstones") return ctUsizeResult(c.tombstones);
+            return std::nullopt;
+    }
+    return std::nullopt;
+}
+
+
+FunctionDeclAST* SemanticAnalyzer::findCtFunction(const std::string& name) {
+    if (name.empty()) return nullptr;
+    auto it = m_allFunctions.find(name);
+    if (it != m_allFunctions.end()) return it->second;
+    auto ct = constexprFunctions.find(name);
+    if (ct != constexprFunctions.end()) return ct->second;
+    const std::string resolved = resolveNamespaceName(name);
+    if (resolved != name) {
+        it = m_allFunctions.find(resolved);
+        if (it != m_allFunctions.end()) return it->second;
+        ct = constexprFunctions.find(resolved);
+        if (ct != constexprFunctions.end()) return ct->second;
+    }
+    return nullptr;
+}
+
+std::optional<SemanticAnalyzer::ConstValue>
+SemanticAnalyzer::evalCtFunction(FunctionDeclAST* fn,
+                                 const std::vector<ConstValue>& args, int depth) {
+    if (!fn || !fn->body || args.size() != fn->params.size()) {
+        return std::nullopt;
+    }
+    if (depth > kConstexprMaxDepth || constexprCallDepth >= kConstexprMaxDepth) {
+        m_ctFailed = true;
+        return std::nullopt;
+    }
+    ConstEnv env = activeEnv ? *activeEnv : ConstEnv{};
+    for (std::size_t i = 0; i < fn->params.size(); ++i) {
+        env[fn->params[i]->name] = ctBindValue(args[i], fn->params[i]->type);
+    }
+    ConstEnv* saved = activeEnv;
+    activeEnv = &env;
+    constexprCallDepth++;
+    const bool savedInBody = m_ctInFunctionBody;
+    m_ctInFunctionBody = true;
+    CtFlow flow = CtFlow::Normal;
+    auto result = evalConstexprStmt(fn->body.get(), env, depth + 1, flow);
+    m_ctInFunctionBody = savedInBody;
+    constexprCallDepth--;
+    if (!m_ctFailed && saved) {
+        for (std::size_t i = 0; i < args.size(); ++i) {
+            if (args[i].type != ConstValue::PTR || args[i].ptrName.empty()) continue;
+            auto it = env.find(args[i].ptrName);
+            if (it != env.end()) (*saved)[args[i].ptrName] = ctClone(it->second);
+        }
+    }
+    activeEnv = saved;
+    if (m_ctFailed) return std::nullopt;
+    if (flow != CtFlow::Return) return ctVoidResult();
+    return result ? ctBindValue(*result, fn->returnType) : ctVoidResult();
+}
+
+bool SemanticAnalyzer::ctCallEq(CtContainer& c, const ConstValue& a,
+                                const ConstValue& b, bool& out) {
+    out = false;
+    if (c.eqFn.empty()) return true; // runtime treats a null callback as never-equal
+    FunctionDeclAST* fn = findCtFunction(c.eqFn);
+    if (!fn) {
+        m_ctFailed = true;
+        return false;
+    }
+    auto result = evalCtFunction(fn, {a, b}, 0);
+    if (!result) {
+        m_ctFailed = true;
+        return false;
+    }
+    out = ctTruthy(*result);
+    return true;
+}
+
+std::optional<uint64_t> SemanticAnalyzer::ctCallHash(CtContainer& c,
+                                                     const ConstValue& key) {
+    if (c.hashFn.empty()) return std::nullopt;
+    FunctionDeclAST* fn = findCtFunction(c.hashFn);
+    if (!fn) {
+        m_ctFailed = true;
+        return std::nullopt;
+    }
+    auto result = evalCtFunction(fn, {key}, 0);
+    if (!result || result->type != ConstValue::INT) {
+        m_ctFailed = true;
+        return std::nullopt;
+    }
+    return static_cast<uint64_t>(result->intVal);
+}
+
+bool SemanticAnalyzer::ctHashRehash(CtContainer& c, std::size_t newCap) {
+    std::vector<CtValue> oldKeys = c.keys;
+    std::vector<CtValue> oldValues = c.values;
+    std::vector<uint8_t> oldStates = c.states;
+    const std::size_t oldCap = c.cap;
+
+    c.keys.assign(newCap, ctDefaultValue(c.keyType));
+    if (c.kind == CtContainer::HashMap) {
+        c.values.assign(newCap, ctDefaultValue(c.valueType));
+    } else {
+        c.values.clear();
+    }
+    c.states.assign(newCap, 0);
+    c.cap = newCap;
+    c.len = 0;
+    c.tombstones = 0;
+
+    for (std::size_t i = 0; i < oldCap; ++i) {
+        if (i < oldStates.size() && oldStates[i] == 1) {
+            ctHashPutRaw(c, oldKeys[i],
+                         c.kind == CtContainer::HashMap
+                             ? oldValues[i] : ctVoidResult());
+            if (m_ctFailed) return false;
+        }
+    }
+    return true;
+}
+
+void SemanticAnalyzer::ctHashPutRaw(CtContainer& c, const ConstValue& key,
+                                    const ConstValue& value) {
+    if (c.hashFn.empty() || c.eqFn.empty() || c.cap == 0) return;
+    auto hash = ctCallHash(c, key);
+    if (!hash) return;
+    std::size_t at = static_cast<std::size_t>(*hash % c.cap);
+    for (std::size_t probes = 0; probes < c.cap; ++probes) {
+        const uint8_t state = c.states[at];
+        if (state == 1) {
+            bool equal = false;
+            if (!ctCallEq(c, c.keys[at], key, equal)) return;
+            if (equal) {
+                if (c.kind == CtContainer::HashMap) c.values[at] = ctClone(value);
+                return;
+            }
+        }
+        if (state == 0 || state == 2) {
+            c.keys[at] = ctClone(key);
+            if (c.kind == CtContainer::HashMap) c.values[at] = ctClone(value);
+            if (state == 2) --c.tombstones;
+            c.states[at] = 1;
+            ++c.len;
+            return;
+        }
+        at = (at + 1) % c.cap;
+    }
+}
+
+std::optional<std::size_t> SemanticAnalyzer::ctHashFind(CtContainer& c,
+                                                        const ConstValue& key) {
+    if (c.cap == 0 || c.hashFn.empty() || c.eqFn.empty()) return std::nullopt;
+    auto hash = ctCallHash(c, key);
+    if (!hash) {
+        if (m_ctFailed) return std::nullopt;
+        return std::nullopt;
+    }
+    std::size_t at = static_cast<std::size_t>(*hash % c.cap);
+    for (std::size_t probes = 0; probes < c.cap; ++probes) {
+        const uint8_t state = c.states[at];
+        if (state == 0) return std::nullopt;
+        if (state == 1) {
+            bool equal = false;
+            if (!ctCallEq(c, c.keys[at], key, equal)) return std::nullopt;
+            if (equal) return at;
+        }
+        at = (at + 1) % c.cap;
+    }
+    return std::nullopt;
+}
+
+std::optional<SemanticAnalyzer::ConstValue>
+SemanticAnalyzer::evalContainerMethod(MethodCallExprAST& call, ConstValue& object,
+                                      const std::vector<ConstValue>& args,
+                                      ASTNode& at) {
+    (void)at;
+    if (!object.container) return std::nullopt;
+    CtContainer& c = *object.container;
+
+    auto arg = [&](std::size_t i) -> const CtValue& { return args[i]; };
+    auto need = [&](std::size_t n) { return args.size() == n; };
+    auto defaultElem = [&]() { return ctDefaultValue(c.elementType); };
+    auto defaultKey = [&]() { return ctDefaultValue(c.keyType); };
+    auto defaultValue = [&]() { return ctDefaultValue(c.valueType); };
+
+    auto writeOut = [&](const CtValue& ptr, const CtValue& value) -> bool {
+        if (ptr.type != ConstValue::PTR || ptr.ptrName.empty() || !activeEnv) {
+            return false;
+        }
+        auto slot = activeEnv->find(ptr.ptrName);
+        if (slot == activeEnv->end()) return false;
+        slot->second = ctClone(value);
+        return true;
+    };
+
+    auto callEqValue = [&](const CtValue& eq, const CtValue& a, const CtValue& b,
+                           bool& out) -> bool {
+        out = false;
+        if (eq.type != ConstValue::FUNC || eq.funcName.empty()) return true;
+        FunctionDeclAST* fn = findCtFunction(eq.funcName);
+        if (!fn) {
+            m_ctFailed = true;
+            return false;
+        }
+        auto result = evalCtFunction(fn, {a, b}, 0);
+        if (!result) {
+            m_ctFailed = true;
+            return false;
+        }
+        out = ctTruthy(*result);
+        return true;
+    };
+
+    switch (c.kind) {
+        case CtContainer::Vec: {
+            if (call.methodName == "init" && need(0)) {
+                c.items.clear();
+                c.cap = c.len = c.head = c.tombstones = 0;
+                return ctVoidResult();
+            }
+            if (call.methodName == "destroy" && need(0)) {
+                c.items.clear();
+                c.cap = c.len = c.head = c.tombstones = 0;
+                return ctVoidResult();
+            }
+            if (call.methodName == "is_empty" && need(0)) return ctBoolResult(c.len == 0);
+            if (call.methodName == "capacity" && need(0)) return ctUsizeResult(c.cap);
+            if ((call.methodName == "len" || call.methodName == "size") && need(0)) {
+                return ctUsizeResult(c.len);
+            }
+            if (call.methodName == "reserve" && need(1)) {
+                auto want = ctIndexValue(arg(0));
+                if (!want) return std::nullopt;
+                if (*want <= c.cap) return ctBoolResult(true);
+                std::size_t nc = c.cap == 0 ? 8 : c.cap;
+                while (nc < *want) {
+                    if (nc > (~std::size_t{0}) / 2) {
+                        nc = *want;
+                        break;
+                    }
+                    nc *= 2;
+                }
+                c.items.resize(nc, defaultElem());
+                c.cap = nc;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "push" && need(1)) {
+                if (c.cap == 0) {
+                    c.items.resize(8, defaultElem());
+                    c.cap = 8;
+                }
+                if (c.len + 1 > c.cap) {
+                    std::size_t nc = c.cap * 2;
+                    c.items.resize(nc, defaultElem());
+                    c.cap = nc;
+                }
+                c.items[c.len] = ctClone(arg(0));
+                ++c.len;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "pop" && need(1)) {
+                if (c.len == 0) return ctBoolResult(false);
+                --c.len;
+                if (arg(0).type == ConstValue::PTR && !arg(0).ptrName.empty()) {
+                    if (!writeOut(arg(0), c.items[c.len])) return std::nullopt;
+                }
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "get" && need(1)) {
+                auto index = ctIndexValue(arg(0));
+                if (!index || *index >= c.len) return std::nullopt;
+                return ctClone(c.items[*index]);
+            }
+            if (call.methodName == "get_ptr" && need(1)) {
+                auto index = ctIndexValue(arg(0));
+                if (!index || *index >= c.len) return std::nullopt;
+                ConstValue ptr;
+                ptr.type = ConstValue::PTR;
+                ptr.container = object.container;
+                ptr.ptrIndex = static_cast<long long>(*index);
+                return ptr;
+            }
+            if (call.methodName == "set" && need(2)) {
+                auto index = ctIndexValue(arg(0));
+                if (!index || *index >= c.len) return std::nullopt;
+                c.items[*index] = ctClone(arg(1));
+                return ctVoidResult();
+            }
+            if (call.methodName == "clear" && need(0)) {
+                c.len = 0;
+                return ctVoidResult();
+            }
+            if (call.methodName == "insert" && need(2)) {
+                auto index = ctIndexValue(arg(0));
+                if (!index || *index > c.len) return std::nullopt;
+                if (c.cap == 0) {
+                    c.items.resize(8, defaultElem());
+                    c.cap = 8;
+                }
+                if (c.len + 1 > c.cap) {
+                    std::size_t nc = c.cap * 2;
+                    c.items.resize(nc, defaultElem());
+                    c.cap = nc;
+                }
+                c.items.insert(c.items.begin() + static_cast<long>(*index), ctClone(arg(1)));
+                if (c.items.size() > c.cap) c.items.resize(c.cap);
+                ++c.len;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "remove" && need(1)) {
+                auto index = ctIndexValue(arg(0));
+                if (!index || *index >= c.len) return ctBoolResult(false);
+                c.items.erase(c.items.begin() + static_cast<long>(*index));
+                c.items.resize(c.cap, defaultElem());
+                --c.len;
+                c.items[c.len] = defaultElem();
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "swap" && need(2)) {
+                auto a = ctIndexValue(arg(0));
+                auto b = ctIndexValue(arg(1));
+                if (!a || !b || *a >= c.len || *b >= c.len) return ctVoidResult();
+                std::swap(c.items[*a], c.items[*b]);
+                return ctVoidResult();
+            }
+            if (call.methodName == "contains" && need(2)) {
+                for (std::size_t i = 0; i < c.len; ++i) {
+                    bool equal = false;
+                    if (!callEqValue(arg(1), c.items[i], arg(0), equal)) return std::nullopt;
+                    if (equal) return ctBoolResult(true);
+                }
+                return ctBoolResult(false);
+            }
+            if (call.methodName == "index_of" && need(2)) {
+                for (std::size_t i = 0; i < c.len; ++i) {
+                    bool equal = false;
+                    if (!callEqValue(arg(1), c.items[i], arg(0), equal)) return std::nullopt;
+                    if (equal) return ctInt(static_cast<long long>(i), 64, false);
+                }
+                return ctInt(-1, 64, false);
+            }
+            return std::nullopt;
+        }
+        case CtContainer::Deque: {
+            if (call.methodName == "init" && need(0)) {
+                c.items.clear();
+                c.cap = c.len = c.head = c.tombstones = 0;
+                return ctVoidResult();
+            }
+            if (call.methodName == "destroy" && need(0)) {
+                c.items.clear();
+                c.cap = c.len = c.head = c.tombstones = 0;
+                return ctVoidResult();
+            }
+            if (call.methodName == "is_empty" && need(0)) return ctBoolResult(c.len == 0);
+            if (call.methodName == "capacity" && need(0)) return ctUsizeResult(c.cap);
+            if ((call.methodName == "len" || call.methodName == "size") && need(0)) {
+                return ctUsizeResult(c.len);
+            }
+            if (call.methodName == "reserve" && need(1)) {
+                auto want = ctIndexValue(arg(0));
+                if (!want) return std::nullopt;
+                if (*want <= c.cap) return ctBoolResult(true);
+                std::size_t nc = c.cap == 0 ? 8 : c.cap;
+                while (nc < *want) nc *= 2;
+                std::vector<CtValue> next(nc, defaultElem());
+                for (std::size_t i = 0; i < c.len; ++i) {
+                    next[i] = c.items[(c.head + i) % c.cap];
+                }
+                c.items = std::move(next);
+                c.cap = nc;
+                c.head = 0;
+                return ctBoolResult(true);
+            }
+            auto growForPush = [&]() {
+                if (c.cap == 0) {
+                    c.items.resize(8, defaultElem());
+                    c.cap = 8;
+                }
+                if (c.len + 1 > c.cap) {
+                    std::size_t nc = c.cap * 2;
+                    std::vector<CtValue> next(nc, defaultElem());
+                    for (std::size_t i = 0; i < c.len; ++i) {
+                        next[i] = c.items[(c.head + i) % c.cap];
+                    }
+                    c.items = std::move(next);
+                    c.cap = nc;
+                    c.head = 0;
+                }
+            };
+            if (call.methodName == "push_back" && need(1)) {
+                growForPush();
+                const std::size_t tail = (c.head + c.len) % c.cap;
+                c.items[tail] = ctClone(arg(0));
+                ++c.len;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "push_front" && need(1)) {
+                growForPush();
+                c.head = (c.head + c.cap - 1) % c.cap;
+                c.items[c.head] = ctClone(arg(0));
+                ++c.len;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "pop_back" && need(1)) {
+                if (c.len == 0) return ctBoolResult(false);
+                const std::size_t tail = (c.head + c.len - 1) % c.cap;
+                --c.len;
+                if (!writeOut(arg(0), c.items[tail])) return std::nullopt;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "pop_front" && need(1)) {
+                if (c.len == 0) return ctBoolResult(false);
+                if (!writeOut(arg(0), c.items[c.head])) return std::nullopt;
+                c.head = (c.head + 1) % c.cap;
+                --c.len;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "get" && need(1)) {
+                auto index = ctIndexValue(arg(0));
+                if (!index || *index >= c.len) return std::nullopt;
+                return ctClone(c.items[(c.head + *index) % c.cap]);
+            }
+            if (call.methodName == "get_ptr" && need(1)) {
+                auto index = ctIndexValue(arg(0));
+                if (!index || *index >= c.len) return std::nullopt;
+                ConstValue ptr;
+                ptr.type = ConstValue::PTR;
+                ptr.container = object.container;
+                ptr.ptrIndex = static_cast<long long>((c.head + *index) % c.cap);
+                return ptr;
+            }
+            if (call.methodName == "set" && need(2)) {
+                auto index = ctIndexValue(arg(0));
+                if (!index || *index >= c.len) return std::nullopt;
+                c.items[(c.head + *index) % c.cap] = ctClone(arg(1));
+                return ctVoidResult();
+            }
+            if (call.methodName == "clear" && need(0)) {
+                c.head = 0;
+                c.len = 0;
+                return ctVoidResult();
+            }
+            return std::nullopt;
+        }
+        case CtContainer::HashMap: {
+            if (call.methodName == "init" && need(2)) {
+                c.keys.clear();
+                c.values.clear();
+                c.states.clear();
+                c.cap = c.len = c.tombstones = 0;
+                c.hashFn = arg(0).type == ConstValue::FUNC ? arg(0).funcName : std::string();
+                c.eqFn = arg(1).type == ConstValue::FUNC ? arg(1).funcName : std::string();
+                return ctVoidResult();
+            }
+            if (call.methodName == "destroy" && need(0)) {
+                c.keys.clear();
+                c.values.clear();
+                c.states.clear();
+                c.cap = c.len = c.tombstones = 0;
+                return ctVoidResult();
+            }
+            if (call.methodName == "is_empty" && need(0)) return ctBoolResult(c.len == 0);
+            if (call.methodName == "size" && need(0)) return ctUsizeResult(c.len);
+            if (call.methodName == "bucket_count" && need(0)) return ctUsizeResult(c.cap);
+            if (call.methodName == "put" && need(2)) {
+                if (c.cap == 0) {
+                    if (!ctHashRehash(c, 16)) return std::nullopt;
+                } else if ((c.len + 1) * 10 >= c.cap * 7) {
+                    if (!ctHashRehash(c, c.cap * 2)) return std::nullopt;
+                }
+                ctHashPutRaw(c, arg(0), arg(1));
+                return ctBoolResult(!m_ctFailed);
+            }
+            if (call.methodName == "get_ptr" && need(1)) {
+                auto index = ctHashFind(c, arg(0));
+                if (!index) return std::nullopt;
+                ConstValue ptr;
+                ptr.type = ConstValue::PTR;
+                ptr.container = object.container;
+                ptr.ptrIndex = static_cast<long long>(*index);
+                return ptr;
+            }
+            if (call.methodName == "get" && need(2)) {
+                auto index = ctHashFind(c, arg(0));
+                if (!index) return ctBoolResult(false);
+                if (arg(1).type == ConstValue::PTR && !arg(1).ptrName.empty()) {
+                    if (!writeOut(arg(1), c.values[*index])) return std::nullopt;
+                }
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "contains" && need(1)) {
+                return ctBoolResult(ctHashFind(c, arg(0)).has_value());
+            }
+            if (call.methodName == "remove" && need(1)) {
+                auto index = ctHashFind(c, arg(0));
+                if (!index) return ctBoolResult(false);
+                c.states[*index] = 2;
+                --c.len;
+                ++c.tombstones;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "clear" && need(0)) {
+                if (!c.states.empty()) std::fill(c.states.begin(), c.states.end(), 0);
+                c.len = 0;
+                c.tombstones = 0;
+                return ctVoidResult();
+            }
+            return std::nullopt;
+        }
+        case CtContainer::HashSet: {
+            if (call.methodName == "init" && need(2)) {
+                c.keys.clear();
+                c.values.clear();
+                c.states.clear();
+                c.cap = c.len = c.tombstones = 0;
+                c.hashFn = arg(0).type == ConstValue::FUNC ? arg(0).funcName : std::string();
+                c.eqFn = arg(1).type == ConstValue::FUNC ? arg(1).funcName : std::string();
+                return ctVoidResult();
+            }
+            if (call.methodName == "destroy" && need(0)) {
+                c.keys.clear();
+                c.values.clear();
+                c.states.clear();
+                c.cap = c.len = c.tombstones = 0;
+                return ctVoidResult();
+            }
+            if (call.methodName == "is_empty" && need(0)) return ctBoolResult(c.len == 0);
+            if (call.methodName == "size" && need(0)) return ctUsizeResult(c.len);
+            if (call.methodName == "bucket_count" && need(0)) return ctUsizeResult(c.cap);
+            if (call.methodName == "insert" && need(1)) {
+                if (c.cap == 0) {
+                    if (!ctHashRehash(c, 16)) return std::nullopt;
+                } else if ((c.len + 1) * 10 >= c.cap * 7) {
+                    if (!ctHashRehash(c, c.cap * 2)) return std::nullopt;
+                }
+                if (!ctHashFind(c, arg(0))) {
+                    ctHashPutRaw(c, arg(0), ctVoidResult());
+                }
+                return ctBoolResult(!m_ctFailed);
+            }
+            if (call.methodName == "contains" && need(1)) {
+                return ctBoolResult(ctHashFind(c, arg(0)).has_value());
+            }
+            if (call.methodName == "remove" && need(1)) {
+                auto index = ctHashFind(c, arg(0));
+                if (!index) return ctBoolResult(false);
+                c.states[*index] = 2;
+                --c.len;
+                ++c.tombstones;
+                return ctBoolResult(true);
+            }
+            if (call.methodName == "clear" && need(0)) {
+                if (!c.states.empty()) std::fill(c.states.begin(), c.states.end(), 0);
+                c.len = 0;
+                c.tombstones = 0;
+                return ctVoidResult();
+            }
+            return std::nullopt;
+        }
+    }
     return std::nullopt;
 }
 
@@ -1759,6 +2911,43 @@ static bool rootsAtGlobalVariable(
     if (auto* a = dynamic_cast<const ArrayAccessExprAST*>(e))
         return rootsAtGlobalVariable(a->array.get(), globals);
     return false;
+}
+
+// Root variable of an lvalue path (`v`, `v.len`, `v.data[i]`, `*p`).
+static const VariableExprAST* rootVariableOf(const ExprAST* e) {
+    if (auto* v = dynamic_cast<const VariableExprAST*>(e)) return v;
+    if (auto* m = dynamic_cast<const MemberAccessExprAST*>(e))
+        return rootVariableOf(m->object.get());
+    if (auto* a = dynamic_cast<const ArrayAccessExprAST*>(e))
+        return rootVariableOf(a->array.get());
+    if (auto* u = dynamic_cast<const UnaryExprAST*>(e)) {
+        if (u->op == UnaryOp::Deref || u->op == UnaryOp::AddressOf) {
+            return rootVariableOf(u->operand.get());
+        }
+    }
+    if (auto* b = dynamic_cast<const BinaryExprAST*>(e)) {
+        if (auto* root = rootVariableOf(b->left.get())) return root;
+        return rootVariableOf(b->right.get());
+    }
+    if (auto* c = dynamic_cast<const CastExprAST*>(e)) {
+        return rootVariableOf(c->expr.get());
+    }
+    if (auto* t = dynamic_cast<const TernaryExprAST*>(e)) {
+        if (auto* root = rootVariableOf(t->then.get())) return root;
+        return rootVariableOf(t->elseExpr.get());
+    }
+    if (auto* mc = dynamic_cast<const MethodCallExprAST*>(e)) {
+        if (mc->methodName == "get_ptr") return rootVariableOf(mc->object.get());
+    }
+    return nullptr;
+}
+
+static bool isMutatingContainerMethod(const std::string& name) {
+    return name == "init" || name == "destroy" || name == "reserve" ||
+           name == "push" || name == "pop" || name == "set" || name == "clear" ||
+           name == "insert" || name == "remove" || name == "swap" ||
+           name == "put" || name == "push_back" || name == "push_front" ||
+           name == "pop_back" || name == "pop_front";
 }
 
 // SEM-17: operand kinds that may carry user-defined operator overloads
@@ -2983,6 +4172,31 @@ void SemanticAnalyzer::visit(CallExprAST& node) {
     if (funcType) {
         node.resolvedParamTypes = funcType->paramTypes;
     }
+    if (funcType) {
+        for (std::size_t i = 0; i < node.args.size() &&
+                                i < funcType->paramTypes.size(); ++i) {
+            if (!isConstexprContainerExpr(node.args[i].get())) continue;
+            Type* pt = funcType->paramTypes[i];
+            while (pt && pt->kind == TypeKind::Typedef)
+                pt = static_cast<TypedefType*>(pt)->aliasedType;
+            if (!pt) continue;
+            if (ctContainerInfo(pt) && !pt->isConst) {
+                emitError("cannot pass a read-only constexpr container to a "
+                              "mutable by-value parameter",
+                          *node.args[i]);
+            } else if (pt->kind == TypeKind::Pointer) {
+                Type* base = pt->base;
+                while (base && base->kind == TypeKind::Typedef)
+                    base = static_cast<TypedefType*>(base)->aliasedType;
+                if (base && ctContainerInfo(base) &&
+                    !(pt->isConst || base->isConst)) {
+                    emitError("cannot pass a read-only constexpr container to a "
+                                  "mutable pointer parameter",
+                              *node.args[i]);
+                }
+            }
+        }
+    }
     // P1-05 / ANN-05: deprecated 函数使用（W3004）。
     if (m_deprecatedFuncs.count(node.callee)) {
         std::string msg = m_deprecatedMsgs.count(node.callee)
@@ -3147,10 +4361,33 @@ bool SemanticAnalyzer::tryAnalyzeTemplateCall(CallExprAST& node) {
 }
 
 void SemanticAnalyzer::visit(AssignmentExprAST& node) {
+    if (isConstexprContainerExpr(node.lhs.get())) {
+        emitError("cannot mutate constexpr container "
+                      "(materialized constexpr containers are read-only)",
+                  node);
+        node.type = nullptr;
+        node.isLValue = false;
+        return;
+    }
     Type* lhsType = getExprType(*node.lhs);
     if (lhsType && lhsType->isConst) {
         emitError("cannot assign to const variable", node);
         return;
+    }
+    if (node.op == AssignOp::Assign &&
+        isConstexprContainerExpr(node.rhs.get()) && lhsType) {
+        Type* ldecl = lhsType;
+        while (ldecl && ldecl->kind == TypeKind::Typedef)
+            ldecl = static_cast<TypedefType*>(ldecl)->aliasedType;
+        if (ldecl && ctContainerInfo(ldecl) && !ldecl->isConst) {
+            emitError("cannot copy read-only constexpr container into a mutable container",
+                      node);
+        }
+        if (ldecl && ldecl->kind == TypeKind::Pointer &&
+            !(ldecl->isConst || (ldecl->base && ldecl->base->isConst))) {
+            emitError("cannot take a mutable pointer into a read-only constexpr container",
+                      node);
+        }
     }
     // PAR-08: assigning an array/slice literal (or a stack-backed slice
     // variable) to a global stores a pointer to stack storage — dangling.
@@ -3819,6 +5056,25 @@ void SemanticAnalyzer::visit(MethodCallExprAST& node) {
     // before object resolution (mirrors the compile_time chain special case).
     if (tryAnalyzeStringStaticCall(node)) {
         return;
+    }
+
+    if (isConstexprContainerExpr(node.object.get())) {
+        if (isMutatingContainerMethod(node.methodName)) {
+            emitError("cannot mutate constexpr container "
+                          "(materialized constexpr containers are read-only)",
+                      node);
+            node.type = nullptr;
+            node.isLValue = false;
+            return;
+        }
+        if (node.methodName == "get_ptr") {
+            emitError("cannot take a mutable pointer from a constexpr container "
+                          "(materialized constexpr containers are read-only)",
+                      node);
+            node.type = nullptr;
+            node.isLValue = false;
+            return;
+        }
     }
 
     Type* objType = getExprType(*node.object);
@@ -4886,6 +6142,11 @@ void SemanticAnalyzer::visit(ContinueStmtAST& node) {}
 void SemanticAnalyzer::visit(NullStmtAST& node) {}
 
 void SemanticAnalyzer::visit(VarDeclAST& node) {
+    if (m_ctRepeatDepth > 0 && (node.isStaticLocal || node.isThreadLocal)) {
+        emitError("static/thread_local local is not supported inside "
+                  "compile_time.repeat",
+                  node);
+    }
     // Review 2.6: `auto` infers the variable type from its initializer.
     if (node.type && stripTypedef(node.type)->kind == TypeKind::Auto) {
         if (!node.initExpr) {
@@ -5064,20 +6325,49 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
         if (!node.initExpr) {
             emitError("constexpr variable '" + node.name + "' must have initializer", node);
         } else {
+            // Type the initializer first so overloads and expression result
+            // types are resolved before folding (needed for exact widths and
+            // for constexpr callback/overload selection).
+            getExprType(*node.initExpr);
             auto folded = evaluateConstexpr(node.initExpr.get());
             if (!folded) {
                 emitError("constexpr variable '" + node.name + "' must be initialized with a constant expression", node);
             } else {
                 constexprValues[node.name] = *folded;
-                FoldedValue fv;
-                fv.type = static_cast<FoldedValue::Type>(folded->type);
-                switch (folded->type) {
-                    case ConstValue::INT: fv.intVal = folded->intVal; break;
-                    case ConstValue::DOUBLE: fv.doubleVal = folded->doubleVal; break;
-                    case ConstValue::CHAR: fv.charVal = folded->charVal; break;
+                if (folded->type == ConstValue::CONTAINER) {
+                    node.foldedContainer = folded->container;
+                } else {
+                    FoldedValue fv;
+                    fv.type = static_cast<FoldedValue::Type>(folded->type);
+                    switch (folded->type) {
+                        case ConstValue::INT: fv.intVal = folded->intVal; break;
+                        case ConstValue::DOUBLE: fv.doubleVal = folded->doubleVal; break;
+                        case ConstValue::CHAR: fv.charVal = folded->charVal; break;
+                        default: break;
+                    }
+                    node.foldedValue = fv;
                 }
-                node.foldedValue = fv;
             }
+        }
+    }
+
+    if (node.initExpr && !node.isConstexpr &&
+        isConstexprContainerExpr(node.initExpr.get())) {
+        Type* declared = node.type;
+        while (declared && declared->kind == TypeKind::Typedef)
+            declared = static_cast<TypedefType*>(declared)->aliasedType;
+        if (declared && ctContainerInfo(declared)) {
+            // Const destinations are not allowed yet: const is not enforced
+            // for container methods/fields, so a const copy could still write
+            // into read-only storage. Only constexpr-to-constexpr copies
+            // (deep copies) are accepted.
+            emitError("cannot copy read-only constexpr container into a mutable container",
+                      node);
+        } else if (declared && declared->kind == TypeKind::Pointer &&
+                   !(declared->isConst ||
+                     (declared->base && declared->base->isConst))) {
+            emitError("cannot take a mutable pointer into a read-only constexpr container",
+                      node);
         }
     }
 
@@ -5197,8 +6487,11 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
             }
         }
     }
-    if (!declare(node.name, node.type)) {
+    Symbol* declaredVar = declareSymbol(node.name, node.type);
+    if (!declaredVar) {
         emitError(DiagnosticCode::SemRedefinition, "redeclaration of variable '" + node.name + "' in the same scope", node);
+    } else if (node.foldedContainer) {
+        declaredVar->isConstexprContainer = true;
     }
     // SEM-11: remember local variables for the unused-variable check (W3002).
     if (currentFunction) {
@@ -5461,6 +6754,7 @@ void SemanticAnalyzer::visitStructDeclImpl(StructDeclAST& node) {
             // members but are unrelated subclasses; dispatch to the actual
             // kind instead of casting a ClassType to StructType (UB).
             auto applyAnnotations = [&](auto* st) {
+                st->annotations = node.annotations;
                 for (const auto& ann : node.annotations) {
                     if (ann.name == "packed") st->isPacked = true;
                     else if (ann.name == "repr") st->reprC = true;
@@ -5507,7 +6801,7 @@ void SemanticAnalyzer::visitStructDeclImpl(StructDeclAST& node) {
         // Add fields if not already added
         for (auto& field : node.fields) {
             if (!classType->getFieldType(field.name)) {
-                classType->addField(field.name, field.type, field.bitWidth);
+                classType->addField(field.name, field.type, field.bitWidth, field.annotations);
                 if (field.flexibleArray && !classType->fields.empty())
                     classType->fields.back().flexibleArray = true;
             }
@@ -5695,7 +6989,7 @@ void SemanticAnalyzer::visitStructDeclImpl(StructDeclAST& node) {
         }
         for (auto& field : node.fields) {
             if (!structType->getFieldType(field.name)) {
-                structType->addField(field.name, field.type, field.bitWidth);
+                structType->addField(field.name, field.type, field.bitWidth, field.annotations);
                 if (field.flexibleArray && !structType->fields.empty())
                     structType->fields.back().flexibleArray = true;
             }
@@ -5767,6 +7061,7 @@ void SemanticAnalyzer::visit(UnionDeclAST& node) {
     {
         auto* unionType = node.name.empty() ? nullptr : typeCtx->getUnion(node.name);
         if (unionType) {
+            unionType->annotations = node.annotations;
             for (const auto& ann : node.annotations) {
                 if (ann.name == "align") unionType->forcedAlign = ctAlignArg(ann, *this);
                 else if (ann.name == "repr") unionType->reprC = true;
@@ -5803,7 +7098,7 @@ void SemanticAnalyzer::visit(UnionDeclAST& node) {
             }
         }
         if (!exists) {
-            unionType->addMember(member.name, member.type, member.bitWidth);
+            unionType->addMember(member.name, member.type, member.bitWidth, member.annotations);
             if (member.flexibleArray && !unionType->members.empty())
                 unionType->members.back().flexibleArray = true;
         }
@@ -5835,6 +7130,7 @@ void SemanticAnalyzer::visit(EnumDeclAST& node) {
             typeCtx->addEnum(node.name, enumType);
         }
     }
+    enumType->annotations = node.annotations;
     // Redef 轮: duplicate definition of the same name (any kind) is E2004.
     if (!node.isForwardDecl && !node.name.empty()) {
         if (isTypeRedefined(node.name)) {
@@ -6020,23 +7316,37 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
     checkDeprecatedTypeUse(node.returnType, node);
     for (auto& p : node.params) checkDeprecatedTypeUse(p->type, node);
 
-    // Validate constexpr function constraints
+    // Validate constexpr function constraints. Container types are allowed so
+    // compile-time construction can return/move a table; other aggregates keep
+    // the historical literal-type restriction.
     if (node.isConstexpr) {
-        // Return type must be arithmetic (literal type)
-        if (!isIntegerType(node.returnType) && !isFloatType(node.returnType)) {
+        auto isCtLiteral = [this](Type* t) {
+            return isIntegerType(t) || isFloatType(t) ||
+                   ctContainerInfo(t).has_value();
+        };
+        if (!isCtLiteral(node.returnType)) {
             emitError("constexpr function '" + node.name + "' must have literal return type", node);
         }
 
-        // All parameters must be arithmetic types
+        auto isCtParam = [&](Type* t) {
+            if (isCtLiteral(t)) return true;
+            Type* raw = t;
+            while (raw && raw->kind == TypeKind::Typedef)
+                raw = static_cast<TypedefType*>(raw)->aliasedType;
+            return raw && raw->kind == TypeKind::Pointer &&
+                   isCtLiteral(raw->base);
+        };
         for (auto& param : node.params) {
-            if (!isIntegerType(param->type) && !isFloatType(param->type)) {
+            if (!isCtParam(param->type)) {
                 emitError("constexpr function '" + node.name + "' parameter '" + param->name + "' must have literal type", node);
             }
         }
     }
 
     if (node.isConstexpr) {
-        // Available to the compile-time evaluator (evaluateConstexpr).
+        // Available to the compile-time evaluator (evaluateConstexpr). Keep
+        // both the bare name and the mangled signature so overloads resolve
+        // to the exact call-site type instead of the last registered body.
         constexprFunctions[node.name] = &node;
     }
 
@@ -6068,6 +7378,11 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
     }
     auto* funcType = new FunctionType(node.returnType, std::move(paramTypes), node.isVarArg);
     std::string signature = mangleFunction(node.name, funcType->paramTypes);
+    m_allFunctions[node.name] = &node;
+    m_allFunctions[signature] = &node;
+    if (node.isConstexpr) {
+        constexprFunctions[signature] = &node;
+    }
     Symbol* declaredSym = declareSymbol(node.name, funcType);
     if (!declaredSym) {
         // A matching declaration already exists. That is legal for repeated
@@ -6125,6 +7440,23 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
     exitScope();
     currentFunction = prevFunc;
     if (oocClass) currentClass = oocSavedClass;
+}
+
+void SemanticAnalyzer::visit(CompileTimeRepeatStmtAST& node) {
+    auto count = evalCompileTime(node.count.get(), node);
+    if (!count || count->type != ConstValue::INT) {
+        emitError("compile_time.repeat count must be a compile-time integer", node);
+        return;
+    }
+    if (count->intVal < 0 || count->intVal > 1024) {
+        emitError("compile_time.repeat count must be between 0 and 1024", node);
+        return;
+    }
+    node.ctResolved = true;
+    node.iterations = static_cast<int>(count->intVal);
+    ++m_ctRepeatDepth;
+    if (node.body) visit(*node.body);
+    --m_ctRepeatDepth;
 }
 
 void SemanticAnalyzer::visit(CompileTimeIfStmtAST& node) {
@@ -6240,7 +7572,22 @@ void SemanticAnalyzer::analyzeTopLevelDecl(DeclAST& decl) {
         visit(*nsDecl);
     } else if (auto* tplDecl = dynamic_cast<TemplateDeclAST*>(&decl)) {
         // P1-03 / GEN-01: 模板定义只注册，不在此 sema（GEN-06 定义处不检查）。
-        TemplateRegistry::instance().registerTemplate(tplDecl);
+        // Namespace context: type templates are already flattened by Parser
+        // (`NsTpl_Box`), but function/alias template names remain bare until
+        // sema would normally call scopedName. Register them under the same
+        // flattened key so `NsTpl::id<int32>` resolves.
+        std::string tplName;
+        if (auto* fn = dynamic_cast<FunctionDeclAST*>(tplDecl->decl.get()))
+            tplName = fn->name;
+        else if (auto* st = dynamic_cast<StructDeclAST*>(tplDecl->decl.get()))
+            tplName = st->name;
+        else if (auto* ud = dynamic_cast<UsingDeclAST*>(tplDecl->decl.get()))
+            tplName = ud->name;
+        if (!namespacePrefix.empty() && !tplName.empty() &&
+            tplName.rfind(namespacePrefix, 0) != 0) {
+            tplName = namespacePrefix + tplName;
+        }
+        TemplateRegistry::instance().registerTemplate(tplDecl, tplName);
     } else if (auto* multi = dynamic_cast<MultiVarDeclAST*>(&decl)) {
         for (auto& d : multi->decls) {
             if (auto* v = dynamic_cast<VarDeclAST*>(d.get())) visit(*v);
@@ -6694,6 +8041,7 @@ void SemanticAnalyzer::visit(StmtAST& stmt) {
     if (auto* s = dynamic_cast<DeclStmtAST*>(&stmt)) { visit(*s); return; }
     if (auto* s = dynamic_cast<DeferStmtAST*>(&stmt)) { visit(*s); return; }
     if (auto* s = dynamic_cast<CompileTimeIfStmtAST*>(&stmt)) { visit(*s); return; }
+    if (auto* s = dynamic_cast<CompileTimeRepeatStmtAST*>(&stmt)) { visit(*s); return; }
 }
 
 bool SemanticAnalyzer::isTypeRedefined(const std::string& name) const {

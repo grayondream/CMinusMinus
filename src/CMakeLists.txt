@@ -1,19 +1,17 @@
 file(GLOB_RECURSE SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 list(FILTER SOURCES EXCLUDE REGEX ".*main\\.cpp$")
-list(FILTER SOURCES EXCLUDE REGEX ".*/libsafec/.*")
 
 add_library(my_llvm_c_lib ${SOURCES})
 
-# libsafec: the bundled standard-library implementation (namespace `safec`),
-# built as its own archive (libsafec.a) independent of the compiler.
-add_library(safec
-    ${CMAKE_CURRENT_SOURCE_DIR}/libsafec/printf.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/libsafec/malloc.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/libsafec/string.cpp
-)
-target_include_directories(safec PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-
 target_include_directories(my_llvm_c_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# mimalloc is the process allocator (JIT/tests) and is linked into programs
+# produced by the driver. PUBLIC keeps the allocator available to the tests and
+# to every consumer of the compiler library.
+target_link_libraries(my_llvm_c_lib PUBLIC mimalloc-static)
+target_include_directories(my_llvm_c_lib PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/thirdparty/mimalloc/include>
+)
 
 find_package(spdlog CONFIG QUIET)
 if(spdlog_FOUND)
@@ -68,6 +66,9 @@ endif()
 target_compile_definitions(my_llvm_c_lib PRIVATE
     RESOURCE_DIR="${CMAKE_SOURCE_DIR}/resources"
     STD_DIR="${CMAKE_SOURCE_DIR}/libs"
+    SMC_INSTALL_STD_DIR="${CMAKE_INSTALL_FULL_DATADIR}/smc/libs"
+    MIMALLOC_LIB_DIR="${CMAKE_BINARY_DIR}/lib"
+    SMC_INSTALL_MIMALLOC_DIR="${CMAKE_INSTALL_FULL_LIBDIR}"
 )
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -77,6 +78,7 @@ else()
 endif()
 
 add_executable(my_llvm_c main.cpp)
+set_target_properties(my_llvm_c PROPERTIES ENABLE_EXPORTS ON)
 target_include_directories(my_llvm_c PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(my_llvm_c PRIVATE my_llvm_c_lib)
 target_compile_definitions(my_llvm_c PRIVATE

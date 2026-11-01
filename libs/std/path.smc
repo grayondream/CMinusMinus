@@ -1,0 +1,100 @@
+// ===== std.path — portable-ish path string helpers =====
+// Import with `import std.path;`. These are lexical operations: no filesystem
+// access, no allocation except join() (returns an owned string).
+module std.path;
+
+export namespace std {
+
+string_view separator() {
+    compile_time.if (compile_time.target.os == "windows") {
+        return "\\";
+    }
+    return "/";
+}
+
+bool is_sep(int32 c) {
+    if (c == '/') return true;
+    compile_time.if (compile_time.target.os == "windows") {
+        if (c == '\\') return true;
+    }
+    return false;
+}
+
+isize last_separator(string_view s) {
+    isize i = (isize)s.len() - 1;
+    while (i >= 0) {
+        if (is_sep((int32)s.char_at((usize)i))) {
+            return i;
+        }
+        i = i - 1;
+    }
+    return -1;
+}
+
+string_view basename(string_view s) {
+    isize at = last_separator(s);
+    if (at < 0) {
+        return s;
+    }
+    return s.sub((usize)(at + 1), s.len());
+}
+
+string_view dirname(string_view s) {
+    isize at = last_separator(s);
+    if (at < 0) {
+        return "";
+    }
+    if (at == 0) {
+        return s.sub(0, 1);
+    }
+    return s.sub(0, (usize)at);
+}
+
+// Extension including the dot, or "" when there is none.
+string_view extension(string_view s) {
+    isize slash = last_separator(s);
+    isize dot = s.rfind(".");
+    if (dot <= slash || dot < 0) {
+        return "";
+    }
+    return s.sub((usize)dot, s.len());
+}
+
+string_view stem(string_view s) {
+    isize slash = last_separator(s);
+    isize dot = s.rfind(".");
+    if (dot <= slash || dot < 0) {
+        return s;
+    }
+    return s.sub(0, (usize)dot);
+}
+
+bool is_absolute(string_view s) {
+    if (s.len() == 0) {
+        return false;
+    }
+    if (is_sep((int32)s.char_at(0))) {
+        return true;
+    }
+    compile_time.if (compile_time.target.os == "windows") {
+        if (s.len() >= 3 && s.char_at(1) == ':' && is_sep((int32)s.char_at(2))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Join two lexical paths. An absolute right-hand side wins.
+string join(string_view a, string_view b) {
+    if (is_absolute(b) || a.len() == 0) {
+        return string.new(b);
+    }
+    string out = string.new(a);
+    if (!is_sep((int32)a.char_at(a.len() - 1))) {
+        out.append(separator());
+    }
+    out.append(b);
+    return out;
+}
+
+} // namespace std

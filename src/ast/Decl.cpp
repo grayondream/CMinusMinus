@@ -6,6 +6,7 @@
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Constants.h"
 #include "Mangle.h"
+#include <algorithm>
 #include <functional>
 #include <unordered_set>
 
@@ -939,6 +940,177 @@ llvm::Constant* buildAggregateConstant(CodegenContext& ctx, Type* type,
     }
 }
 
+// ===== Constexpr container materialization =====
+// A constexpr container value becomes immutable module constants: one global
+// per backing array plus a constant struct matching the runtime ABI.
+static unsigned long g_ctTableId = 0;
+
+static llvm::Constant* ctMakeStringConstant(CodegenContext& ctx,
+                                            const std::string& value) {
+    if (value.empty()) return nullptr;
+    auto& module = ctx.getModule();
+    auto* arrTy = llvm::ArrayType::get(llvm::Type::getInt8Ty(ctx.getContext()),
+                                       value.size() + 1);
+    auto* data = llvm::ConstantDataArray::getString(ctx.getContext(), value, true);
+    auto* gv = new llvm::GlobalVariable(module, arrTy, /*isConstant=*/true,
+                                        llvm::GlobalVariable::PrivateLinkage, data,
+                                        "__smc_ct_str_" + std::to_string(g_ctTableId++));
+    return gv;
+}
+
+static llvm::Constant* ctValueToConstant(CodegenContext& ctx, Type* type,
+                                         const CtValue& v) {
+    Type* t = type;
+    while (t && t->kind == TypeKind::Typedef) {
+        t = static_cast<TypedefType*>(t)->aliasedType;
+    }
+    llvm::Type* lt = ctx.getLLVMType(type);
+    if (!lt) return nullptr;
+    switch (v.type) {
+        case CtValue::INT:
+            return llvm::ConstantInt::get(lt, static_cast<uint64_t>(v.intVal));
+        case CtValue::CHAR:
+            return llvm::ConstantInt::get(lt, static_cast<uint64_t>(v.charVal));
+        case CtValue::DOUBLE:
+            return llvm::ConstantFP::get(lt, v.doubleVal);
+        case CtValue::STR: {
+            auto* st = llvm::dyn_cast<llvm::StructType>(lt);
+            if (!st || st->getNumElements() < 2) return nullptr;
+            llvm::Constant* data = ctMakeStringConstant(ctx, v.strVal);
+            if (!data) return llvm::Constant::getNullValue(lt);
+            return llvm::ConstantStruct::get(
+                st, {data, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx.getContext()),
+                                                 v.strVal.size())});
+        }
+        default:
+            return nullptr;
+    }
+}
+
+static llvm::Constant* ctArrayConstant(CodegenContext& ctx, Type* elemType,
+                                       const std::vector<CtValue>& values,
+                                       std::size_t cap, const std::string& name) {
+    if (cap == 0) return nullptr;
+    llvm::Type* elemLLVM = ctx.getLLVMType(elemType);
+    if (!elemLLVM) return nullptr;
+    std::vector<llvm::Constant*> elems;
+    elems.reserve(cap);
+    for (std::size_t i = 0; i < cap; ++i) {
+        CtValue def = i < values.size() ? values[i] : ctDefaultValue(elemType);
+        llvm::Constant* c = ctValueToConstant(ctx, elemType, def);
+        if (!c) c = llvm::Constant::getNullValue(elemLLVM);
+        elems.push_back(c);
+    }
+    auto* arrTy = llvm::ArrayType::get(elemLLVM, cap);
+    auto* init = llvm::ConstantArray::get(arrTy, elems);
+    return new llvm::GlobalVariable(ctx.getModule(), arrTy, /*isConstant=*/true,
+                                    llvm::GlobalVariable::PrivateLinkage, init,
+                                    name + "_" + std::to_string(g_ctTableId++));
+}
+
+static llvm::Constant* buildCtContainerConstant(CodegenContext& ctx, Type* type,
+                                                const CtContainer& c) {
+    Type* raw = type;
+    while (raw && raw->kind == TypeKind::Typedef)
+        raw = static_cast<TypedefType*>(raw)->aliasedType;
+    if (!raw) return nullptr;
+
+    const std::vector<FieldInfo>* fields = nullptr;
+    if (raw->kind == TypeKind::Class) {
+        fields = &static_cast<ClassType*>(raw)->fields;
+    } else if (raw->kind == TypeKind::Struct) {
+        fields = &static_cast<StructType*>(raw)->fields;
+    }
+    if (!fields) return nullptr;
+    auto* st = llvm::dyn_cast<llvm::StructType>(ctx.getLLVMType(type));
+    if (!st) return nullptr;
+
+    const std::size_t logicalLen = c.len;
+    std::size_t cap = std::max<std::size_t>(8, c.cap);
+    if (cap < logicalLen) cap = logicalLen;
+
+    std::vector<CtValue> storage;
+    if (c.kind == CtContainer::Vec) {
+        storage = c.items;
+    } else if (c.kind == CtContainer::Deque) {
+        storage.reserve(logicalLen);
+        for (std::size_t i = 0; i < logicalLen; ++i) {
+            storage.push_back(c.items.empty()
+                                  ? ctDefaultValue(c.elementType)
+                                  : c.items[(c.head + i) % c.cap]);
+        }
+    }
+
+    llvm::Constant* data = nullptr;
+    llvm::Constant* keys = nullptr;
+    llvm::Constant* values = nullptr;
+    llvm::Constant* states = nullptr;
+    llvm::Constant* hashFn = nullptr;
+    llvm::Constant* eqFn = nullptr;
+
+    if (c.kind == CtContainer::Vec || c.kind == CtContainer::Deque) {
+        if (c.elementType) {
+            data = ctArrayConstant(ctx, c.elementType, storage, cap, "__smc_ct_data");
+        }
+    } else {
+        if (c.keyType) {
+            keys = ctArrayConstant(ctx, c.keyType, c.keys, cap, "__smc_ct_keys");
+        }
+        if (c.kind == CtContainer::HashMap && c.valueType) {
+            values = ctArrayConstant(ctx, c.valueType, c.values, cap, "__smc_ct_values");
+        }
+        std::vector<CtValue> stateValues;
+        stateValues.reserve(cap);
+        for (std::size_t i = 0; i < cap; ++i) {
+            const uint8_t state = i < c.states.size() ? c.states[i] : 0;
+            stateValues.push_back(ctInt(state, 8, true));
+        }
+        states = ctArrayConstant(ctx, TypeContext::instance().getUInt8(),
+                                 stateValues, cap, "__smc_ct_states");
+        auto lookupFn = [&](const std::string& name) -> llvm::Constant* {
+            if (name.empty()) return nullptr;
+            return ctx.getModule().getFunction(name);
+        };
+        hashFn = lookupFn(c.hashFn);
+        eqFn = lookupFn(c.eqFn);
+    }
+
+    auto i64 = [&](std::size_t v) {
+        return llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx.getContext()), v);
+    };
+
+    std::vector<llvm::Constant*> elems;
+    elems.reserve(fields->size());
+    for (const auto& f : *fields) {
+        llvm::Constant* value = nullptr;
+        if (f.name == "data") {
+            value = data;
+        } else if (f.name == "len") {
+            value = i64(c.len);
+        } else if (f.name == "cap") {
+            value = i64(cap);
+        } else if (f.name == "head") {
+            value = i64(0);
+        } else if (f.name == "tombstones") {
+            value = i64(c.tombstones);
+        } else if (f.name == "keys") {
+            value = keys;
+        } else if (f.name == "values") {
+            value = values;
+        } else if (f.name == "states") {
+            value = states;
+        } else if (f.name == "hash_fn") {
+            value = hashFn;
+        } else if (f.name == "eq_fn") {
+            value = eqFn;
+        }
+        if (!value) value = llvm::Constant::getNullValue(st->getElementType(elems.size()));
+        elems.push_back(value);
+    }
+    return llvm::ConstantStruct::get(st, elems);
+}
+
+
 llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
     llvm::Type* llvmType = ctx.getLLVMType(type);
 
@@ -959,7 +1131,9 @@ llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
     // name to it. Sema has already proven the initializer is constant.
     if (isStaticLocal && !ctx.isGlobalScope()) {
         llvm::Constant* initConstant = nullptr;
-        if (foldedValue) {
+        if (foldedContainer) {
+            initConstant = buildCtContainerConstant(ctx, type, *foldedContainer);
+        } else if (foldedValue) {
             initConstant = foldToConstant(ctx, *foldedValue);
         } else if (initExpr) {
             initConstant = llvm::dyn_cast_or_null<llvm::Constant>(initExpr->codegen(ctx));
@@ -989,7 +1163,9 @@ llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
 
     if (ctx.isGlobalScope()) {
         llvm::Constant* initConstant = nullptr;
-        if (isConstexpr && foldedValue) {
+        if (isConstexpr && foldedContainer) {
+            initConstant = buildCtContainerConstant(ctx, type, *foldedContainer);
+        } else if (isConstexpr && foldedValue) {
             initConstant = foldToConstant(ctx, *foldedValue);
         } else if (initExpr) {
             if (auto* initList = dynamic_cast<InitializerListExprAST*>(initExpr.get())) {
@@ -1051,7 +1227,12 @@ llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
         }
     }
     
-    if (isConstexpr && foldedValue) {
+    if (isConstexpr && foldedContainer) {
+        llvm::Value* constVal = buildCtContainerConstant(ctx, type, *foldedContainer);
+        if (constVal) {
+            ctx.getBuilder().CreateStore(constVal, alloca);
+        }
+    } else if (isConstexpr && foldedValue) {
         llvm::Value* constVal = foldToConstant(ctx, *foldedValue);
         if (constVal) {
             constVal = ctx.castValue(constVal, llvmType);
@@ -1539,6 +1720,49 @@ llvm::Value* CompileTimeIfStmtAST::codegen(CodegenContext& ctx) {
     if (!ctResolved) return nullptr;
     auto* live = selectedThen ? thenStmt.get() : elseStmt.get();
     return live ? live->codegen(ctx) : nullptr;
+}
+
+llvm::Value* CompileTimeRepeatStmtAST::codegen(CodegenContext& ctx) {
+    if (!ctResolved || !body) return nullptr;
+    auto& builder = ctx.getBuilder();
+    llvm::Function* fn = builder.GetInsertBlock()->getParent();
+    llvm::BasicBlock* endBB =
+        llvm::BasicBlock::Create(ctx.getContext(), "ct.repeat.end", fn);
+    ctx.pushBreakBlock(endBB);
+    llvm::Value* last = nullptr;
+    for (int i = 0; i < iterations; ++i) {
+        if (builder.GetInsertBlock()->getTerminator()) break;
+        llvm::BasicBlock* contBB =
+            llvm::BasicBlock::Create(ctx.getContext(), "ct.repeat.cont", fn);
+        ctx.pushContinueBlock(contBB);
+        ctx.pushScope();
+        last = body->codegen(ctx);
+        ctx.popScope();
+        ctx.popContinueBlock();
+
+        llvm::BasicBlock* cur = builder.GetInsertBlock();
+        if (auto* term = cur->getTerminator()) {
+            if (term->getNumSuccessors() == 1 && term->getSuccessor(0) == contBB) {
+                // `continue`: resume at the next unrolled iteration.
+                builder.SetInsertPoint(contBB);
+                continue;
+            }
+            // `break`/`return`/`unreachable`: no further iterations. Keep the
+            // already-created continue block well-formed.
+            if (!contBB->getTerminator()) {
+                builder.SetInsertPoint(contBB);
+                builder.CreateBr(endBB);
+            }
+            break;
+        }
+        builder.CreateBr(contBB);
+        builder.SetInsertPoint(contBB);
+    }
+    ctx.popBreakBlock();
+    if (!builder.GetInsertBlock()->getTerminator())
+        builder.CreateBr(endBB);
+    builder.SetInsertPoint(endBB);
+    return last;
 }
 
 llvm::Value* CompileTimeAssertDeclAST::codegen(CodegenContext& ctx) {

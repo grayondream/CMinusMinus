@@ -79,6 +79,11 @@ std::string typeToMangled(Type* type) {
         case TypeKind::UInt32: return atomicTag + "uint32";
         case TypeKind::UInt64: return atomicTag + "uint64";
         case TypeKind::UInt128: return atomicTag + "uint128";
+        // P1-06: string_view/owning string participate in template arguments
+        // and function overload mangling; without explicit names they fell
+        // back to "unknown" and instantiated e.g. std_Vec$unknown.
+        case TypeKind::Str: return atomicTag + "str";
+        case TypeKind::String: return atomicTag + "string";
         case TypeKind::ISize: return atomicTag + "isize";
         case TypeKind::USize: return atomicTag + "usize";
         case TypeKind::Float32: return "float32";

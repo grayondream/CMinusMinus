@@ -1,0 +1,265 @@
+// ===== std.parse — string <-> number conversion =====
+// Import with `import std.parse;` and use `std::parse_i32(...)` etc.
+// All parsers are explicit: out-parameters + bool success, no exceptions.
+module std.parse;
+
+export namespace std {
+
+bool is_digit_char(int32 c) {
+    return c >= '0' && c <= '9';
+}
+
+bool is_space_char(int32 c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f';
+}
+
+int32 digit_value(int32 c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'Z') return c - 'A' + 10;
+    return -1;
+}
+
+// Parse signed 64-bit integer in [2, 36]. Leading/trailing whitespace is
+// accepted; empty/out-of-range digits return false.
+bool parse_i64(string_view s, int32 base, int64* out) {
+    if (base < 2 || base > 36) {
+        return false;
+    }
+    usize i = 0;
+    while (i < s.len() && is_space_char((int32)s.char_at(i))) {
+        i = i + 1;
+    }
+    bool neg = false;
+    if (i < s.len() && (s.char_at(i) == '-' || s.char_at(i) == '+')) {
+        neg = s.char_at(i) == '-';
+        i = i + 1;
+    }
+    // Optional 0x/0b/0o prefix when it matches the requested base.
+    if (base == 16 && i + 1 < s.len() && s.char_at(i) == '0' &&
+        (s.char_at(i + 1) == 'x' || s.char_at(i + 1) == 'X')) {
+        i = i + 2;
+    } else if (base == 2 && i + 1 < s.len() && s.char_at(i) == '0' &&
+               (s.char_at(i + 1) == 'b' || s.char_at(i + 1) == 'B')) {
+        i = i + 2;
+    } else if (base == 8 && i + 1 < s.len() && s.char_at(i) == '0' &&
+               (s.char_at(i + 1) == 'o' || s.char_at(i + 1) == 'O')) {
+        i = i + 2;
+    }
+    int64 value = 0;
+    bool any = false;
+    while (i < s.len()) {
+        int32 c = (int32)s.char_at(i);
+        if (is_space_char(c)) {
+            i = i + 1;
+            continue;
+        }
+        int32 d = digit_value(c);
+        if (d < 0 || d >= base) {
+            return false;
+        }
+        value = value * (int64)base + (int64)d;
+        any = true;
+        i = i + 1;
+    }
+    if (!any) {
+        return false;
+    }
+    if (out != null) {
+        *out = neg ? -value : value;
+    }
+    return true;
+}
+
+bool parse_u64(string_view s, int32 base, uint64* out) {
+    if (base < 2 || base > 36) {
+        return false;
+    }
+    usize i = 0;
+    while (i < s.len() && is_space_char((int32)s.char_at(i))) {
+        i = i + 1;
+    }
+    // Optional 0x/0b/0o prefix when it matches the requested base.
+    if (base == 16 && i + 1 < s.len() && s.char_at(i) == '0' &&
+        (s.char_at(i + 1) == 'x' || s.char_at(i + 1) == 'X')) {
+        i = i + 2;
+    } else if (base == 2 && i + 1 < s.len() && s.char_at(i) == '0' &&
+               (s.char_at(i + 1) == 'b' || s.char_at(i + 1) == 'B')) {
+        i = i + 2;
+    } else if (base == 8 && i + 1 < s.len() && s.char_at(i) == '0' &&
+               (s.char_at(i + 1) == 'o' || s.char_at(i + 1) == 'O')) {
+        i = i + 2;
+    }
+    uint64 value = 0;
+    bool any = false;
+    while (i < s.len()) {
+        int32 c = (int32)s.char_at(i);
+        if (is_space_char(c)) {
+            i = i + 1;
+            continue;
+        }
+        int32 d = digit_value(c);
+        if (d < 0 || d >= base) {
+            return false;
+        }
+        value = value * (uint64)base + (uint64)d;
+        any = true;
+        i = i + 1;
+    }
+    if (!any) {
+        return false;
+    }
+    if (out != null) {
+        *out = value;
+    }
+    return true;
+}
+
+bool parse_i32(string_view s, int32* out) {
+    int64 v = 0;
+    if (!parse_i64(s, 10, &v)) {
+        return false;
+    }
+    if (out != null) {
+        *out = (int32)v;
+    }
+    return true;
+}
+
+bool parse_bool(string_view s) {
+    if (s == "true" || s == "1") {
+        return true;
+    }
+    return false;
+}
+
+// Decimal float parser (sign, digits, '.', digits, optional e/E exponent).
+bool parse_float64(string_view s, float64* out) {
+    usize i = 0;
+    while (i < s.len() && is_space_char((int32)s.char_at(i))) {
+        i = i + 1;
+    }
+    bool neg = false;
+    if (i < s.len() && (s.char_at(i) == '-' || s.char_at(i) == '+')) {
+        neg = s.char_at(i) == '-';
+        i = i + 1;
+    }
+    float64 value = 0.0;
+    bool any = false;
+    while (i < s.len() && is_digit_char((int32)s.char_at(i))) {
+        value = value * 10.0 + (float64)((int32)s.char_at(i) - '0');
+        any = true;
+        i = i + 1;
+    }
+    if (i < s.len() && s.char_at(i) == '.') {
+        i = i + 1;
+        float64 scale = 0.1;
+        while (i < s.len() && is_digit_char((int32)s.char_at(i))) {
+            value = value + (float64)((int32)s.char_at(i) - '0') * scale;
+            scale = scale * 0.1;
+            any = true;
+            i = i + 1;
+        }
+    }
+    if (!any) {
+        return false;
+    }
+    if (i < s.len() && (s.char_at(i) == 'e' || s.char_at(i) == 'E')) {
+        i = i + 1;
+        bool expNeg = false;
+        if (i < s.len() && (s.char_at(i) == '-' || s.char_at(i) == '+')) {
+            expNeg = s.char_at(i) == '-';
+            i = i + 1;
+        }
+        int32 exp = 0;
+        bool expAny = false;
+        while (i < s.len() && is_digit_char((int32)s.char_at(i))) {
+            exp = exp * 10 + ((int32)s.char_at(i) - '0');
+            expAny = true;
+            i = i + 1;
+        }
+        if (!expAny) {
+            return false;
+        }
+        int32 k = 0;
+        while (k < exp) {
+            if (expNeg) value = value * 0.1;
+            else value = value * 10.0;
+            k = k + 1;
+        }
+    }
+    if (neg) {
+        value = -value;
+    }
+    if (out != null) {
+        *out = value;
+    }
+    return true;
+}
+
+// Render an integer in [2, 36] into a fresh string.
+string to_string_i64(int64 value, int32 base) {
+    string out = string.new("");
+    if (base < 2 || base > 36) {
+        return out;
+    }
+    char buf[66] = {0};
+    usize n = 0;
+    bool neg = value < 0;
+    uint64 mag = neg ? (uint64)(-(value + 1)) + 1 : (uint64)value;
+    if (mag == 0) {
+        out.push('0');
+        return out;
+    }
+    while (mag != 0 && n < 66) {
+        int32 d = (int32)(mag % (uint64)base);
+        if (d < 10) buf[n] = (char)('0' + d);
+        else buf[n] = (char)('a' + d - 10);
+        mag = mag / (uint64)base;
+        n = n + 1;
+    }
+    if (neg) {
+        out.push('-');
+    }
+    while (n > 0) {
+        n = n - 1;
+        out.push(buf[n]);
+    }
+    return out;
+}
+
+string to_string_u64(uint64 value, int32 base) {
+    return to_string_i64((int64)value, base);
+}
+
+string to_string_i32(int32 value, int32 base) {
+    return to_string_i64((int64)value, base);
+}
+
+string to_string_float64(float64 value) {
+    // Compact fixed form; scientific notation is intentionally not produced.
+    string out = string.new("");
+    if (value < 0.0) {
+        out.push('-');
+        value = -value;
+    }
+    uint64 whole = (uint64)value;
+    string w = to_string_u64(whole, 10);
+    out.append(w);
+    w.destroy();
+    float64 frac = value - (float64)whole;
+    if (frac > 0.0) {
+        out.push('.');
+        int32 digits = 0;
+        while (frac > 0.0 && digits < 9) {
+            frac = frac * 10.0;
+            int32 d = (int32)frac;
+            out.push((char)('0' + d));
+            frac = frac - (float64)d;
+            digits = digits + 1;
+        }
+    }
+    return out;
+}
+
+} // namespace std

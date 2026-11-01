@@ -36,7 +36,7 @@ static int runSource(const std::string& source, const std::string& filename) {
         ADD_FAILURE() << "Parse failed";
         return -1;
     }
-    auto prelude = smc::parseStdCPrelude(smc::builtinStdCPrelude(), "<std.c>");
+    auto prelude = smc::parseStdCPrelude(smc::loadStdCPrelude({STD_DIR}), "<std.c>");
     if (!prelude) {
         ADD_FAILURE() << "prelude parse failed";
         return -1;

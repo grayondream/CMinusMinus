@@ -1,0 +1,136 @@
+// ===== std.fs — small filesystem facade over libc =====
+// Import with `import std.fs;`. Paths are string_views; operations convert to
+// NUL-terminated storage internally. read_file returns an owned string.
+module std.fs;
+
+import std.mem;
+
+extern void* fopen(const char* path, const char* mode);
+extern int32 fclose(void* stream);
+extern usize fread(void* ptr, usize size, usize count, void* stream);
+extern usize fwrite(void* ptr, usize size, usize count, void* stream);
+extern int32 fseek(void* stream, int64 offset, int32 whence);
+extern int64 ftell(void* stream);
+extern int32 remove(const char* path);
+extern int32 rename(const char* oldPath, const char* newPath);
+extern int32 mkdir(const char* path, uint32 mode);
+extern int32 access(const char* path, int32 mode);
+extern char* getcwd(char* buf, usize size);
+
+export namespace std {
+
+bool exists(string_view path) {
+    string p = string.new(path);
+    int32 rc = access(p.data, 0);
+    p.destroy();
+    return rc == 0;
+}
+
+bool is_file(string_view path) {
+    string p = string.new(path);
+    void* f = fopen(p.data, "rb");
+    p.destroy();
+    if (f == null) {
+        return false;
+    }
+    fclose(f);
+    return true;
+}
+
+int64 file_size(string_view path) {
+    string p = string.new(path);
+    void* f = fopen(p.data, "rb");
+    p.destroy();
+    if (f == null) {
+        return -1;
+    }
+    fseek(f, 0, 2);
+    int64 n = ftell(f);
+    fclose(f);
+    return n;
+}
+
+string read_file(string_view path) {
+    string out = string.new("");
+    string p = string.new(path);
+    void* f = fopen(p.data, "rb");
+    p.destroy();
+    if (f == null) {
+        return out;
+    }
+    fseek(f, 0, 2);
+    int64 n = ftell(f);
+    fseek(f, 0, 0);
+    if (n <= 0) {
+        fclose(f);
+        return out;
+    }
+    char* buf = (char*)alloc((usize)n + 1);
+    if (buf == null) {
+        fclose(f);
+        return out;
+    }
+    usize got = fread(buf, 1, (usize)n, f);
+    buf[got] = 0;
+    out.append(str_from_c(buf));
+    dealloc(buf);
+    fclose(f);
+    return out;
+}
+
+bool write_file(string_view path, string_view data) {
+    string p = string.new(path);
+    void* f = fopen(p.data, "wb");
+    p.destroy();
+    if (f == null) {
+        return false;
+    }
+    usize wrote = fwrite((void*)data.data, 1, data.len, f);
+    fclose(f);
+    return wrote == data.len;
+}
+
+bool append_file(string_view path, string_view data) {
+    string p = string.new(path);
+    void* f = fopen(p.data, "ab");
+    p.destroy();
+    if (f == null) {
+        return false;
+    }
+    usize wrote = fwrite((void*)data.data, 1, data.len, f);
+    fclose(f);
+    return wrote == data.len;
+}
+
+bool remove_file(string_view path) {
+    string p = string.new(path);
+    int32 rc = remove(p.data);
+    p.destroy();
+    return rc == 0;
+}
+
+bool rename_path(string_view from, string_view to) {
+    string a = string.new(from);
+    string b = string.new(to);
+    int32 rc = rename(a.data, b.data);
+    a.destroy();
+    b.destroy();
+    return rc == 0;
+}
+
+bool create_dir(string_view path) {
+    string p = string.new(path);
+    int32 rc = mkdir(p.data, 0777);
+    p.destroy();
+    return rc == 0 || exists(path);
+}
+
+string current_dir() {
+    char buf[4096] = {0};
+    if (getcwd(buf, 4096) == null) {
+        return string.new("");
+    }
+    return string.new(str_from_c(buf));
+}
+
+} // namespace std

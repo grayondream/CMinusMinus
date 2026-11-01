@@ -1,0 +1,52 @@
+// ===== std.os — process/environment facade =====
+// Import with `import std.os;`. Thin libc bindings; no shell escaping is done
+// by run() (the caller owns the command string).
+module std.os;
+
+extern char* getenv(const char* name);
+extern int32 setenv(const char* name, const char* value, int32 overwrite);
+extern int32 unsetenv(const char* name);
+extern int32 system(const char* command);
+extern int32 getpid();
+
+export namespace std {
+
+// Returns an owned copy, or an empty string when the variable is unset.
+string env_get(string_view name) {
+    string n = string.new(name);
+    char* v = getenv(n.data);
+    n.destroy();
+    if (v == null) {
+        return string.new("");
+    }
+    return string.new(str_from_c(v));
+}
+
+bool env_set(string_view name, string_view value) {
+    string n = string.new(name);
+    string v = string.new(value);
+    int32 rc = setenv(n.data, v.data, 1);
+    n.destroy();
+    v.destroy();
+    return rc == 0;
+}
+
+bool env_unset(string_view name) {
+    string n = string.new(name);
+    int32 rc = unsetenv(n.data);
+    n.destroy();
+    return rc == 0;
+}
+
+int32 run(string_view command) {
+    string c = string.new(command);
+    int32 rc = system(c.data);
+    c.destroy();
+    return rc;
+}
+
+int32 pid() {
+    return getpid();
+}
+
+} // namespace std

@@ -271,6 +271,7 @@ statement           = declaration-statement
                     | return-statement
                     | defer-statement
                     | compile-time-if
+                    | compile-time-repeat
                     | asm-statement ;                               (* [impl] asm PAR-16/CG-10 P1-08 *)
 
 declaration-statement = declaration | type-alias ;
@@ -294,7 +295,10 @@ defer-statement     = 'defer' , expr , ';' ;
 (* [plan] defer 精确语义见 SEM-18 / FUN-10 *)
 
 compile-time-if     = 'compile_time' , '.' , 'if' , '(' , const-expr , ')' , block , [ 'else' , block ] ;
-(* [plan] CT-03 *)
+(* [impl] CT-03 *)
+
+compile-time-repeat = 'compile_time' , '.' , 'repeat' , '(' , const-expr , ')' , block ;
+(* [impl] CTX-01/E2：sema 求值计数，codegen 展开 N 份；不生成运行时循环 *)
 
 asm-statement       = 'asm' , [ 'volatile' ] , '(' , string-literal
                       , [ ':' , [ asm-operand-list ]
@@ -403,12 +407,41 @@ annotation-arg      = const-expr | type | identifier | string-literal ;
    ========================================================================= *)
 
 static-assert       = 'compile_time' , '.' , 'static_assert'
-                      '(' , const-expr , [ ',' , string-literal ] , ')' , ';' ;   (* [plan] CT-02 *)
+                      '(' , const-expr , [ ',' , string-literal ] , ')' , ';' ;   (* [impl] CT-02 *)
 
-compile-time-member = 'target' | 'build'                          (* [impl] CT-04/CT-05 *)
-                    | reflection-function ;                       (* [impl] CT-06/07/13 *)
-reflection-function = 'name_of' | 'size_of' | 'align_of'
-                    | 'fields_of' | 'offset_of' | 'attributes_of' ;
+compile-time-member = 'target' | 'build' | 'version'              (* [impl] CT-04/CT-05/CTX-01 *)
+                    | 'file' | 'line' | 'column' | 'function'      (* [impl] CTX-01 *)
+                    | reflection-function ;                       (* [impl] CT-06/07/13/CTX-01 *)
+reflection-function = 'name_of' | 'size_of' | 'align_of' | 'bit_size_of'
+                    | 'padding_of' | 'is_packed' | 'offset_of'
+                    | 'fields_of' | 'attributes_of'
+                    | 'type_name_of' | 'type_kind_of'
+                    | 'type_of' | 'array_of' | 'pointer_to' | 'const_of'
+                    | 'is_same' | 'is_integer' | 'is_float' | 'is_bool'
+                    | 'is_pointer' | 'is_array' | 'is_aggregate' | 'is_class'
+                    | 'is_struct' | 'is_union' | 'is_enum' | 'is_void'
+                    | 'is_signed' | 'is_convertible' | 'is_assignable'
+                    | 'is_base_of' | 'int_min' | 'int_max' | 'uint_max'
+                    | 'bit_width' | 'float_epsilon' | 'float_max'
+                    | 'float_digits' | 'layout_size_of' | 'layout_align_of'
+                    | 'has_field' | 'field_count_of' | 'field_name_at'
+                    | 'field_type_name_of' | 'field_size_of'
+                    | 'field_offset_of' | 'field_is_bitfield'
+                    | 'field_bit_width_of' | 'field_annotation_count_of'
+                    | 'field_annotation_name_at' | 'field_annotation_arg_of'
+                    | 'has_attribute' | 'attribute_count_of'
+                    | 'attribute_name_at' | 'attribute_arg_of'
+                    | 'enum_count_of' | 'enum_name_at' | 'enum_value_at'
+                    | 'enum_value_of' | 'enum_name_of' | 'enum_underlying_name'
+                    | 'method_count_of' | 'has_method' | 'method_name_at'
+                    | 'method_param_count' | 'method_param_type_name'
+                    | 'method_return_type_name' | 'base_name_of'
+                    | 'template_name_of' | 'template_arg_count'
+                    | 'template_arg_name'
+                    | 'fail' | 'warn' | 'debug'
+                    | 'assert_eq' | 'assert_ne' | 'assert_size'
+                    | 'assert_align' | 'assert_offset'
+                    | 'format' | 'to_string' ;
 
 
 (* =========================================================================

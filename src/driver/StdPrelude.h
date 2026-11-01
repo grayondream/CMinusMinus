@@ -16,14 +16,10 @@ namespace smc {
 // (prepended, so its declarations are visible to user code) unless disabled
 // with `--no-prelude`.
 //
-// It is embedded as source text for now; once the module system (MOD-04) lands
-// it should move to a `std.c` module file.
-const char* builtinStdCPrelude();
-
 // Source text of the std.c binding layer: the first readable `<dir>/std/c.smc`
-// found in `dirs`, otherwise the embedded fallback. This lets the binding layer
-// live as a real module file (libs/std/c.smc) while remaining robust when the
-// standard-library directory is unavailable.
+// found in `dirs`. The standard library is data, not compiler code: there is
+// intentionally no embedded fallback. An empty result means the caller must
+// report a missing/incomplete standard-library installation.
 std::string loadStdCPrelude(const std::vector<std::string>& dirs);
 
 // Parse prelude source into its own translation unit. Returns nullptr on a

@@ -88,6 +88,10 @@ public:
     // P1-05 / ANN-05: [[deprecated]] 类型（sema 折叠；使用点 W3004）。
     bool deprecated{false};
     std::string deprecatedMsg;
+    // CTX-01: source annotations retained on the type for compile_time
+    // attribute queries. The folded flags above remain the semantic source of
+    // truth for existing code; this vector preserves names/arguments.
+    std::vector<Annotation> annotations;
 };
 
 class ArrayType : public Type {
@@ -163,8 +167,9 @@ public:
         return nullptr;
     }
 
-    void addField(const std::string& fieldName, Type* fieldType, int bitWidth = 0) {
-        fields.push_back(FieldInfo{fieldName, fieldType, {}, bitWidth});
+    void addField(const std::string& fieldName, Type* fieldType, int bitWidth = 0,
+                  std::vector<Annotation> annotations = {}) {
+        fields.push_back(FieldInfo{fieldName, fieldType, std::move(annotations), bitWidth});
     }
 };
 
@@ -186,8 +191,9 @@ public:
     UnionType(const std::string& n)
         : Type(TypeKind::Union), name(n) {}
 
-    void addMember(const std::string& memberName, Type* memberType, int bitWidth = 0) {
-        members.push_back(FieldInfo{memberName, memberType, {}, bitWidth});
+    void addMember(const std::string& memberName, Type* memberType, int bitWidth = 0,
+                   std::vector<Annotation> annotations = {}) {
+        members.push_back(FieldInfo{memberName, memberType, std::move(annotations), bitWidth});
     }
 };
 
@@ -334,8 +340,9 @@ public:
         return it == memberAccess.end() ? AccessLevel::Public : it->second;
     }
 
-    void addField(const std::string& fieldName, Type* fieldType, int bitWidth = 0) {
-        fields.push_back(FieldInfo{fieldName, fieldType, {}, bitWidth});
+    void addField(const std::string& fieldName, Type* fieldType, int bitWidth = 0,
+                  std::vector<Annotation> annotations = {}) {
+        fields.push_back(FieldInfo{fieldName, fieldType, std::move(annotations), bitWidth});
     }
 
     void addMethod(const std::string& methodName, FunctionType* methodType) {

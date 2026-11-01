@@ -1,0 +1,93 @@
+// ===== std.hash — deterministic hashing primitives =====
+// Import with `import std.hash;` and use `std::hash_string(...)` etc.
+// Hashes are stable across runs/platforms (FNV-1a / splitmix64), suitable for
+// std.collections::HashMap keys. They are not cryptographic.
+module std.hash;
+
+export namespace std {
+
+// FNV-1a 64-bit over arbitrary bytes.
+uint64 hash_bytes(void* data, usize len) {
+    uint64 h = 1469598103934665603ul;
+    uint64 prime = 1099511628211ul;
+    uint8* p = (uint8*)data;
+    usize i = 0;
+    while (i < len) {
+        h = h ^ (uint64)p[i];
+        h = h * prime;
+        i = i + 1;
+    }
+    return h;
+}
+
+// FNV-1a over a string_view; not NUL-terminated-dependent.
+uint64 hash_string(string_view s) {
+    uint64 h = 1469598103934665603ul;
+    uint64 prime = 1099511628211ul;
+    usize i = 0;
+    while (i < s.len()) {
+        h = h ^ (uint64)s.char_at(i);
+        h = h * prime;
+        i = i + 1;
+    }
+    return h;
+}
+
+// splitmix64 finalizer for integer keys.
+uint64 hash_u64(uint64 x) {
+    x = x + 11400714819323198485ul;
+    x = (x ^ (x >> 30)) * 13787848793156543929ul;
+    x = (x ^ (x >> 27)) * 10723151780598845931ul;
+    return x ^ (x >> 31);
+}
+
+uint64 hash_i64(int64 x) {
+    return hash_u64((uint64)x);
+}
+
+uint64 hash_i32(int32 x) {
+    return hash_u64((uint64)x);
+}
+
+uint64 hash_u32(uint32 x) {
+    return hash_u64((uint64)x);
+}
+
+uint64 hash_combine(uint64 seed, uint64 value) {
+    return hash_u64(seed ^ (value + 0x9e3779b97f4a7c15ul + (seed << 6) + (seed >> 2)));
+}
+
+// Convenience adapters for HashMap callbacks.
+usize hash_key_i32(int32 x) {
+    return (usize)hash_i32(x);
+}
+
+usize hash_key_u32(uint32 x) {
+    return (usize)hash_u32(x);
+}
+
+usize hash_key_u64(uint64 x) {
+    return (usize)hash_u64(x);
+}
+
+usize hash_key_string(string_view s) {
+    return (usize)hash_string(s);
+}
+
+bool equal_i32(int32 a, int32 b) {
+    return a == b;
+}
+
+bool equal_u32(uint32 a, uint32 b) {
+    return a == b;
+}
+
+bool equal_u64(uint64 a, uint64 b) {
+    return a == b;
+}
+
+bool equal_string(string_view a, string_view b) {
+    return a == b;
+}
+
+} // namespace std
