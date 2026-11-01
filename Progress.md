@@ -1191,5 +1191,13 @@
 - **限制**：求值步数上限 1,000,000；回调须可编译期求值；暂不支持任意指针、嵌套容器、`string` 元素、128 位整数常量。
 - **顺带修复**：`typeToMangled` 补 `Str`/`String`（此前 `Vec<string_view>` 实例化为 `std_Vec$unknown`）；`TemplateInstantiator::rewrite` 递归替换函数类型内的 `TypeVar`（`bool (*)(T,T)` 的回调调用不再产生 IR 签名不匹配）。
 - **测试**：新增 `tests/e2e/test_constexpr_containers.cpp`（constexpr Vec/Deque/HashMap/HashSet、string_view、出参、步数上限、只读检查、Vec/Deque/HashMap/HashSet/string_view 常量表运行时读取）；`tests/ast/test_type_nodes.cpp` 增加字符串 mangling 回归；重启用 `ConstexprForLoop`/`ConstexprNestedCall`。
-- **验证**：全量 `ctest --test-dir build -j8` **1690/1690** 通过（2 个既有 `GTEST_SKIP`）；`examples/all_features.c` → `ALL FEATURES OK`。
+- **终审修复**：
+  - `get_ptr`/`.data` 指针逃逸：constexpr 表禁止 `get_ptr`，禁止把 `.data`/指针算术结果装入可变指针；按值传给可变形参也诊断拒绝。
+  - 只读检查改用 `Symbol::isConstexprContainer` 身份而非变量名，修复同名局部变量的误报；`T.len`/`T.data[i]` 等标量读取恢复允许。
+  - 赋值/局部初始化/形参绑定统一做声明类型转换（`ctBindValue`），修复 `int8 x = 300` 的折叠值不截断。
+  - `constexpr` 重载按 mangled 签名登记与查找，修复同名重载折叠到最后一份实现。
+  - 修复 `INT64_MIN / -1` 在 Parser 常量求值与 `CtValue` 中的有符号溢出崩溃。
+  - 普通 constexpr 辅助函数的 `&out` 实现 copy-in/copy-out（`*p = v` 写回调用者局部）。
+  - 循环体失败立即中止，避免误报为步数超限。
+- **验证**：全量 `ctest --test-dir build -j8` **1699/1699** 通过（2 个既有 `GTEST_SKIP`）；`examples/all_features.c` → `ALL FEATURES OK`。
 - 文档：`docs/spec/compile_time.md` §7.5、`docs/spec/stdlib.md` §14。

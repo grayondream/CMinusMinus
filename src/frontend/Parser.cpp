@@ -1,6 +1,7 @@
 #include "Parser.h"
 #include <memory>
 #include <functional>
+#include <limits>
 #include <unordered_set>
 #include "ast/Decl.h"
 #include "ast/Mangle.h"
@@ -233,7 +234,10 @@ bool evalIntConstExpr(const ExprAST* expr, long long& out,
         if (!evalIntConstExpr(u->operand.get(), v, lookup)) return false;
         switch (u->op) {
             case UnaryOp::Plus:   out = v;  return true;
-            case UnaryOp::Minus:  out = -v; return true;
+            case UnaryOp::Minus:
+                out = static_cast<long long>(
+                    uint64_t{0} - static_cast<uint64_t>(v));
+                return true;
             case UnaryOp::BitNot: out = ~v; return true;
             default: return false;
         }
@@ -244,17 +248,42 @@ bool evalIntConstExpr(const ExprAST* expr, long long& out,
             !evalIntConstExpr(b->right.get(), r, lookup)) {
             return false;
         }
+        // Bit-pattern arithmetic: signed overflow is UB in C++ and would
+        // crash/trap for e.g. INT64_MIN / -1 during parsing.
+        const uint64_t ul = static_cast<uint64_t>(l);
+        const uint64_t ur = static_cast<uint64_t>(r);
         switch (b->op) {
-            case BinaryOp::Add:    out = l + r; return true;
-            case BinaryOp::Sub:    out = l - r; return true;
-            case BinaryOp::Mul:    out = l * r; return true;
-            case BinaryOp::Div:    if (r == 0) return false; out = l / r; return true;
-            case BinaryOp::Mod:    if (r == 0) return false; out = l % r; return true;
+            case BinaryOp::Add:
+                out = static_cast<long long>(ul + ur); return true;
+            case BinaryOp::Sub:
+                out = static_cast<long long>(ul - ur); return true;
+            case BinaryOp::Mul:
+                out = static_cast<long long>(ul * ur); return true;
+            case BinaryOp::Div:
+                if (r == 0) return false;
+                if (l == std::numeric_limits<long long>::min() && r == -1) {
+                    out = l;  // two's-complement wraparound
+                } else {
+                    out = l / r;
+                }
+                return true;
+            case BinaryOp::Mod:
+                if (r == 0) return false;
+                if (l == std::numeric_limits<long long>::min() && r == -1) {
+                    out = 0;
+                } else {
+                    out = l % r;
+                }
+                return true;
             case BinaryOp::BitAnd: out = l & r; return true;
             case BinaryOp::BitOr:  out = l | r; return true;
             case BinaryOp::BitXor: out = l ^ r; return true;
-            case BinaryOp::LShift: out = l << r; return true;
-            case BinaryOp::RShift: out = l >> r; return true;
+            case BinaryOp::LShift:
+                out = static_cast<long long>(ul << (static_cast<unsigned>(r) & 63));
+                return true;
+            case BinaryOp::RShift:
+                out = static_cast<long long>(ul >> (static_cast<unsigned>(r) & 63));
+                return true;
             default: return false;
         }
     }

@@ -507,3 +507,91 @@ TEST_F(ConstexprContainersTest, StringViewMapTableIsReadableAtRuntime) {
         }
     )", "ct_table_strmap.c"), 0);
 }
+
+TEST_F(ConstexprContainersTest, RejectsMutableAssignmentFromConstexprContainer) {
+    auto errors = analyzeWithImports(R"(
+        import std.collections;
+        constexpr std::Vec<int32> make() {
+            std::Vec<int32> v;
+            v.init();
+            return v;
+        }
+        constexpr std::Vec<int32> T = make();
+        int32 main() {
+            std::Vec<int32> M;
+            M.init();
+            M = T;
+            return 0;
+        }
+    )", "ct_assign_copy.c");
+    EXPECT_TRUE(hasErrorContaining(errors, "read-only"));
+}
+
+TEST_F(ConstexprContainersTest, RejectsGetPtrOnConstexprContainer) {
+    auto errors = analyzeWithImports(R"(
+        import std.collections;
+        constexpr std::Vec<int32> make() { std::Vec<int32> v; v.init(); v.push(1); return v; }
+        constexpr std::Vec<int32> T = make();
+        int32 main() { int32* p = T.get_ptr(0); return *p; }
+    )", "ct_get_ptr.c");
+    EXPECT_TRUE(hasErrorContaining(errors, "constexpr container"));
+}
+
+TEST_F(ConstexprContainersTest, RejectsMutablePointerIntoConstexprData) {
+    auto errors = analyzeWithImports(R"(
+        import std.collections;
+        constexpr std::Vec<int32> make() { std::Vec<int32> v; v.init(); v.push(1); return v; }
+        constexpr std::Vec<int32> T = make();
+        int32 main() {
+            int32* p = T.data;
+            int32* q = T.data + 1;
+            *p = 9;
+            *q = 10;
+            return 0;
+        }
+    )", "ct_data_ptr.c");
+    EXPECT_TRUE(hasErrorContaining(errors, "constexpr container"));
+}
+
+TEST_F(ConstexprContainersTest, RejectsPassingConstexprTableByValue) {
+    auto errors = analyzeWithImports(R"(
+        import std.collections;
+        constexpr std::Vec<int32> make() { std::Vec<int32> v; v.init(); v.push(1); return v; }
+        constexpr std::Vec<int32> T = make();
+        int32 mutate(std::Vec<int32> w) { w.push(2); return w.len; }
+        int32 main() { return mutate(T); }
+    )", "ct_pass_value.c");
+    EXPECT_TRUE(hasErrorContaining(errors, "read-only"));
+}
+
+TEST_F(ConstexprContainersTest, AllowsScalarReadFromConstexprTable) {
+    auto errors = analyzeWithImports(R"(
+        import std.collections;
+        constexpr std::Vec<int32> make() { std::Vec<int32> v; v.init(); v.push(1); return v; }
+        constexpr std::Vec<int32> T = make();
+        int32 main() {
+            int32 n = T.len;
+            int32 x = T.get(0);
+            int32 y = T.data[0];
+            return n + x + y - 3;
+        }
+    )", "ct_scalar_read.c");
+    for (auto& e : errors) std::cerr << "sema: " << e << "\n";
+    EXPECT_TRUE(errors.empty());
+}
+
+TEST_F(ConstexprContainersTest, AllowsShadowingConstexprContainerName) {
+    auto errors = analyzeWithImports(R"(
+        import std.collections;
+        constexpr std::Vec<int32> make() { std::Vec<int32> v; v.init(); return v; }
+        constexpr std::Vec<int32> T = make();
+        int32 main() {
+            std::Vec<int32> T;
+            T.init();
+            T.push(9);
+            return T.len == 1 ? 0 : 1;
+        }
+    )", "ct_shadow.c");
+    for (auto& e : errors) std::cerr << "sema: " << e << "\n";
+    EXPECT_TRUE(errors.empty());
+}

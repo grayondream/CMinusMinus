@@ -169,3 +169,44 @@ int32 main() { constexpr int32 x = calc(); return x - 15; }
 )", "test_constexpr_assign.c"), 0);
 }
 
+
+TEST_F(ConstexprFunctionE2E, ConstexprInitializerNarrowsToDeclaredType) {
+    EXPECT_EQ(runSource(R"(
+constexpr int8 narrow() { int8 x = 300; return x; }
+int32 main() {
+    constexpr int8 a = narrow();
+    int8 b = narrow();
+    return (a == 44 && b == 44) ? 0 : 1;
+}
+)", "test_constexpr_narrow.c"), 0);
+}
+
+TEST_F(ConstexprFunctionE2E, ConstexprResolvesOverloads) {
+    EXPECT_EQ(runSource(R"(
+constexpr int32 pick(uint32 x) { return (int32)x + 100; }
+constexpr int64 pick(uint64 x) { return (int64)x + 200; }
+int32 main() {
+    constexpr int32 a = pick(7u);
+    constexpr int64 b = pick(7ul);
+    return (a == 107 && b == 207) ? 0 : (int32)(a + b);
+}
+)", "test_constexpr_overload.c"), 0);
+}
+
+TEST_F(ConstexprFunctionE2E, Int64MinDivMinusOneDoesNotCrash) {
+    EXPECT_EQ(runSource(R"(
+int32 main() {
+    constexpr int64 m = -9223372036854775807 - 1;
+    constexpr int64 q = m / -1;
+    return q == m ? 0 : 1;
+}
+)", "test_constexpr_int64min.c"), 0);
+}
+
+TEST_F(ConstexprFunctionE2E, OutParameterThroughHelper) {
+    EXPECT_EQ(runSource(R"(
+constexpr int32 setOut(int32* out) { *out = 7; return 0; }
+constexpr int32 callIt() { int32 v = 0; setOut(&v); return v; }
+int32 main() { constexpr int32 x = callIt(); return x - 7; }
+)", "test_constexpr_out_helper.c"), 0);
+}

@@ -529,18 +529,16 @@ TEST_F(SemanticAnalyzerTest, ConstexprFunctionWithNonLiteralReturnType) {
 }
 
 TEST_F(SemanticAnalyzerTest, ConstexprFunctionWithNonLiteralParameter) {
-    // constexpr int bad(int* p) { return *p; }
-    // Should emit error: parameter must have literal type
+    // constexpr int bad(string s) { return 0; }
+    // Should emit error: parameter must have literal type. Scalar pointers are
+    // allowed now (out-parameters); owning string is still not a literal type.
     std::vector<std::unique_ptr<StmtAST>> bodyStmts;
     bodyStmts.push_back(std::make_unique<ReturnStmtAST>(
-        std::make_unique<UnaryExprAST>(
-            UnaryOp::Deref,
-            std::make_unique<VariableExprAST>("p"))));
+        std::make_unique<NumberExprAST>(0, LiteralKind::Int)));
     auto body = std::make_unique<CompoundStmtAST>(std::move(bodyStmts));
 
     std::vector<std::unique_ptr<ParamDeclAST>> params;
-    auto pointerType = std::make_unique<Type>(TypeKind::Pointer, typeCtx->getInt32());
-    params.push_back(std::make_unique<ParamDeclAST>("p", pointerType.get()));
+    params.push_back(std::make_unique<ParamDeclAST>("s", typeCtx->getStringType()));
 
     std::vector<std::unique_ptr<DeclAST>> decls;
     decls.push_back(std::make_unique<FunctionDeclAST>(

@@ -1454,6 +1454,36 @@ bool SemanticAnalyzer::analyzeReflectionCall(MethodCallExprAST& node) {
     node.type = nullptr;
     return true;
 }
+namespace {
+
+std::optional<std::size_t> ctIndexValue(const CtValue& v) {
+    if (v.type != CtValue::INT) return std::nullopt;
+    if (v.isUnsigned) {
+        return static_cast<std::size_t>(static_cast<uint64_t>(v.intVal));
+    }
+    if (v.intVal < 0) return std::nullopt;
+    return static_cast<std::size_t>(v.intVal);
+}
+
+CtValue ctBindValue(const CtValue& value, Type* target) {
+    if (!target) return ctClone(value);
+    if (value.type == CtValue::INT || value.type == CtValue::CHAR ||
+        value.type == CtValue::DOUBLE) {
+        if (auto converted = ctCast(value, target)) return *converted;
+    }
+    return ctClone(value);
+}
+
+CtValue ctVoidResult() { return ctInt(0); }
+
+CtValue ctBoolResult(bool value) { return ctInt(value ? 1 : 0, 1, true, true); }
+
+CtValue ctUsizeResult(std::size_t value) {
+    return ctInt(static_cast<long long>(static_cast<uint64_t>(value)), 64, true);
+}
+
+} // namespace
+
 std::optional<SemanticAnalyzer::ConstValue>
 SemanticAnalyzer::evalConstexprCallCT(CallExprAST& call,
                                       const std::vector<ConstValue>& argValues) {
@@ -1467,13 +1497,16 @@ SemanticAnalyzer::evalConstexprCallCT(CallExprAST& call,
         return nullptr;
     };
     std::string calleeName = call.callee;
-    FunctionDeclAST* fn = lookup(calleeName);
+    FunctionDeclAST* fn = nullptr;
+    // Prefer the sema-resolved signature so overloads do not collapse to the
+    // last function registered under the bare name.
+    if (!call.resolvedParamTypes.empty()) {
+        fn = lookup(mangleFunction(call.callee, call.resolvedParamTypes));
+    }
+    if (!fn) fn = lookup(calleeName);
     if (!fn) {
         calleeName = resolveNamespaceName(calleeName);
         fn = lookup(calleeName);
-    }
-    if (!fn && !call.resolvedParamTypes.empty()) {
-        fn = lookup(mangleFunction(call.callee, call.resolvedParamTypes));
     }
     if (!fn) {
         return std::nullopt;
@@ -1483,13 +1516,14 @@ SemanticAnalyzer::evalConstexprCallCT(CallExprAST& call,
     }
     ConstEnv env = activeEnv ? *activeEnv : ConstEnv{};
     for (size_t i = 0; i < fn->params.size(); ++i) {
-        env[fn->params[i]->name] = ctClone(argValues[i]);
+        env[fn->params[i]->name] = ctBindValue(argValues[i], fn->params[i]->type);
     }
     ConstEnv* saved = activeEnv;
     activeEnv = &env;
     if (ctEvalDepth == 0) {
         ctSteps = 0;
         ctStepReported = false;
+        m_ctFailed = false;
     }
     constexprCallDepth++;
     bool savedInBody = m_ctInFunctionBody;
@@ -1498,31 +1532,20 @@ SemanticAnalyzer::evalConstexprCallCT(CallExprAST& call,
     auto result = evalConstexprStmt(fn->body.get(), env, 1, flow);
     m_ctInFunctionBody = savedInBody;
     constexprCallDepth--;
+    if (!m_ctFailed && saved) {
+        for (size_t i = 0; i < argValues.size(); ++i) {
+            if (argValues[i].type != ConstValue::PTR || argValues[i].ptrName.empty()) {
+                continue;
+            }
+            auto it = env.find(argValues[i].ptrName);
+            if (it != env.end()) (*saved)[argValues[i].ptrName] = ctClone(it->second);
+        }
+    }
     activeEnv = saved;
     if (m_ctFailed) return std::nullopt;
-    return flow == CtFlow::Return ? result : std::nullopt;
+    if (flow != CtFlow::Return || !result) return std::nullopt;
+    return ctBindValue(*result, fn->returnType);
 }
-
-namespace {
-
-std::optional<std::size_t> ctIndexValue(const CtValue& v) {
-    if (v.type != CtValue::INT) return std::nullopt;
-    if (v.isUnsigned) {
-        return static_cast<std::size_t>(static_cast<uint64_t>(v.intVal));
-    }
-    if (v.intVal < 0) return std::nullopt;
-    return static_cast<std::size_t>(v.intVal);
-}
-
-CtValue ctVoidResult() { return ctInt(0); }
-
-CtValue ctBoolResult(bool value) { return ctInt(value ? 1 : 0, 1, true, true); }
-
-CtValue ctUsizeResult(std::size_t value) {
-    return ctInt(static_cast<long long>(static_cast<uint64_t>(value)), 64, true);
-}
-
-} // namespace
 
 bool SemanticAnalyzer::ctStepAllowance(ASTNode& at) {
     if (++ctSteps <= kConstexprStepLimit) {
@@ -1600,6 +1623,36 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
 
     if (auto* assign = dynamic_cast<AssignmentExprAST*>(expr)) {
         if (!activeEnv) return std::nullopt;
+        if (assign->op == AssignOp::Assign) {
+            if (auto* un = dynamic_cast<UnaryExprAST*>(assign->lhs.get());
+                un && un->op == UnaryOp::Deref) {
+                auto ptr = evaluateConstexpr(un->operand.get());
+                if (!ptr || ptr->type != ConstValue::PTR) return std::nullopt;
+                auto rhs = evaluateConstexpr(assign->rhs.get());
+                if (!rhs) return std::nullopt;
+                ConstValue converted = ctBindValue(*rhs, assign->lhs->type);
+                if (!ptr->ptrName.empty()) {
+                    auto slot = activeEnv->find(ptr->ptrName);
+                    if (slot == activeEnv->end()) return std::nullopt;
+                    slot->second = converted;
+                    return slot->second;
+                }
+                if (ptr->container) {
+                    CtContainer& c = *ptr->container;
+                    const std::size_t index =
+                        static_cast<std::size_t>(ptr->ptrIndex);
+                    if (c.kind == CtContainer::HashMap) {
+                        if (index >= c.values.size()) return std::nullopt;
+                        c.values[index] = converted;
+                    } else {
+                        if (index >= c.items.size()) return std::nullopt;
+                        c.items[index] = converted;
+                    }
+                    return converted;
+                }
+                return std::nullopt;
+            }
+        }
         auto* var = dynamic_cast<VariableExprAST*>(assign->lhs.get());
         if (!var) return std::nullopt;
         auto slot = activeEnv->find(var->name);
@@ -1609,7 +1662,7 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
         if (!rhs) return std::nullopt;
 
         if (assign->op == AssignOp::Assign) {
-            slot->second = ctClone(*rhs);
+            slot->second = ctBindValue(*rhs, assign->lhs->type);
             return slot->second;
         }
 
@@ -1887,13 +1940,16 @@ SemanticAnalyzer::evalConstexprCall(CallExprAST& call, int depth) {
         return nullptr;
     };
     std::string calleeName = call.callee;
-    FunctionDeclAST* fn = lookup(calleeName);
+    FunctionDeclAST* fn = nullptr;
+    // Prefer the sema-resolved signature so overloads do not collapse to the
+    // last function registered under the bare name.
+    if (!call.resolvedParamTypes.empty()) {
+        fn = lookup(mangleFunction(call.callee, call.resolvedParamTypes));
+    }
+    if (!fn) fn = lookup(calleeName);
     if (!fn) {
         calleeName = resolveNamespaceName(calleeName);
         fn = lookup(calleeName);
-    }
-    if (!fn && !call.resolvedParamTypes.empty()) {
-        fn = lookup(mangleFunction(call.callee, call.resolvedParamTypes));
     }
     if (!fn) {
         return std::nullopt; // not a user function (e.g. a libc call)
@@ -1904,12 +1960,14 @@ SemanticAnalyzer::evalConstexprCall(CallExprAST& call, int depth) {
 
     // Evaluate arguments in the caller's environment, then bind parameters.
     ConstEnv env = activeEnv ? *activeEnv : ConstEnv{};
+    std::vector<ConstValue> argVals(fn->params.size());
     for (size_t i = 0; i < fn->params.size(); ++i) {
         auto arg = evaluateConstexpr(call.args[i].get());
         if (!arg) {
             return std::nullopt;
         }
-        env[fn->params[i]->name] = ctClone(*arg);
+        argVals[i] = *arg;
+        env[fn->params[i]->name] = ctBindValue(*arg, fn->params[i]->type);
     }
 
     ConstEnv* saved = activeEnv;
@@ -1921,9 +1979,24 @@ SemanticAnalyzer::evalConstexprCall(CallExprAST& call, int depth) {
     auto result = evalConstexprStmt(fn->body.get(), env, depth + 1, flow);
     m_ctInFunctionBody = savedInBody;
     constexprCallDepth--;
+
+    // Copy out `&local` arguments from the callee's copied environment.
+    if (!m_ctFailed && saved) {
+        for (size_t i = 0; i < argVals.size(); ++i) {
+            if (argVals[i].type != ConstValue::PTR || argVals[i].ptrName.empty()) {
+                continue;
+            }
+            auto it = env.find(argVals[i].ptrName);
+            if (it != env.end()) {
+                (*saved)[argVals[i].ptrName] = ctClone(it->second);
+            }
+        }
+    }
     activeEnv = saved;
     if (m_ctFailed) return std::nullopt;
-    return flow == CtFlow::Return ? result : std::nullopt;
+    if (flow != CtFlow::Return) return std::nullopt;
+    if (!result) return std::nullopt;
+    return ctBindValue(*result, fn->returnType);
 }
 
 std::optional<SemanticAnalyzer::ConstValue>
@@ -1981,6 +2054,7 @@ SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
             if (!ctStepAllowance(*stmt)) return std::nullopt;
             CtFlow bodyFlow = CtFlow::Normal;
             auto result = evalConstexprStmt(wh->body.get(), env, depth + 1, bodyFlow);
+            if (m_ctFailed) return std::nullopt;
             if (bodyFlow == CtFlow::Break) break;
             if (bodyFlow == CtFlow::Return) {
                 flow = CtFlow::Return;
@@ -1996,6 +2070,7 @@ SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
             if (!ctStepAllowance(*stmt)) return std::nullopt;
             CtFlow bodyFlow = CtFlow::Normal;
             auto result = evalConstexprStmt(dw->body.get(), env, depth + 1, bodyFlow);
+            if (m_ctFailed) return std::nullopt;
             if (bodyFlow == CtFlow::Break) break;
             if (bodyFlow == CtFlow::Return) {
                 flow = CtFlow::Return;
@@ -2026,6 +2101,7 @@ SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
             if (!ctStepAllowance(*stmt)) return std::nullopt;
             CtFlow bodyFlow = CtFlow::Normal;
             auto result = evalConstexprStmt(fr->body.get(), env, depth + 1, bodyFlow);
+            if (m_ctFailed) return std::nullopt;
             if (bodyFlow == CtFlow::Break) break;
             if (bodyFlow == CtFlow::Return) {
                 flow = CtFlow::Return;
@@ -2059,7 +2135,7 @@ SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
         if (auto* vd = dynamic_cast<VarDeclAST*>(ds->decl.get())) {
             if (vd->initExpr) {
                 if (auto value = evaluateConstexpr(vd->initExpr.get())) {
-                    env[vd->name] = ctClone(*value);
+                    env[vd->name] = ctBindValue(*value, vd->type);
                 } else {
                     m_ctFailed = true;
                     return std::nullopt;
@@ -2080,6 +2156,17 @@ SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
     }
 
     return std::nullopt;
+}
+
+static const VariableExprAST* rootVariableOf(const ExprAST* e);
+
+bool SemanticAnalyzer::isConstexprContainerExpr(const ExprAST* expr) {
+    const VariableExprAST* var = rootVariableOf(expr);
+    if (!var) return false;
+    const std::string key = resolveNamespaceName(var->name);
+    Symbol* sym = currentScope->lookup(key);
+    if (!sym && key != var->name) sym = lookup(var->name);
+    return sym && sym->isConstexprContainer;
 }
 
 std::optional<SemanticAnalyzer::ConstValue>
@@ -2134,7 +2221,7 @@ SemanticAnalyzer::evalCtFunction(FunctionDeclAST* fn,
     }
     ConstEnv env = activeEnv ? *activeEnv : ConstEnv{};
     for (std::size_t i = 0; i < fn->params.size(); ++i) {
-        env[fn->params[i]->name] = ctClone(args[i]);
+        env[fn->params[i]->name] = ctBindValue(args[i], fn->params[i]->type);
     }
     ConstEnv* saved = activeEnv;
     activeEnv = &env;
@@ -2145,9 +2232,17 @@ SemanticAnalyzer::evalCtFunction(FunctionDeclAST* fn,
     auto result = evalConstexprStmt(fn->body.get(), env, depth + 1, flow);
     m_ctInFunctionBody = savedInBody;
     constexprCallDepth--;
+    if (!m_ctFailed && saved) {
+        for (std::size_t i = 0; i < args.size(); ++i) {
+            if (args[i].type != ConstValue::PTR || args[i].ptrName.empty()) continue;
+            auto it = env.find(args[i].ptrName);
+            if (it != env.end()) (*saved)[args[i].ptrName] = ctClone(it->second);
+        }
+    }
     activeEnv = saved;
     if (m_ctFailed) return std::nullopt;
-    return flow == CtFlow::Return ? result : ctVoidResult();
+    if (flow != CtFlow::Return) return ctVoidResult();
+    return result ? ctBindValue(*result, fn->returnType) : ctVoidResult();
 }
 
 bool SemanticAnalyzer::ctCallEq(CtContainer& c, const ConstValue& a,
@@ -2826,7 +2921,23 @@ static const VariableExprAST* rootVariableOf(const ExprAST* e) {
     if (auto* a = dynamic_cast<const ArrayAccessExprAST*>(e))
         return rootVariableOf(a->array.get());
     if (auto* u = dynamic_cast<const UnaryExprAST*>(e)) {
-        if (u->op == UnaryOp::Deref) return rootVariableOf(u->operand.get());
+        if (u->op == UnaryOp::Deref || u->op == UnaryOp::AddressOf) {
+            return rootVariableOf(u->operand.get());
+        }
+    }
+    if (auto* b = dynamic_cast<const BinaryExprAST*>(e)) {
+        if (auto* root = rootVariableOf(b->left.get())) return root;
+        return rootVariableOf(b->right.get());
+    }
+    if (auto* c = dynamic_cast<const CastExprAST*>(e)) {
+        return rootVariableOf(c->expr.get());
+    }
+    if (auto* t = dynamic_cast<const TernaryExprAST*>(e)) {
+        if (auto* root = rootVariableOf(t->then.get())) return root;
+        return rootVariableOf(t->elseExpr.get());
+    }
+    if (auto* mc = dynamic_cast<const MethodCallExprAST*>(e)) {
+        if (mc->methodName == "get_ptr") return rootVariableOf(mc->object.get());
     }
     return nullptr;
 }
@@ -4061,6 +4172,31 @@ void SemanticAnalyzer::visit(CallExprAST& node) {
     if (funcType) {
         node.resolvedParamTypes = funcType->paramTypes;
     }
+    if (funcType) {
+        for (std::size_t i = 0; i < node.args.size() &&
+                                i < funcType->paramTypes.size(); ++i) {
+            if (!isConstexprContainerExpr(node.args[i].get())) continue;
+            Type* pt = funcType->paramTypes[i];
+            while (pt && pt->kind == TypeKind::Typedef)
+                pt = static_cast<TypedefType*>(pt)->aliasedType;
+            if (!pt) continue;
+            if (ctContainerInfo(pt) && !pt->isConst) {
+                emitError("cannot pass a read-only constexpr container to a "
+                              "mutable by-value parameter",
+                          *node.args[i]);
+            } else if (pt->kind == TypeKind::Pointer) {
+                Type* base = pt->base;
+                while (base && base->kind == TypeKind::Typedef)
+                    base = static_cast<TypedefType*>(base)->aliasedType;
+                if (base && ctContainerInfo(base) &&
+                    !(pt->isConst || base->isConst)) {
+                    emitError("cannot pass a read-only constexpr container to a "
+                                  "mutable pointer parameter",
+                              *node.args[i]);
+                }
+            }
+        }
+    }
     // P1-05 / ANN-05: deprecated 函数使用（W3004）。
     if (m_deprecatedFuncs.count(node.callee)) {
         std::string msg = m_deprecatedMsgs.count(node.callee)
@@ -4225,20 +4361,33 @@ bool SemanticAnalyzer::tryAnalyzeTemplateCall(CallExprAST& node) {
 }
 
 void SemanticAnalyzer::visit(AssignmentExprAST& node) {
-    if (auto* root = rootVariableOf(node.lhs.get())) {
-        if (constexprContainerVars.count(root->name)) {
-            emitError("cannot mutate constexpr container '" + root->name +
-                          "' (materialized constexpr containers are read-only)",
-                      node);
-            node.type = nullptr;
-            node.isLValue = false;
-            return;
-        }
+    if (isConstexprContainerExpr(node.lhs.get())) {
+        emitError("cannot mutate constexpr container "
+                      "(materialized constexpr containers are read-only)",
+                  node);
+        node.type = nullptr;
+        node.isLValue = false;
+        return;
     }
     Type* lhsType = getExprType(*node.lhs);
     if (lhsType && lhsType->isConst) {
         emitError("cannot assign to const variable", node);
         return;
+    }
+    if (node.op == AssignOp::Assign &&
+        isConstexprContainerExpr(node.rhs.get()) && lhsType) {
+        Type* ldecl = lhsType;
+        while (ldecl && ldecl->kind == TypeKind::Typedef)
+            ldecl = static_cast<TypedefType*>(ldecl)->aliasedType;
+        if (ldecl && ctContainerInfo(ldecl) && !ldecl->isConst) {
+            emitError("cannot copy read-only constexpr container into a mutable container",
+                      node);
+        }
+        if (ldecl && ldecl->kind == TypeKind::Pointer &&
+            !(ldecl->isConst || (ldecl->base && ldecl->base->isConst))) {
+            emitError("cannot take a mutable pointer into a read-only constexpr container",
+                      node);
+        }
     }
     // PAR-08: assigning an array/slice literal (or a stack-backed slice
     // variable) to a global stores a pointer to stack storage — dangling.
@@ -4909,11 +5058,18 @@ void SemanticAnalyzer::visit(MethodCallExprAST& node) {
         return;
     }
 
-    if (auto* root = rootVariableOf(node.object.get())) {
-        if (constexprContainerVars.count(root->name) &&
-            isMutatingContainerMethod(node.methodName)) {
-            emitError("cannot mutate constexpr container '" + root->name +
-                          "' (materialized constexpr containers are read-only)",
+    if (isConstexprContainerExpr(node.object.get())) {
+        if (isMutatingContainerMethod(node.methodName)) {
+            emitError("cannot mutate constexpr container "
+                          "(materialized constexpr containers are read-only)",
+                      node);
+            node.type = nullptr;
+            node.isLValue = false;
+            return;
+        }
+        if (node.methodName == "get_ptr") {
+            emitError("cannot take a mutable pointer from a constexpr container "
+                          "(materialized constexpr containers are read-only)",
                       node);
             node.type = nullptr;
             node.isLValue = false;
@@ -6169,6 +6325,10 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
         if (!node.initExpr) {
             emitError("constexpr variable '" + node.name + "' must have initializer", node);
         } else {
+            // Type the initializer first so overloads and expression result
+            // types are resolved before folding (needed for exact widths and
+            // for constexpr callback/overload selection).
+            getExprType(*node.initExpr);
             auto folded = evaluateConstexpr(node.initExpr.get());
             if (!folded) {
                 emitError("constexpr variable '" + node.name + "' must be initialized with a constant expression", node);
@@ -6176,7 +6336,6 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
                 constexprValues[node.name] = *folded;
                 if (folded->type == ConstValue::CONTAINER) {
                     node.foldedContainer = folded->container;
-                    constexprContainerVars.insert(node.name);
                 } else {
                     FoldedValue fv;
                     fv.type = static_cast<FoldedValue::Type>(folded->type);
@@ -6192,15 +6351,22 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
         }
     }
 
-    if (node.initExpr && !node.isConstexpr) {
-        auto* root = rootVariableOf(node.initExpr.get());
+    if (node.initExpr && !node.isConstexpr &&
+        isConstexprContainerExpr(node.initExpr.get())) {
         Type* declared = node.type;
         while (declared && declared->kind == TypeKind::Typedef)
             declared = static_cast<TypedefType*>(declared)->aliasedType;
-        if (root && constexprContainerVars.count(root->name) &&
-            declared && !declared->isConst) {
-            emitError("cannot copy read-only constexpr container '" + root->name +
-                          "' into a mutable variable",
+        if (declared && ctContainerInfo(declared)) {
+            // Const destinations are not allowed yet: const is not enforced
+            // for container methods/fields, so a const copy could still write
+            // into read-only storage. Only constexpr-to-constexpr copies
+            // (deep copies) are accepted.
+            emitError("cannot copy read-only constexpr container into a mutable container",
+                      node);
+        } else if (declared && declared->kind == TypeKind::Pointer &&
+                   !(declared->isConst ||
+                     (declared->base && declared->base->isConst))) {
+            emitError("cannot take a mutable pointer into a read-only constexpr container",
                       node);
         }
     }
@@ -6321,8 +6487,11 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
             }
         }
     }
-    if (!declare(node.name, node.type)) {
+    Symbol* declaredVar = declareSymbol(node.name, node.type);
+    if (!declaredVar) {
         emitError(DiagnosticCode::SemRedefinition, "redeclaration of variable '" + node.name + "' in the same scope", node);
+    } else if (node.foldedContainer) {
+        declaredVar->isConstexprContainer = true;
     }
     // SEM-11: remember local variables for the unused-variable check (W3002).
     if (currentFunction) {
@@ -7159,15 +7328,25 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
             emitError("constexpr function '" + node.name + "' must have literal return type", node);
         }
 
+        auto isCtParam = [&](Type* t) {
+            if (isCtLiteral(t)) return true;
+            Type* raw = t;
+            while (raw && raw->kind == TypeKind::Typedef)
+                raw = static_cast<TypedefType*>(raw)->aliasedType;
+            return raw && raw->kind == TypeKind::Pointer &&
+                   isCtLiteral(raw->base);
+        };
         for (auto& param : node.params) {
-            if (!isCtLiteral(param->type)) {
+            if (!isCtParam(param->type)) {
                 emitError("constexpr function '" + node.name + "' parameter '" + param->name + "' must have literal type", node);
             }
         }
     }
 
     if (node.isConstexpr) {
-        // Available to the compile-time evaluator (evaluateConstexpr).
+        // Available to the compile-time evaluator (evaluateConstexpr). Keep
+        // both the bare name and the mangled signature so overloads resolve
+        // to the exact call-site type instead of the last registered body.
         constexprFunctions[node.name] = &node;
     }
 
@@ -7201,6 +7380,9 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
     std::string signature = mangleFunction(node.name, funcType->paramTypes);
     m_allFunctions[node.name] = &node;
     m_allFunctions[signature] = &node;
+    if (node.isConstexpr) {
+        constexprFunctions[signature] = &node;
+    }
     Symbol* declaredSym = declareSymbol(node.name, funcType);
     if (!declaredSym) {
         // A matching declaration already exists. That is legal for repeated

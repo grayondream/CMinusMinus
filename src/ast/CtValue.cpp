@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
 
 namespace {
 
@@ -335,13 +336,22 @@ std::optional<CtValue> ctBinary(const CtValue& left, const CtValue& right,
         case BinaryOp::Mul: result = ar * br; break;
         case BinaryOp::Div:
             if (br == 0) return std::nullopt;
-            result = opUnsigned ? (ar / br)
-                                : static_cast<uint64_t>(as / bs);
+            if (!opUnsigned && opBits == 64 && as == std::numeric_limits<int64_t>::min() && bs == -1) {
+                // Two's-complement wraparound; C++ signed division would trap.
+                result = static_cast<uint64_t>(std::numeric_limits<int64_t>::min());
+            } else {
+                result = opUnsigned ? (ar / br)
+                                    : static_cast<uint64_t>(as / bs);
+            }
             break;
         case BinaryOp::Mod:
             if (br == 0) return std::nullopt;
-            result = opUnsigned ? (ar % br)
-                                : static_cast<uint64_t>(as % bs);
+            if (!opUnsigned && opBits == 64 && as == std::numeric_limits<int64_t>::min() && bs == -1) {
+                result = 0;
+            } else {
+                result = opUnsigned ? (ar % br)
+                                    : static_cast<uint64_t>(as % bs);
+            }
             break;
         case BinaryOp::BitAnd: result = ar & br; break;
         case BinaryOp::BitOr: result = ar | br; break;

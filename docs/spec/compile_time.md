@@ -183,8 +183,11 @@ compile_time.repeat(3) {
   `head = 0`；`HashMap`/`HashSet` 保留开放寻址的 `keys/values/states` 与回调
   函数指针。
 - 物化后的容器是**只读**的：`push`/`pop`/`put`/`insert`/`remove`/`clear`/
-  `destroy`/字段或元素赋值均诊断拒绝；把常量表复制到可变容器/可变变量也拒绝。
-  `constexpr Vec B = A` 与按值传参在编译期求值中是深拷贝，允许。
+  `destroy`/字段或元素赋值均诊断拒绝；把常量表复制到可变容器、可变变量或
+  `const` 容器也拒绝（v1 尚未对容器方法/字段实施 const 检查），按值传给可变
+  形参同样拒绝。`constexpr Vec B = A` 与按值传参在编译期求值中是深拷贝，允许。
+  `get_ptr` 以及从 `.data` 取得的可变指针也拒绝；只允许 `get`/`len`/`cap`/
+  `contains`/`size`/`bucket_count` 与 `.data[i]` 读取。
 - 返回容器类型的 `constexpr` 函数仍是普通运行时函数；`constexpr` 只增加编译期
   求值能力，运行时调用走正常容器分配/拷贝语义。
 - 求值步数上限 1,000,000；未知回调、不可求值操作或超限都会使该常量求值失败并

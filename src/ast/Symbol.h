@@ -20,6 +20,10 @@ public:
     // `checkUnused`; parameters, globals and functions never warn here.
     bool isUsed = false;
     bool checkUnused = false;
+    // CT: this symbol is a constexpr container variable whose materialized
+    // storage is read-only. Symbol identity (not just the name) keeps shadowed
+    // locals and same-named parameters mutable.
+    bool isConstexprContainer = false;
     std::string declFile;
     int declLine = 0;
     int declColumn = 0;
