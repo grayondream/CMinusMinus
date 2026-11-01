@@ -30,10 +30,18 @@
 | `string_view`（原 `str`） | `{ ptr, i64 }` | 16(64 位) | 8 | `[impl]` | 字节视图 `{ptr, len}`（P1-06）；零拷贝语义 |
 | `string` | `{ ptr, i64, i64 }` | 24(64 位) | 8 | `[impl]` | 动态字符串 `{ptr, len, cap}`（P1-06；P1-09 补记 ABI 行，终审 M5） |
 | `atomic T` | 同 `T` | 同 `T` | 同 `T` | `[impl]` | CON-01：限定符不改布局（仅整型标量）；访问经 LLVM atomic load/store/atomicrmw |
+| `std::Atomic<T>` | `{ T }` | 同 `T` | 同 `T` | `[impl]` | STD-24：单字段封装；布局/对齐与 `T` 相同，无锁字段 |
 | `FieldInfo` | `{ {ptr,i64}, i64, i64 }` | 32(64 位) | 8 | `[impl]` | CT-07 反射内建类型 |
 | `Attribute` | `{ {ptr,i64} }` | 16(64 位) | 8 | `[impl]` | CT-07 反射内建类型 |
 
 > `thread_local`（CON-04）：变量存储为 LLVM thread-local 全局（每线程副本）；布局/大小与普通全局一致。
+
+> 原子 ABI（STD-24，2026-11-01）：`atomic T` 与 `std::Atomic<T>` 的 1/2/4/8 字节
+> 访问使用同宽整数 carrier 和**自然对齐**（i64 为 align 8；此前模板/i64 字段曾
+> 降到 align 4 并回退到外部 `__atomic_*`）。`bool` 使用 i8 carrier（LLVM 拒绝
+> `atomic i1`），float/pointer/enum 经同宽 bitcast/ptrtoint。x86-64 上 1/2/4/8
+> 字节为 lock-free；不支持 16 字节/`int128`/`float128`/聚合。`Thread` 以 `usize`
+> 承载 `pthread_t`，字段布局为 `{usize, bool, bool, i32}`（v1 Linux x86-64）。
 
 ## 2. 聚合布局
 

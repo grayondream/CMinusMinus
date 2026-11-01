@@ -355,7 +355,94 @@ JIT 经进程符号解析）+ `constexpr` 常量 + 位级浮点分类。
 - `std.testing`：`fail/expect/expect_eq_i64/expect_eq_str`。失败写 stderr 后 `abort`
   （与语言 `assert`/`panic` 同一不可恢复策略）。
 
-## 18. 内建与标准库的边界 `[impl]`
+## 18. `std.atomic`（STD-24）`[impl]`
+
+`import std.atomic;` 后用 `std::Atomic<T>` 或按序自由函数。模块名含关键字
+`atomic`，驱动已支持关键字作为模块路径分量。
+
+### 18.1 内存序与 API
+
+```smc
+enum MemoryOrder : int32 {
+    MemoryOrderRelaxed, MemoryOrderConsume, MemoryOrderAcquire,
+    MemoryOrderRelease, MemoryOrderAcqRel, MemoryOrderSeqCst
+};
+```
+
+- `Atomic<T>` 的**无 order 方法**固定为 seq_cst：`load/store/exchange/
+  compare_exchange_weak/compare_exchange_strong/fetch_add/sub/and/or/xor`。
+- `_order` 方法在库层按运行时 order 分派：`load_order/store_order/
+  exchange_order/fetch_*_order`。非法组合（load 用 Release/AcqRel、store 用
+  Acquire/Consume/AcqRel）运行时 `panic`。
+- 显式序自由函数按名字固定编译期 order，例如 `atomic_load_acquire`、
+  `atomic_store_release`、`atomic_exchange_acq_rel`、`atomic_fetch_add_relaxed`、
+  `atomic_compare_exchange_strong_acq_rel`。每族覆盖 relaxed/acquire/release/
+  acq_rel/seq_cst（load 另有 consume；store 只允许 relaxed/release/seq_cst）。
+- CAS 的任意 success/failure 组合用
+  `atomic_compare_exchange_{weak,strong}_explicit<T, Success, Failure>`。
+  模板实参须显式给出；v1 用户源码用数值 `0..5`（跨模块 enum 常量不进入主源
+  parser 的常量表），常用组合优先用命名包装。
+- Fence：`atomic_thread_fence<Order>()`、`atomic_signal_fence<Order>()`，以及
+  `*_seq_cst()` 无参便捷函数。
+
+### 18.2 类型与布局
+
+- 支持 1/2/4/8 字节整数、`bool`、指针、`float16/32/64`、底层为 1/2/4/8 字节的
+  enum。
+- `Atomic<T>` 只有一个 `T` 字段，大小/对齐与 `T` 相同；不加锁字段。
+- `bool` 的原子访问经 i8 carrier（LLVM 不接受 `atomic i1`）；float/pointer/enum
+  经同宽整数 carrier + bitcast。
+- `fetch_add/sub` 支持整数和指针（指针按元素字节数步进）；`fetch_and/or/xor`
+  支持非 bool 整数。bool/enum/float 的 RMW 方法是文档化误用：模板方法仍可
+  实例化，调用时 `panic`。
+- 不支持 16 字节/`int128`/`float128`/聚合；`is_lock_free()`/`is_always_lock_free()`
+  在 1/2/4/8 字节返回 `true`，不支持的类型触发 `compile_time.static_assert`。
+- 现有 `atomic T` 限定符保持不变（整数标量、seq_cst load/store 与
+  atomicrmw 子集）；本模块提供显式序和 CAS/fence。
+
+```smc
+import std.atomic;
+std::Atomic<int64> counter = {0};
+int32 main() {
+    counter.store(1);
+    counter.fetch_add(2);                         // seq_cst
+    counter.fetch_add_order(3, std::MemoryOrderRelaxed);
+    int64 expected = 6;
+    return counter.compare_exchange_strong(&expected, 7) ? 0 : 1;
+}
+```
+
+## 19. `std.thread`（STD-25）`[impl]`
+
+`import std.thread;`。v1 后端固定为 Linux x86-64 pthread；驱动自动追加
+`-l pthread`，编译器/JIT 进程由 CMake `Threads::Threads` 链接。
+
+| 名字 | 签名 | 说明 |
+|---|---|---|
+| `std::Thread` | `struct { usize handle; bool active; bool detached; int32 last_error; }` | 线程所有权对象 |
+| `init()` | `void` | 归零状态 |
+| `start(fn, arg)` | `bool start(void* (*)(void*), void*)` | 创建线程；失败返回 false |
+| `join()` | `bool` | 等待并回收；非 active/已 detach 返回 false |
+| `detach()` | `bool` | 分离；成功后再 `join` 返回 false |
+| `joinable()` | `bool` | `active && !detached` |
+| `get_id()` | `usize` | `pthread_t` 的 usize 载体 |
+| `error()` | `int32` | 最近一次 pthread/内部错误码 |
+| `std::hardware_concurrency()` | `uint32` | `sysconf(_SC_NPROCESSORS_ONLN)`；失败 0 |
+| `std::this_thread_get_id()` | `usize` | `pthread_self` |
+| `std::this_thread_yield()` | `void` | `sched_yield` |
+| `std::this_thread_sleep_ms(ms)` | `void` | `usleep` 分块，避免乘法溢出 |
+| `std::thread_equal(a,b)` | `bool` | `pthread_equal` |
+
+状态机：`init` → `started` → `joined` 或 `detached`。重复 `start`、重复 `join`、
+detach 后 `join` 均返回 `false` 并写 `last_error`。`Thread` 无析构函数；离开作用域
+前必须 `join` 或 `detach`。`Thread` 拷贝是普通结构体拷贝，不转移所有权。
+
+`thread_local` 在 v1 按每线程副本工作（已由 `StdThreadTest.ThreadLocalIsPerThread`
+覆盖）。不提供 mutex/condition_variable/jthread/线程取消；这些是后续条目。
+线程入口只接受 `void* (*)(void*)` + 单个 `void*` 参数；错误用 `bool`/
+`last_error`，不使用异常。
+
+## 20. 内建与标准库的边界 `[impl]`
 
 - `print`/`println`/`format`/`assert`/`panic` 仍是**语言内建**：它们需要调用点
   的格式串/源码位置，且无预处理器；用户同名声明优先。
@@ -365,11 +452,15 @@ JIT 经进程符号解析）+ `constexpr` 常量 + 位级浮点分类。
   安装时驱动会显式报错（`--no-prelude` 可关闭注入）。
 - 容器、哈希、排序、解析、路径、文件、时间、环境、测试辅助全部在 `libs/std/`。
 
-## 19. 待办 `[plan]`
+## 21. 待办 `[plan]`
 
 - `std.mem`：placement 分配、`AlignedAllocator`/可失败分配策略细化。
 - `std.collections`：`List`/`BTree`、`Vec::shrink_to_fit`、元素析构/清理辅助。
 - `std.unicode`、完整 `std.string` 字典序/`replace`、`std.path::normalize`。
 - `std.fs`：目录遍历、`stat` 元数据、原子写入；`std.os`：argv/进程控制。
 - `std.testing` + `smc test` runner（TOOL-01）。
+- `std.atomic`：16 字节/`int128`/`float128`、聚合原子、`atomic_ref`/`atomic_flag`、
+  constexpr atomic 语义；任意 CAS 组合的可读模板常量写法。
+- `std.thread`：mutex/condition_variable、跨平台线程后端、`jthread`/取消、
+  多参数/C 捕获 lambda 入口。
 - `assert` 的 Release 释放模式若需要，随 DEC-06/07 裁决；当前**始终启用**。

@@ -1201,3 +1201,20 @@
   - 循环体失败立即中止，避免误报为步数超限。
 - **验证**：全量 `ctest --test-dir build -j8` **1699/1699** 通过（2 个既有 `GTEST_SKIP`）；`examples/all_features.c` → `ALL FEATURES OK`。
 - 文档：`docs/spec/compile_time.md` §7.5、`docs/spec/stdlib.md` §14。
+
+## 2026-11-01 — std.atomic / std.thread v1
+
+- 背景：在**不改语言语法**的前提下补齐 C++ atomics/thread 能力。高层 API 全部放 `libs/std/`，编译器只新增内部 `__smc_atomic_*` 内建；v1 目标 Linux x86-64 + pthread，支持 1/2/4/8 字节标量/指针/float16/32/64/enum，不做 16 字节/聚合/mutex/condvar。
+- 实现：
+  - `libs/std/atomic.smc`：`MemoryOrder*`、`Atomic<T>`（seq_cst 简写 + `_order` 分派）、per-order 自由函数族、显式 `<T, Success, Failure>` CAS、fence；RMW 对 bool/enum/float 在方法内 `compile_time.if` 守卫，非法调用 panic；`is_lock_free` 用 `compile_time.static_assert` 拒绝超尺寸。
+  - `libs/std/thread.smc`：pthread `Thread` 状态机（init/start/join/detach/joinable/get_id/error）、`hardware_concurrency`、`this_thread_*`、`thread_equal`；驱动自动 `-l pthread`，CMake 链接 `Threads::Threads`。
+  - 编译器：`AtomicBuiltin` AST 内建 + sema/order 校验 + LLVM 整数 carrier codegen（bool i8、float/pointer/enum bitcast、自然对齐）；修复模板 `atomic T` 的 TypeVar 名称丢失、`TemplateInstantiator` 丢失 `isAtomic`、i64 字段 align 4、atomic bool i1。
+  - 前端：`import std.atomic;` 允许关键字作为模块路径分量；显式模板实参的限定常量识别；namespace 方法调用按定义侧 `std_init` 名字固化，修复调用点 `init` 与定义 `std_init` 不一致。
+- 测试：
+  - `tests/e2e/test_atomic.cpp`：模板字段、bool i8、i64 align 8、内部 builtin 全操作/CAS/fence、指针/float/bool/enum、坏序/坏类型诊断。
+  - `tests/e2e/test_std_atomic.cpp`：seq_cst、`_order`、per-order、显式 CAS、float/bool/enum/pointer、lock-free、`Atomic<int128>` 拒绝、RMW 运行时序。
+  - `tests/e2e/test_std_thread.cpp`：start/join/参数、状态机/ID、重复 lifecycle、detach 完成轮询、hardware_concurrency、yield/sleep、TLS 每线程、4×10000 原子计数压力。
+  - 顺带把 `tests/driver/test_module_visibility.cpp` 的固定临时目录改为 pid 唯一，修复 `ctest -j8` 的并行 flake。
+- 文档：`docs/spec/stdlib.md` §18/§19（API/限制/线程生命周期）、`docs/spec/abi.md` 原子 ABI 行与自然对齐说明、`TODO.md` CON-02/03/05/06/09、STD-24/25、P2-01。
+- 验收：全量 `ctest --test-dir build -j8` **1722/1722** 通过（2 个既有 `GTEST_SKIP`）；`examples/all_features.c` 第 28 节运行输出 `ALL FEATURES OK`；生成程序自动链接 pthread 实测退出 0。
+- 已知限制：显式 CAS 的跨模块 enum 常量模板实参 v1 用数值 0..5；bool/enum/float RMW 是运行时 panic；`Thread` 无析构/所有权转移；无 mutex/condvar、跨平台线程后端、16 字节原子。

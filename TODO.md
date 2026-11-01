@@ -52,6 +52,7 @@
 > **进度快照（2026-11-01，移除 libsafec）**：删除 `src/libsafec/` 与 `tests/libsafec/`，移除 CMake 的 `safec` 目标及其测试链接。该实现只被自身测试引用，编译器/JIT/`libs/std` 均不依赖，且与 mimalloc + `std.mem` 重复。全量 **1657/1657** 通过（2 个既有 `GTEST_SKIP`）。
 > **进度快照（2026-11-01，容器文件拆分）**：`std.collections` 按容器拆为 `libs/std/collections/{vec,deque,hashmap,hashset}.smc` 独立模块（`std.collections.vec` 等可直接导入）；`libs/std/collections.smc` 保留为汇总入口，既有 `import std.collections;` 用法不变。新增直接导入测试。全量 **1658/1658** 通过（2 个既有 `GTEST_SKIP`）。
 > **进度快照（2026-11-01，constexpr 容器）**：`constexpr` 求值器可执行 `Vec`/`Deque`/`HashMap`/`HashSet`（循环/赋值/`&out`/标量与 `string_view` 元素），`constexpr` 容器变量物化为只读常量数组 + 常量结构体（含 HashMap/HashSet 的开放寻址表与回调函数指针）；物化表禁止修改/可变拷贝。顺带修复 `typeToMangled` 缺失 `Str`/`String` 与模板函数类型内 `TypeVar` 未替换两个阻塞缺陷。全量 **1699/1699** 通过（2 个既有 `GTEST_SKIP`）。
+> **进度快照（2026-11-01，std.atomic / std.thread）**：新增 `libs/std/atomic.smc`（`Atomic<T>`、`MemoryOrder*`、per-order 自由函数、显式 CAS、fence）与 `libs/std/thread.smc`（pthread `Thread` 生命周期、`hardware_concurrency`、`this_thread_*`、`thread_equal`）。编译器新增内部 `__smc_atomic_*` 内建（LLVM 整数 carrier：bool i8、float/pointer/enum bitcast，自然对齐）并修复模板 `atomic T`、i64 字段对齐、bool `atomic i1`；支持关键字模块路径分量 `std.atomic`。v1 限制：1/2/4/8 字节标量/指针/float16/32/64/enum，无 16 字节/聚合；线程仅 Linux x86-64 pthread，无 mutex/condvar。新增 23 个测试；全量 **1722/1722** 通过（2 个既有 `GTEST_SKIP`），`examples/all_features.c` 输出 `ALL FEATURES OK`。
 >
 > **进度快照（2026-10-27，语法缺口补充审计）**：在 §24 基础上继续补漏，新增 **§25**（SG-12 ~ SG-23、SG-B07 ~ SG-B09），覆盖数组/位域常量表达式、声明符递归与函数类型形参、静态成员类外定义、C 字面量、asm、模块/控制流/类模板扩展。新补项中 P1 为 SG-12、SG-14；SG-12、SG-13、SG-14、SG-15、SG-16、SG-17 与 SG-B07、SG-B09 已修复（SG-15 于 2026-10-28）；SG-18、SG-19 已全部修复；SG-20 ~ SG-23 仍挂账（SG-B07 ~ SG-B09 已全部修复）。
 
@@ -387,14 +388,14 @@
 ## 15. 并发（CON）
 
 - `[x]` **CON-01** `atomic` 类型限定符：`atomic i32 count;`（见 DEC-11）。**完成**（2026-10-19，最小范围）：整型标量限定符（克隆类型不污染单例）+ 原子 load/store（seq_cst）+ 复合赋值/`++`/`--` 经 `atomicrmw`（add/sub/and/or/xor）；`* / % << >>` 与浮点/指针拒绝（需 cmpxchg，属 CON-02 边界）。
-- `[ ]` **CON-02** 原子 load/store、CAS、fence。
-- `[ ]` **CON-03** 内存序：relaxed/acquire/release/acq_rel/seq_cst。
+- `[x]` **CON-02** 原子 load/store、CAS、fence。**完成**（2026-11-01）：编译器内部 `__smc_atomic_*` 直降 LLVM atomic load/store/atomicrmw/cmpxchg/fence；`libs/std/atomic.smc` 提供 `Atomic<T>`、CAS、fence 与显式序 API；`tests/e2e/test_atomic.cpp` + `test_std_atomic.cpp` 覆盖。
+- `[x]` **CON-03** 内存序：relaxed/consume/acquire/release/acq_rel/seq_cst。**完成**（2026-11-01）：`MemoryOrder*`；load/store/CAS failure 的合法性在 sema 校验，`_order` 运行时非法组合 panic；consume 映射 acquire。
 - `[x]` **CON-04** `thread_local`：存储类语法（见 DEC-12）。**完成**（2026-10-19）：`thread_local T name;` 语法 + 存储（LLVM thread-local 全局，每线程副本）；函数上 thread_local 拒绝（E2028）；完整初始化/销毁模型属 CON-10。
-- `[ ]` **CON-05** `std.thread`：线程创建/join/分离（C 语义，显式管理）。
-- `[ ]` **CON-06** 线程局部存储 ABI；与 LLVM atomic 指令映射。
+- `[x]` **CON-05** `std.thread`：线程创建/join/分离（C 语义，显式管理）。**完成**（2026-11-01）：pthread 后端 `Thread` 状态机 + `hardware_concurrency`/`this_thread_*`/`thread_equal`；驱动自动 `-l pthread`；v1 无 mutex/condvar。
+- `[x]` **CON-06** 线程局部存储 ABI；与 LLVM atomic 指令映射。**完成**（2026-11-01，v1 范围）：每线程 TLS 已测；1/2/4/8 字节原子映射、bool i8 carrier、自然对齐已固化；跨平台 TLS/完整 ABI 仍属后续。
 - `[ ]` **CON-07** 与 C11 atomics 互操作。
-- `[ ]` **CON-08** 并发测试：数据竞争检测、压力测试。
-- `[ ]` **CON-09** `(新)` `atomic` 语义模型：可原子化类型/大小限制、对齐要求、与 LLVM atomic 映射（细化 CON-01/02）。
+- `[~]` **CON-08** 并发测试：数据竞争检测、压力测试。**部分完成**（2026-11-01）：4×10000 原子计数压力 + detach/TLS 测试；未接入 TSan/数据竞争检测器。
+- `[x]` **CON-09** `(新)` `atomic` 语义模型：可原子化类型/大小限制、对齐要求、与 LLVM atomic 映射（细化 CON-01/02）。**完成**（2026-11-01，v1）：1/2/4/8 字节标量/指针/float16/32/64/enum；无 16 字节/`int128`/`float128`/聚合；`Atomic<int128>` 编译期拒绝。
 - `[ ]` **CON-10** `(新)` `thread_local` 存储模型与初始化/销毁规则（细化 CON-04）。
 
 ---
@@ -443,8 +444,8 @@
 - `[x]` **STD-23** `std.c`：手写 libc 绑定层（配合 MOD-09）。`libs/std/c.smc`（内嵌兜底）已扩展：`abort`、`dprintf`（stderr，fd=2）、`fopen/fclose/fread/fwrite/fgets/fputs/fgetc/fputc/fprintf`、`scanf`。
 
 ### std.atomic / std.thread
-- `[ ]` **STD-24** 原子类型封装、load/store/CAS/fence、内存序常量。
-- `[ ]` **STD-25** `Thread`、join/detach、`thread_local` 支持；可选 mutex/condvar。
+- `[x]` **STD-24** 原子类型封装、load/store/CAS/fence、内存序常量。**完成**（2026-11-01）：`std::Atomic<T>` + per-order 自由函数 + 显式 CAS；类型/对齐限制见 `docs/spec/stdlib.md` §18。
+- `[x]` **STD-25** `Thread`、join/detach、`thread_local` 支持；可选 mutex/condvar。**完成**（2026-11-01，v1）：pthread 生命周期/ID/TLS/压力测试；mutex/condvar 仍为可选后续，不阻塞 v1。
 - `[~]` **STD-26** `(新)` 扩展点库约定：`to_string`/`to_hash`/`equals` 标准签名与示例（落实 STD-09/FUN-14）。（接口草案见 `docs/spec/semantics.md`）
 - `[x]` **STD-27** `(新)` `panic/assert/abort` 语义与实现策略：**不可恢复、不可捕获、直接 `abort`**（DEC-21 已冻结）；诊断输出到 stderr 且带 `file:line`；`assert`/`panic` 为内建（用户同名声明优先）。规范见 `docs/spec/stdlib.md`。与 `[[nonnull]]` 的关系（复用终止路径）待 MEM-* 实现。
 
@@ -572,7 +573,7 @@
 - `[x]` **P1-09** std.mem / std.string / std.format / std.math / **std.collections**（STD-05~14）。字符串库 + format 体系完成（2026-10-09）：FMT-06~11 全落地、FMT-12 单缓冲、STD-10 组合库、STD-11 核心；E2020~22 新诊断；顺带修复既有编译器 bug 两枚——`&&`/`||` 按位降级（真值截断 + 无短路）与派生→基类赋值整结构 store 溢出（潜在栈腐败）。spec `docs/superpowers/specs/2026-10-09-p109-string-format-design.md`，plan `docs/superpowers/plans/2026-10-09-p109-string-format.md`。模块导出类型/模板已可用；独立 StrBuilder 为可选优化；`replace`/字典序不做（ASCII 大小写已由 std.ascii 提供）；std.mem/math/collections 已补齐。**终审 I4（string 值拷贝别名双 free）已收口**（2026-10-11）：string 拥有型值语义 + string_view 硬改名，spec `docs/superpowers/specs/2026-10-11-string-ownership-design.md`，plan `docs/superpowers/plans/2026-10-11-string-ownership.md`，e2e 16 用例（全量 1229 绿）。**std.mem 纯函数层完成**（2026-10-17，STD-05 范围 a：alloc/alloc_zeroed/resize/dealloc/align_up/align_down/is_aligned/aligned_alloc/aligned_free，7 e2e，全量 1358 绿；Allocator/Arena/Pool 接口草案挂账于「模块导出类型」语言缺口，见 stdlib.md §11.1）。**std.math/std.bit 完成**（2026-10-17，STD-13/14：libs/std/bit.smc 纯语言位工具 7 e2e + libs/std/math.smc libc 绑定/常量/位级分类 5 e2e，顺带修复 namespace 内 C 名 extern 符号前缀化缺口，全量 1370 绿；spec/plan `docs/superpowers/specs|plans/2026-10-17-stdmath-bit*`）。**std.collections/扩展库完成**（2026-11-01）：Vec/Deque/HashMap/HashSet + hash/sort/parse/ascii/path/fs/time/os/testing；mem 切 mimalloc + Allocator/Arena/Pool；全量 1657/1657（2 个既有 Skip；移除 `libsafec` 自身测试后）。
 
 ### P2：工程化与并发
-- `[ ]` **P2-01** atomic / thread_local / std.thread（CON、STD-24/25）。
+- `[x]` **P2-01** atomic / thread_local / std.thread（CON、STD-24/25）。**完成**（2026-11-01）：std.atomic/std.thread v1；mutex/condvar、跨平台后端与 16 字节原子留待后续。
 - `[~]` **P2-02** 标准库补齐：parse/sort/algorithm/hash/bit/ascii/unicode/path/fs/time/os/testing/c（STD-15~23）。parse/sort/hash/ascii/path/fs/time/os/testing 基础层完成；unicode/完整算法/完整 fs/os 待补。
 - `[ ]` **P2-03** 增量编译与模块缓存（MOD-10）。
 - `[ ]` **P2-04** ABI/FFI 完整测试（CG-18）。

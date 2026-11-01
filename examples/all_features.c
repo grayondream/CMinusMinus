@@ -16,6 +16,8 @@
 
 module all_features;
 import std.math;
+import std.atomic;
+import std.thread;
 
 int32 fails = 0;
 
@@ -975,6 +977,34 @@ void section_p1p2_syntax() {
     check(((int32 (*)(int32))raw)(41) == 42, "cast to function pointer type");
 }
 
+// ---------------------------------------------------------------------------
+// 28. std.atomic / std.thread：显式内存序 + pthread 生命周期
+// ---------------------------------------------------------------------------
+std::Atomic<int64> mt_counter = {0};
+thread_local int32 mt_tls = 0;
+int32 mt_worker_tls = 0;
+
+void* mt_worker(void* arg) {
+    int64 n = (int64)arg;
+    mt_tls = mt_tls + 1;
+    mt_worker_tls = mt_tls;
+    for (int64 i = 0; i < n; i = i + 1) {
+        mt_counter.fetch_add(1);
+    }
+    return null;
+}
+
+void section_atomic_thread() {
+    println("== 28. std.atomic / std.thread ==");
+    std::Thread t;
+    t.init();
+    check(t.start(mt_worker, (void*)1000), "thread start");
+    check(t.join(), "thread join");
+    check(mt_counter.load() == 1000, "Atomic<int64>::fetch_add");
+    check(mt_worker_tls == 1 && mt_tls == 0, "thread_local per-thread");
+    std::atomic_thread_fence_seq_cst();
+}
+
 int32 main() {
     section_types();
     section_aliases();
@@ -1003,6 +1033,7 @@ int32 main() {
     section_modules();
     section_declarations();
     section_p1p2_syntax();
+    section_atomic_thread();
     if (fails == 0) {
         println("ALL FEATURES OK");
     }
