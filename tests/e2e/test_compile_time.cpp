@@ -312,6 +312,54 @@ int32 main() {
     EXPECT_EQ(r, 3);
 }
 
+TEST_F(CompileTimeE2E, RepeatBreakContinueAndTemplate) {
+    EXPECT_EQ(runSource(R"(
+int32 main() {
+    int32 t = 0;
+    compile_time.repeat(3) { t += 1; break; }
+    return t;
+}
+)", "ct_repeat_break.c"), 1);
+
+    EXPECT_EQ(runSource(R"(
+int32 main() {
+    int32 t = 0;
+    compile_time.repeat(3) { continue; t += 1; }
+    return t;
+}
+)", "ct_repeat_continue.c"), 0);
+
+    EXPECT_EQ(runSource(R"(
+template<typename T> int32 repeat_in_template() {
+    int32 t = 0;
+    compile_time.repeat(3) { t += 1; }
+    return t;
+}
+int32 main() { return repeat_in_template<int32>(); }
+)", "ct_repeat_template.c"), 3);
+}
+
+TEST_F(CompileTimeE2E, RepeatUsesSourceLocation) {
+    EXPECT_EQ(runSource(R"(
+int32 main() {
+    int32 t = 0;
+    compile_time.repeat(compile_time.line) { t += 1; }
+    return t;
+}
+)", "ct_repeat_loc.c"), 4);
+}
+
+TEST_F(CompileTimeE2E, CastAndParenthesizedQueries) {
+    EXPECT_EQ(runSource(R"(
+int32 main() {
+    int64 m = (int64)compile_time.int_max(int32);
+    if (m != 2147483647) return 1;
+    if ((int32)compile_time.line <= 0) return 2;
+    return 42;
+}
+)", "ct_cast_query.c"), 42);
+}
+
 TEST_F(CompileTimeE2E, CTDepthLimitE2E) {
     // 深度超限：100 层嵌套加法 → 诊断，编译失败（e2e 复 pin）。
     std::string expr = "compile_time.size_of(int32) + ";

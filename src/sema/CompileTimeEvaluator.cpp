@@ -656,6 +656,34 @@ bool CompileTimeEvaluator::isAggregate(Type* t) const {
                  t->kind == TypeKind::Union);
 }
 
+bool CompileTimeEvaluator::isCompleteAggregate(Type* t) const {
+    t = const_cast<CompileTimeEvaluator*>(this)->stripTypedef(t);
+    if (!t) return false;
+    if (t->kind == TypeKind::Struct) return static_cast<StructType*>(t)->isComplete;
+    if (t->kind == TypeKind::Class) return static_cast<ClassType*>(t)->isComplete;
+    if (t->kind == TypeKind::Union) return static_cast<UnionType*>(t)->isComplete;
+    return true;
+}
+
+bool CompileTimeEvaluator::typesSame(Type* a, Type* b) {
+    a = stripTypedef(a);
+    b = stripTypedef(b);
+    if (a == b) return true;
+    if (!a || !b) return false;
+    if (a->kind == TypeKind::TypeInstance && b->kind == TypeKind::TypeInstance) {
+        auto* ai = static_cast<TypeInstanceType*>(a);
+        auto* bi = static_cast<TypeInstanceType*>(b);
+        if (ai->templateName != bi->templateName) return false;
+        if (ai->typeArgs.size() != bi->typeArgs.size()) return false;
+        for (size_t i = 0; i < ai->typeArgs.size(); ++i)
+            if (!typesSame(ai->typeArgs[i], bi->typeArgs[i])) return false;
+        if (ai->valueArgs != bi->valueArgs) return false;
+        return true;
+    }
+    if (a->kind != b->kind) return false;
+    return typesEqual(a, b);
+}
+
 bool CompileTimeEvaluator::isIntegerKind(Type* t) const {
     t = const_cast<CompileTimeEvaluator*>(this)->stripTypedef(t);
     if (!t) return false;
@@ -717,6 +745,10 @@ int CompileTimeEvaluator::integerBitWidth(Type* t) const {
 const LayoutResult* CompileTimeEvaluator::layoutFor(Type* t) {
     t = stripTypedef(t);
     if (!t || !isAggregate(t)) return nullptr;
+    // Never cache a layout for an incomplete aggregate: sema may complete the
+    // same Type* later in the TU, and a cached zero/partial layout would poison
+    // every subsequent query.
+    if (!isCompleteAggregate(t)) return nullptr;
     auto& cache = t->kind == TypeKind::Union ? m_unionLayoutCache : m_layoutCache;
     auto it = cache.find(t);
     if (it != cache.end()) return &it->second;
@@ -884,7 +916,7 @@ CompileTimeEvaluator::evalTypeQuery(MethodCallExprAST& node, ASTNode& at) {
             m_sema.emitError("compile_time.is_same requires two type arguments", at);
             return std::nullopt;
         }
-        return intResult(typesEqual(t, other) ? 1 : 0);
+        return intResult(typesSame(t, other) ? 1 : 0);
     }
     if (m == "is_integer") return intResult(isIntegerKind(raw) ? 1 : 0);
     if (m == "is_float") return intResult(isFloatKind(raw) ? 1 : 0);
@@ -1011,6 +1043,12 @@ CompileTimeEvaluator::evalTypeQuery(MethodCallExprAST& node, ASTNode& at) {
             m_sema.emitError("compile_time." + m + " requires two type arguments", at);
             return std::nullopt;
         }
+        if (typesSame(from, to)) return intResult(1);
+        Type* fromRaw = stripTypedef(from);
+        Type* toRaw = stripTypedef(to);
+        if (fromRaw->kind == TypeKind::TypeInstance ||
+            toRaw->kind == TypeKind::TypeInstance)
+            return intResult(0);
         return intResult(conversionRank(from, to) >= 0 ? 1 : 0);
     }
     if (m == "template_name_of" || m == "template_arg_count" ||
@@ -1127,6 +1165,12 @@ CompileTimeEvaluator::evalFieldQuery(MethodCallExprAST& node, ASTNode& at) {
     if (!isAggregate(raw)) {
         m_sema.emitError("compile_time." + node.methodName +
                              " requires an aggregate type",
+                         at);
+        return std::nullopt;
+    }
+    if (!isCompleteAggregate(raw)) {
+        m_sema.emitError("incomplete type '" + m_sema.typeToString(t) +
+                             "' in compile_time." + node.methodName,
                          at);
         return std::nullopt;
     }
@@ -1279,16 +1323,44 @@ CompileTimeEvaluator::evalTypeValueQuery(MethodCallExprAST& node, ASTNode& at) {
     }
     if (node.methodName == "const_of") {
         Type* raw = stripTypedef(t);
-        if (raw->kind == TypeKind::Pointer) {
-            auto* p = new Type(TypeKind::Pointer, raw->base);
-            p->isConst = true;
-            cv.typeVal = p;
-        } else {
-            auto* c = new Type(raw->kind);
-            c->isConst = true;
-            cv.typeVal = c;
+        // `const` is not observable by the current type predicates; for
+        // aggregates/arrays/enums return the original type instead of
+        // constructing a bare `Type(kind)` that every consumer would cast to
+        // the wrong subclass (UB).
+        switch (raw->kind) {
+            case TypeKind::Char:
+            case TypeKind::Bool:
+            case TypeKind::Int8:
+            case TypeKind::Int16:
+            case TypeKind::Int32:
+            case TypeKind::Int64:
+            case TypeKind::Int128:
+            case TypeKind::UInt8:
+            case TypeKind::UInt16:
+            case TypeKind::UInt32:
+            case TypeKind::UInt64:
+            case TypeKind::UInt128:
+            case TypeKind::ISize:
+            case TypeKind::USize:
+            case TypeKind::Float16:
+            case TypeKind::Float32:
+            case TypeKind::Float64:
+            case TypeKind::Float128: {
+                auto* c = new Type(raw->kind);
+                c->isConst = true;
+                cv.typeVal = c;
+                return cv;
+            }
+            case TypeKind::Pointer: {
+                auto* p = new Type(TypeKind::Pointer, raw->base);
+                p->isConst = true;
+                cv.typeVal = p;
+                return cv;
+            }
+            default:
+                cv.typeVal = t;
+                return cv;
         }
-        return cv;
     }
     m_sema.emitError("unknown compile_time type-value query '" + node.methodName + "'", at);
     return std::nullopt;
@@ -1786,6 +1858,21 @@ CompileTimeEvaluator::evalQuery(MethodCallExprAST& node, ASTNode& at) {
     if (m == "format" || m == "to_string") {
         return evalFormat(node, at);
     }
+    if (m == "name_of") {
+        Type* t = node.args.empty() ? nullptr : resolveTypeArg(node.args[0].get(), at);
+        if (!t) return std::nullopt;
+        ConstValue cv;
+        cv.type = ConstValue::STR;
+        cv.strVal = m_sema.typeToString(t);
+        return cv;
+    }
+    if (m == "fields_of" || m == "attributes_of") {
+        m_sema.emitError("compile_time." + m +
+                             " returns a runtime reflection table and cannot be "
+                             "used in a compile-time expression",
+                         at);
+        return std::nullopt;
+    }
     if (m == "is" || m == "has_feature" || m == "at_least") {
         return evalBuildCall(node, at);
     }
@@ -1800,6 +1887,12 @@ CompileTimeEvaluator::evalLayoutQuery(MethodCallExprAST& node, ASTNode& at) {
                                          : resolveTypeArg(node.args[0].get(), at);
     if (!queriedType) return std::nullopt;
     Type* raw = stripTypedef(queriedType);
+    if (isAggregate(raw) && !isCompleteAggregate(raw)) {
+        m_sema.emitError("incomplete type '" + m_sema.typeToString(queriedType) +
+                             "' in compile_time query",
+                         at);
+        return std::nullopt;
+    }
     const std::string& m = node.methodName;
     const llvm::DataLayout& dl = m_module->getDataLayout();
     ConstValue cv;
@@ -1845,8 +1938,9 @@ CompileTimeEvaluator::evalLayoutQuery(MethodCallExprAST& node, ASTNode& at) {
             }
             return intResult(static_cast<long long>(lr->size > maxMember ? lr->size - maxMember : 0));
         }
-        // Named-field spans (base fields included). Padding is the sum of the
-        // gaps between consecutive fields plus the tail.
+        // Field spans (base fields included) plus bitfield storage-unit spans.
+        // Padding is the sum of the gaps between consecutive spans plus the
+        // tail. Bitfield storage units are real occupied bytes, not padding.
         struct Span { uint64_t offset; uint64_t size; };
         std::vector<Span> spans;
         for (auto& f : collectFields(raw, true)) {
@@ -1855,6 +1949,20 @@ CompileTimeEvaluator::evalLayoutQuery(MethodCallExprAST& node, ASTNode& at) {
             if (!off || !lt) continue;
             spans.push_back({*off, dl.getTypeAllocSize(lt)});
         }
+        std::unordered_set<uint32_t> unitIndices;
+        auto addBitfieldUnits = [&](auto* agg) {
+            for (auto& entry : agg->bitFields) {
+                const uint32_t unit = entry.second.unitIndex;
+                if (!unitIndices.insert(unit).second) continue;
+                if (unit >= lr->fields.size()) continue;
+                spans.push_back({lr->fields[unit].offset,
+                                 dl.getTypeAllocSize(lr->fields[unit].type)});
+            }
+        };
+        if (raw->kind == TypeKind::Struct)
+            addBitfieldUnits(static_cast<StructType*>(raw));
+        else if (raw->kind == TypeKind::Class)
+            addBitfieldUnits(static_cast<ClassType*>(raw));
         std::sort(spans.begin(), spans.end(),
                   [](const Span& a, const Span& b) { return a.offset < b.offset; });
         uint64_t cursor = 0;
@@ -1895,7 +2003,7 @@ CompileTimeEvaluator::evalLayoutQuery(MethodCallExprAST& node, ASTNode& at) {
                 m_sema.emitError("empty field path in compile_time.offset_of", at);
                 return std::nullopt;
             }
-            auto f = findField(cursor, seg, false);
+            auto f = findField(cursor, seg, true);
             if (!f) {
                 m_sema.emitError("unknown field '" + seg + "' in compile_time.offset_of expression", at);
                 return std::nullopt;

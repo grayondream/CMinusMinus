@@ -89,6 +89,9 @@ compile_time.if (compile_time.target.os == "linux") {
 
 - `FieldInfo` 内建类型：`{ string_view name; usize offset; usize size; }`。
 - `Attribute` 内建类型：`{ string_view name; }`。
+- `fields_of` 包含继承字段（基类字段在前）和位域；位域的 `offset` 当前为 0，
+  `size` 为声明类型的存储大小。需要位域精确信息时用 `field_is_bitfield`/
+  `field_bit_width_of`；`field_offset_of` 对位域拒绝。
 - 反射表经 sema→codegen 注册表物化为全局常量数组 + slice 视图（运行时生命周期 = 程序全程）。
 - 取代 `type_info(T)`（NG-12）；类型/ABI 细节见 [`abi.md`](./abi.md)。
 
@@ -110,7 +113,8 @@ compile_time.if (compile_time.target.os == "linux") {
 | 源码位置 | `file`、`line`、`column`、`function` |
 
 - 字段查询基于 `semanticFields`，位域不会在布局物化后丢失。
-- `field_offset_of` 对位域发出 `cannot take offset of a bit-field`。
+- `field_offset_of` 对位域发出 `cannot take offset of a bit-field`；
+  `field_size_of` 对位域返回声明类型的存储大小（位宽用 `field_bit_width_of`）。
 - `uint_max(uint64)` 以 `uint64` 位模式返回；`int128/uint128` 极限超出当前 `ConstValue` 64 位表示，诊断拒绝。
 - `method_*` 继承链查找；静态方法不在 `ClassType::methods` 中，因此不参与这些查询。
 
@@ -149,7 +153,10 @@ compile_time.repeat(3) {
 
 - 计数必须是编译期非负整数，上限 1024。
 - sema 只分析一次 body；codegen 展开 `iterations` 份，每次使用独立作用域。
-- 不生成运行时循环计数器；`break`/`continue`/`return` 在展开体中按现有控制流语义终止。
+- 不生成运行时循环计数器；`break` 结束剩余展开，`continue` 跳到下一次展开，
+  `return` 终止后续展开。
+- `static`/`thread_local` 局部变量在 `compile_time.repeat` 内诊断拒绝——否则每次
+  展开会错误地创建独立静态对象。
 - 字段/枚举遍历（`for_fields`/`for_enum_values`）需要 AST 克隆或 codegen 特化，暂未实现。
 
 ## 8. 类型作为值（CT-08）

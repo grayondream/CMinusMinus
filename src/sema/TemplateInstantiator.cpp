@@ -356,6 +356,24 @@ std::unique_ptr<StmtAST> TemplateInstantiator::cloneStmt(const StmtAST* s) {
         out = std::make_unique<ContinueStmtAST>();
     } else if (dynamic_cast<const NullStmtAST*>(s)) {
         out = std::make_unique<NullStmtAST>();
+    } else if (auto* ci = dynamic_cast<const CompileTimeIfStmtAST*>(s)) {
+        auto* cloned = new CompileTimeIfStmtAST();
+        cloned->cond = cloneExpr(ci->cond.get());
+        cloned->thenStmt = std::unique_ptr<CompoundStmtAST>(
+            static_cast<CompoundStmtAST*>(cloneStmt(ci->thenStmt.get()).release()));
+        cloned->elseStmt = std::unique_ptr<CompoundStmtAST>(
+            static_cast<CompoundStmtAST*>(cloneStmt(ci->elseStmt.get()).release()));
+        cloned->ctResolved = ci->ctResolved;
+        cloned->selectedThen = ci->selectedThen;
+        out = std::unique_ptr<StmtAST>(cloned);
+    } else if (auto* cr = dynamic_cast<const CompileTimeRepeatStmtAST*>(s)) {
+        auto* cloned = new CompileTimeRepeatStmtAST();
+        cloned->count = cloneExpr(cr->count.get());
+        cloned->body = std::unique_ptr<CompoundStmtAST>(
+            static_cast<CompoundStmtAST*>(cloneStmt(cr->body.get()).release()));
+        cloned->ctResolved = cr->ctResolved;
+        cloned->iterations = cr->iterations;
+        out = std::unique_ptr<StmtAST>(cloned);
     } else if (auto* df = dynamic_cast<const DeferStmtAST*>(s)) {
         out = std::make_unique<DeferStmtAST>(cloneExpr(df->callExpr.get()));
     } else if (auto* ds = dynamic_cast<const DeclStmtAST*>(s)) {

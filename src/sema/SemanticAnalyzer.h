@@ -347,6 +347,9 @@ private:
     // P1-04 / CT-04/05: build 查询注入值与惰性求值器。
     bool m_ctBuildDebug = false;
     std::string m_ctBuildOptimize = "O0";
+    // CTX-01: static/thread_local locals inside compile_time.repeat would be
+    // emitted once per unrolled iteration; diagnose instead of miscompiling.
+    int m_ctRepeatDepth = 0;
     std::unique_ptr<CompileTimeEvaluator> m_ctEval;
     std::unordered_set<std::string> definedFunctions;
     std::unordered_map<std::string, FunctionDeclAST*> constexprFunctions;

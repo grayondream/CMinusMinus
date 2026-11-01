@@ -1270,6 +1270,10 @@ bool SemanticAnalyzer::tryAnalyzeCompileTimeCall(MethodCallExprAST& node) {
                 case ConstValue::DOUBLE: equal = left->doubleVal == right->doubleVal; break;
                 case ConstValue::CHAR: equal = left->charVal == right->charVal; break;
                 case ConstValue::STR: equal = left->strVal == right->strVal; break;
+                case ConstValue::TYPE:
+                    equal = left->typeVal && right->typeVal &&
+                            typeToString(left->typeVal) == typeToString(right->typeVal);
+                    break;
             }
         }
         const bool wantEqual = node.methodName == "assert_eq";
@@ -5062,6 +5066,11 @@ void SemanticAnalyzer::visit(ContinueStmtAST& node) {}
 void SemanticAnalyzer::visit(NullStmtAST& node) {}
 
 void SemanticAnalyzer::visit(VarDeclAST& node) {
+    if (m_ctRepeatDepth > 0 && (node.isStaticLocal || node.isThreadLocal)) {
+        emitError("static/thread_local local is not supported inside "
+                  "compile_time.repeat",
+                  node);
+    }
     // Review 2.6: `auto` infers the variable type from its initializer.
     if (node.type && stripTypedef(node.type)->kind == TypeKind::Auto) {
         if (!node.initExpr) {
@@ -6318,7 +6327,9 @@ void SemanticAnalyzer::visit(CompileTimeRepeatStmtAST& node) {
     }
     node.ctResolved = true;
     node.iterations = static_cast<int>(count->intVal);
+    ++m_ctRepeatDepth;
     if (node.body) visit(*node.body);
+    --m_ctRepeatDepth;
 }
 
 void SemanticAnalyzer::visit(CompileTimeIfStmtAST& node) {

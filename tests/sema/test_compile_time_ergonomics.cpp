@@ -687,6 +687,115 @@ int32 main() {
     EXPECT_FALSE(bad.analyzer->getErrors().empty());
 }
 
+// ---- Review regressions --------------------------------------------------
+
+TEST_F(CompileTimeErgonomics, ConstOfAggregateIsSafe) {
+    const std::string decls = R"(
+struct C1S { int32 a; int8 b; };
+union C1U { int32 a; int8 b; };
+)";
+    Extracted ex;
+    ASSERT_NO_FATAL_FAILURE(extract(ex, decls,
+        "compile_time.size_of(compile_time.const_of(C1S))"));
+    auto v = evalExpr(ex);
+    ASSERT_TRUE(v.has_value());
+    EXPECT_EQ(v->intVal, 8);
+
+    Extracted u;
+    ASSERT_NO_FATAL_FAILURE(extract(u, decls,
+        "compile_time.size_of(compile_time.const_of(C1U))"));
+    auto uv = evalExpr(u);
+    ASSERT_TRUE(uv.has_value());
+    EXPECT_EQ(uv->intVal, 4);
+}
+
+TEST_F(CompileTimeErgonomics, IsSameTypedefAndTemplate) {
+    const std::string decls = R"(
+using MyInt = int32;
+template<typename T> struct Box { T value; };
+)";
+    Extracted td;
+    ASSERT_NO_FATAL_FAILURE(extract(td, decls,
+        "compile_time.is_same(MyInt, int32)"));
+    auto t = evalExpr(td);
+    ASSERT_TRUE(t.has_value());
+    EXPECT_EQ(t->intVal, 1);
+
+    Extracted box;
+    ASSERT_NO_FATAL_FAILURE(extract(box, decls,
+        "compile_time.is_same(Box<int32>, Box<int64>)"));
+    auto b = evalExpr(box);
+    ASSERT_TRUE(b.has_value());
+    EXPECT_EQ(b->intVal, 0);
+}
+
+TEST_F(CompileTimeErgonomics, OffsetOfInheritedField) {
+    const std::string decls = R"(
+struct C1Base { int32 a; };
+struct C1Derived : C1Base { int32 c; };
+)";
+    Extracted ex;
+    ASSERT_NO_FATAL_FAILURE(extract(ex, decls,
+        "compile_time.offset_of(C1Derived, \"a\")"));
+    auto v = evalExpr(ex);
+    ASSERT_TRUE(v.has_value());
+    EXPECT_EQ(v->intVal, 0);
+}
+
+TEST_F(CompileTimeErgonomics, IncompleteAggregateDiagnosed) {
+    auto bad = analyze(R"(
+class C1Fwd;
+int32 f() { return compile_time.size_of(C1Fwd); }
+)");
+    ASSERT_TRUE(bad.tu != nullptr);
+    ASSERT_FALSE(bad.analyzer->getErrors().empty());
+    EXPECT_NE(bad.analyzer->getErrors()[0].message.find("incomplete"),
+              std::string::npos);
+
+    Extracted ok;
+    ASSERT_NO_FATAL_FAILURE(extract(ok, R"(
+class C1Done;
+class C1Done { public: int32 x; int32 y; };
+)",
+        "compile_time.size_of(C1Done)"));
+    auto v = evalExpr(ok);
+    ASSERT_TRUE(v.has_value());
+    EXPECT_EQ(v->intVal, 8);
+}
+
+TEST_F(CompileTimeErgonomics, PaddingWithBitfields) {
+    Extracted ex;
+    ASSERT_NO_FATAL_FAILURE(extract(ex,
+        "struct C1BF { int32 a:3; int8 b; };",
+        "compile_time.padding_of(C1BF)"));
+    auto v = evalExpr(ex);
+    ASSERT_TRUE(v.has_value());
+    EXPECT_EQ(v->intVal, 3);
+}
+
+TEST_F(CompileTimeErgonomics, RepeatRejectsStaticLocal) {
+    auto a = analyze(R"(
+int32 main() {
+    compile_time.repeat(2) { static int32 s = 0; s = s + 1; }
+    return 0;
+}
+)");
+    ASSERT_TRUE(a.tu != nullptr);
+    ASSERT_FALSE(a.analyzer->getErrors().empty());
+    EXPECT_NE(a.analyzer->getErrors()[0].message.find("static/thread_local"),
+              std::string::npos);
+}
+
+TEST_F(CompileTimeErgonomics, NameOfInStaticAssert) {
+    auto a = analyze(R"(
+struct C1Name { int32 a; };
+compile_time.static_assert(compile_time.name_of(C1Name) == "struct C1Name", "name");
+int32 main() { return 0; }
+)");
+    ASSERT_TRUE(a.tu != nullptr);
+    EXPECT_TRUE(a.analyzer->getErrors().empty());
+}
+
 TEST_F(CompileTimeErgonomics, VersionQueries) {
     Extracted major;
     ASSERT_NO_FATAL_FAILURE(extract(major, "",

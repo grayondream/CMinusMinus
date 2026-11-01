@@ -678,6 +678,10 @@ std::unique_ptr<ExprAST> Parser::parseUnaryImpl() {
                 if (!operand) {
                     return nullptr;
                 }
+                // Match the unary precedence rule: postfix binds tighter than
+                // the cast, so `(int64)compile_time.int_max(int32)` parses as
+                // `(int64)(compile_time.int_max(int32))`.
+                operand = parsePostfix(std::move(operand));
                 return std::make_unique<CastExprAST>(castType, std::move(operand));
             }
             m_currentTokenPos = saved; // not a cast; reparse as an expression
@@ -1382,8 +1386,10 @@ std::unique_ptr<ExprAST> Parser::parsePostfix(std::unique_ptr<ExprAST> lhs) {
             case TokenType::TOKEN_DOT: {
                 advance(); // consume '.'
                 if (auto member = match(TokenType::TOKEN_IDENTIFIER)) {
-                    lhs = std::make_unique<MemberAccessExprAST>(
+                    auto node = std::make_unique<MemberAccessExprAST>(
                         MemberAccessKind::Dot, std::move(lhs), member->lexeme);
+                    applyLocation(node.get(), &*member);
+                    lhs = std::move(node);
                 } else {
                     errorUnexpected("expected member name after '.'");
                 }
@@ -1392,8 +1398,10 @@ std::unique_ptr<ExprAST> Parser::parsePostfix(std::unique_ptr<ExprAST> lhs) {
             case TokenType::TOKEN_ARROW: {
                 advance(); // consume '->'
                 if (auto member = match(TokenType::TOKEN_IDENTIFIER)) {
-                    lhs = std::make_unique<MemberAccessExprAST>(
+                    auto node = std::make_unique<MemberAccessExprAST>(
                         MemberAccessKind::Arrow, std::move(lhs), member->lexeme);
+                    applyLocation(node.get(), &*member);
+                    lhs = std::move(node);
                 } else {
                     errorUnexpected("expected member name after '->'");
                 }
@@ -4366,6 +4374,7 @@ bool Parser::isCompileTimeDeclStart() const {
 // P1-04 / CT-01: `compile_time.if (cond) { decls... } [else { decls... }]`。
 // 两个分支都 parse（spec compile_time.md §3 钉死），选择在 sema。
 std::unique_ptr<DeclAST> Parser::parseCompileTimeIf() {
+    Token start = *peek();
     advance(); // compile_time
     advance(); // .
     advance(); // if
@@ -4405,10 +4414,12 @@ std::unique_ptr<DeclAST> Parser::parseCompileTimeIf() {
             return nullptr;
         }
     }
+    node->setLocation(start.filename, start.line, start.column);
     return node;
 }
 
 std::unique_ptr<StmtAST> Parser::parseCompileTimeIfStmt() {
+    Token start = *peek();
     advance(); // compile_time
     advance(); // .
     advance(); // if
@@ -4432,10 +4443,12 @@ std::unique_ptr<StmtAST> Parser::parseCompileTimeIfStmt() {
         node->elseStmt = parseCompoundStmt();
         if (!node->elseStmt) return nullptr;
     }
+    node->setLocation(start.filename, start.line, start.column);
     return node;
 }
 
 std::unique_ptr<StmtAST> Parser::parseCompileTimeRepeatStmt() {
+    Token start = *peek();
     advance(); // compile_time
     advance(); // .
     advance(); // repeat
@@ -4454,12 +4467,15 @@ std::unique_ptr<StmtAST> Parser::parseCompileTimeRepeatStmt() {
     auto node = std::make_unique<CompileTimeRepeatStmtAST>();
     node->count = std::move(count);
     node->body = parseCompoundStmt();
-    return node->body ? std::move(node) : nullptr;
+    if (!node->body) return nullptr;
+    node->setLocation(start.filename, start.line, start.column);
+    return node;
 }
 
 // P1-04 / CT-01: `compile_time.static_assert(cond[, msg]);` —— 包装为
 // MethodCallExprAST（object=VariableExpr("compile_time")），sema 特判求值。
 std::unique_ptr<DeclAST> Parser::parseCompileTimeAssert() {
+    Token start = *peek();
     advance(); // compile_time
     advance(); // .
     std::string member = peek() ? peek()->lexeme : "static_assert";
@@ -4502,6 +4518,7 @@ std::unique_ptr<DeclAST> Parser::parseCompileTimeAssert() {
         std::make_unique<VariableExprAST>("compile_time"), member, std::move(args));
     auto node = std::make_unique<CompileTimeAssertDeclAST>();
     node->call = std::move(call);
+    node->setLocation(start.filename, start.line, start.column);
     return node;
 }
 

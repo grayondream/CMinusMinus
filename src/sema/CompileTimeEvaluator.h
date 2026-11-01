@@ -91,9 +91,11 @@ private:
     Type* builtinTypeByName(const std::string& name);
     Type* stripTypedef(Type* t);
     bool isAggregate(Type* t) const;
+    bool isCompleteAggregate(Type* t) const;
     bool isIntegerKind(Type* t) const;
     bool isFloatKind(Type* t) const;
     int integerBitWidth(Type* t) const;
+    bool typesSame(Type* a, Type* b);
 
     // Cached LayoutBuilder result for aggregates (memoized per Type* — repeated
     // size_of/field queries must not re-run layout).

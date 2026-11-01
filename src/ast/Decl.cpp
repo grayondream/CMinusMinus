@@ -1543,13 +1543,44 @@ llvm::Value* CompileTimeIfStmtAST::codegen(CodegenContext& ctx) {
 
 llvm::Value* CompileTimeRepeatStmtAST::codegen(CodegenContext& ctx) {
     if (!ctResolved || !body) return nullptr;
+    auto& builder = ctx.getBuilder();
+    llvm::Function* fn = builder.GetInsertBlock()->getParent();
+    llvm::BasicBlock* endBB =
+        llvm::BasicBlock::Create(ctx.getContext(), "ct.repeat.end", fn);
+    ctx.pushBreakBlock(endBB);
     llvm::Value* last = nullptr;
     for (int i = 0; i < iterations; ++i) {
-        if (ctx.getBuilder().GetInsertBlock()->getTerminator()) break;
+        if (builder.GetInsertBlock()->getTerminator()) break;
+        llvm::BasicBlock* contBB =
+            llvm::BasicBlock::Create(ctx.getContext(), "ct.repeat.cont", fn);
+        ctx.pushContinueBlock(contBB);
         ctx.pushScope();
         last = body->codegen(ctx);
         ctx.popScope();
+        ctx.popContinueBlock();
+
+        llvm::BasicBlock* cur = builder.GetInsertBlock();
+        if (auto* term = cur->getTerminator()) {
+            if (term->getNumSuccessors() == 1 && term->getSuccessor(0) == contBB) {
+                // `continue`: resume at the next unrolled iteration.
+                builder.SetInsertPoint(contBB);
+                continue;
+            }
+            // `break`/`return`/`unreachable`: no further iterations. Keep the
+            // already-created continue block well-formed.
+            if (!contBB->getTerminator()) {
+                builder.SetInsertPoint(contBB);
+                builder.CreateBr(endBB);
+            }
+            break;
+        }
+        builder.CreateBr(contBB);
+        builder.SetInsertPoint(contBB);
     }
+    ctx.popBreakBlock();
+    if (!builder.GetInsertBlock()->getTerminator())
+        builder.CreateBr(endBB);
+    builder.SetInsertPoint(endBB);
     return last;
 }
 
