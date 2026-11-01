@@ -1,0 +1,124 @@
+// ===== std.thread — pthread-backed thread lifecycle (v1: Linux x86-64) =====
+// Import with `import std.thread;`. Thread owns no destructor: call join() or
+// detach() before the Thread leaves scope. Errors are reported through bool
+// returns plus last_error(); no exceptions.
+module std.thread;
+
+export namespace std {
+
+using ThreadFn = void* (*)(void*);
+
+// pthread_t is an unsigned long on the v1 target; carry it as usize.
+extern int32 pthread_create(usize* thread, void* attr, ThreadFn start, void* arg);
+extern int32 pthread_join(usize thread, void** retval);
+extern int32 pthread_detach(usize thread);
+extern usize pthread_self();
+extern int32 pthread_equal(usize a, usize b);
+extern int32 usleep(uint32 usec);
+extern int32 sched_yield();
+extern int64 sysconf(int32 name);
+
+// Linux _SC_NPROCESSORS_ONLN.
+constexpr int32 SYS_NPROCESSORS_ONLN = 84;
+
+struct Thread {
+    usize handle;
+    bool active;
+    bool detached;
+    int32 last_error;
+
+    void init() {
+        this->handle = 0;
+        this->active = false;
+        this->detached = false;
+        this->last_error = 0;
+    }
+
+    bool start(void* (*fn)(void*), void* arg) {
+        if (this->active) {
+            this->last_error = -1;
+            return false;
+        }
+        this->last_error = 0;
+        int32 rc = pthread_create(&this->handle, null, fn, arg);
+        if (rc != 0) {
+            this->last_error = rc;
+            this->handle = 0;
+            this->active = false;
+            return false;
+        }
+        this->active = true;
+        this->detached = false;
+        return true;
+    }
+
+    bool join() {
+        if (!this->active || this->detached) {
+            this->last_error = -1;
+            return false;
+        }
+        int32 rc = pthread_join(this->handle, null);
+        if (rc != 0) {
+            this->last_error = rc;
+            return false;
+        }
+        this->active = false;
+        this->handle = 0;
+        return true;
+    }
+
+    bool detach() {
+        if (!this->active || this->detached) {
+            this->last_error = -1;
+            return false;
+        }
+        int32 rc = pthread_detach(this->handle);
+        if (rc != 0) {
+            this->last_error = rc;
+            return false;
+        }
+        this->active = false;
+        this->detached = true;
+        return true;
+    }
+
+    bool joinable() {
+        return this->active && !this->detached;
+    }
+
+    usize get_id() {
+        return this->handle;
+    }
+
+    int32 error() {
+        return this->last_error;
+    }
+};
+
+uint32 hardware_concurrency() {
+    int64 n = sysconf(SYS_NPROCESSORS_ONLN);
+    if (n < 1) return 0;
+    return (uint32)n;
+}
+
+usize this_thread_get_id() {
+    return pthread_self();
+}
+
+void this_thread_yield() {
+    sched_yield();
+}
+
+void this_thread_sleep_ms(uint32 ms) {
+    while (ms > 0) {
+        uint32 chunk = ms > 1000 ? 1000 : ms;
+        usleep(chunk * 1000);
+        ms = ms - chunk;
+    }
+}
+
+bool thread_equal(usize a, usize b) {
+    return pthread_equal(a, b) != 0;
+}
+
+} // namespace std

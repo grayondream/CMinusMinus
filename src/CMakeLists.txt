@@ -3,6 +3,11 @@ list(FILTER SOURCES EXCLUDE REGEX ".*main\\.cpp$")
 
 add_library(my_llvm_c_lib ${SOURCES})
 
+# std.thread wraps pthread; the JIT/test process and generated programs need
+# the thread symbols and -pthread flags.
+find_package(Threads REQUIRED)
+target_link_libraries(my_llvm_c_lib PUBLIC Threads::Threads)
+
 target_include_directories(my_llvm_c_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # mimalloc is the process allocator (JIT/tests) and is linked into programs

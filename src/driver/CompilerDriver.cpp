@@ -488,6 +488,9 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
     if (haveMimalloc) linkLibs.push_back("mimalloc");
     // std.math binds libm; without this the documented module fails to link.
     linkLibs.push_back("m");
+    // std.thread binds pthread; glibc 2.34+ folds it into libc, but keep the
+    // explicit library for older toolchains and deterministic behavior.
+    linkLibs.push_back("pthread");
 
     Linker linker;
     int ret = linker.link({objectPath}, outputFile, linkLibs, linkPaths);
