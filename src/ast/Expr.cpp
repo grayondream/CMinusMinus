@@ -1727,7 +1727,9 @@ llvm::Value* MethodCallExprAST::codegen(CodegenContext& ctx) {
         }
     }
 
-    std::string mangledName = mangleFunction(methodName, argTypes);
+    std::string mangledName = !mangledCallee.empty()
+        ? mangledCallee
+        : mangleFunction(methodName, argTypes);
 
     llvm::Function* calleeFn = ctx.getModule().getFunction(mangledName);
     if (!calleeFn) {

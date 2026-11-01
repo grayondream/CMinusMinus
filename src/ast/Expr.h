@@ -492,6 +492,10 @@ public:
     // Declared parameter types (incl. this at index 0) filled by sema so
     // codegen mangles against the definition site. Mirror of CallExprAST.
     std::vector<Type*> resolvedParamTypes;
+    // Namespace-qualified method definition name chosen by sema. The
+    // definition side applies the namespace prefix (`std_init`), while the
+    // call-site spelling is bare (`init`); codegen must reuse this name.
+    std::string mangledCallee;
 
     // FUN-09: folded values for trailing default arguments (position i fills
     // resolvedParamTypes[args.size()+1+i] — index 0 is `this`).

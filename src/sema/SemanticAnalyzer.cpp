@@ -5569,6 +5569,15 @@ void SemanticAnalyzer::visit(MethodCallExprAST& node) {
     // Store the declared parameter types (incl. this) so codegen mangles
     // against the definition site — required for decayed arguments.
     node.resolvedParamTypes = funcType->paramTypes;
+    // Namespace members are emitted under a mangled key (`std_init`), but the
+    // call spelling is bare (`init`). Reuse the definition-side name.
+    if (definingClass) {
+        auto dit = m_methodDecls.find(definingClass->name + "::" + node.methodName);
+        if (dit != m_methodDecls.end() && dit->second) {
+            node.mangledCallee =
+                mangleFunction(dit->second->name, funcType->paramTypes);
+        }
+    }
     // FUN-09: fold default values for trailing params not supplied.
     if (node.args.size() + 1 < funcType->paramTypes.size()) {
         auto dit = m_methodDecls.find(definingClass->name + "::" + node.methodName);
