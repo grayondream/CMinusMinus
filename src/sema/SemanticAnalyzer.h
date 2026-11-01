@@ -356,6 +356,10 @@ private:
     std::unique_ptr<CompileTimeEvaluator> m_ctEval;
     std::unordered_set<std::string> definedFunctions;
     std::unordered_map<std::string, FunctionDeclAST*> constexprFunctions;
+    // All user functions (by source and mangled name). The compile-time
+    // evaluator uses this to interpret side-effect-free callbacks such as
+    // std.hash's equality functions, which are not marked constexpr.
+    std::unordered_map<std::string, FunctionDeclAST*> m_allFunctions;
     ConstEnv* activeEnv = nullptr; // innermost constexpr call environment
     int constexprCallDepth = 0;    // guards runaway constexpr recursion
     static constexpr int kConstexprMaxDepth = 128;
@@ -364,6 +368,10 @@ private:
     std::size_t ctSteps = 0;
     int ctEvalDepth = 0;
     bool ctStepReported = false;
+    // True while interpreting a function body for constant evaluation. Only
+    // then may a non-constexpr helper (e.g. std.hash callbacks) be evaluated;
+    // top-level constexpr initializers still require constant expressions.
+    bool m_ctInFunctionBody = false;
     bool ctStepAllowance(ASTNode& at);
     std::string namespacePrefix;   // e.g. "A_B_" while analyzing namespace A::B
 };

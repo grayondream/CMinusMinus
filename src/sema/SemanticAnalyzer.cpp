@@ -1457,16 +1457,27 @@ bool SemanticAnalyzer::analyzeReflectionCall(MethodCallExprAST& node) {
 std::optional<SemanticAnalyzer::ConstValue>
 SemanticAnalyzer::evalConstexprCallCT(CallExprAST& call,
                                       const std::vector<ConstValue>& argValues) {
+    auto lookup = [&](const std::string& name) -> FunctionDeclAST* {
+        auto ct = constexprFunctions.find(name);
+        if (ct != constexprFunctions.end()) return ct->second;
+        if (m_ctInFunctionBody) {
+            auto all = m_allFunctions.find(name);
+            if (all != m_allFunctions.end()) return all->second;
+        }
+        return nullptr;
+    };
     std::string calleeName = call.callee;
-    auto it = constexprFunctions.find(calleeName);
-    if (it == constexprFunctions.end()) {
+    FunctionDeclAST* fn = lookup(calleeName);
+    if (!fn) {
         calleeName = resolveNamespaceName(calleeName);
-        it = constexprFunctions.find(calleeName);
+        fn = lookup(calleeName);
     }
-    if (it == constexprFunctions.end()) {
+    if (!fn && !call.resolvedParamTypes.empty()) {
+        fn = lookup(mangleFunction(call.callee, call.resolvedParamTypes));
+    }
+    if (!fn) {
         return std::nullopt;
     }
-    FunctionDeclAST* fn = it->second;
     if (!fn->body || argValues.size() != fn->params.size()) {
         return std::nullopt;
     }
@@ -1481,8 +1492,11 @@ SemanticAnalyzer::evalConstexprCallCT(CallExprAST& call,
         ctStepReported = false;
     }
     constexprCallDepth++;
+    bool savedInBody = m_ctInFunctionBody;
+    m_ctInFunctionBody = true;
     CtFlow flow = CtFlow::Normal;
     auto result = evalConstexprStmt(fn->body.get(), env, 1, flow);
+    m_ctInFunctionBody = savedInBody;
     constexprCallDepth--;
     activeEnv = saved;
     return flow == CtFlow::Return ? result : std::nullopt;
@@ -1685,6 +1699,13 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
     }
 
     if (auto* var = dynamic_cast<VariableExprAST*>(expr)) {
+        if (var->isFunctionRef) {
+            ConstValue fn;
+            fn.type = ConstValue::FUNC;
+            fn.funcName = var->resolvedFunctionName.empty()
+                              ? var->name : var->resolvedFunctionName;
+            return fn;
+        }
         // A parameter/local of the constexpr function being interpreted shadows
         // any module-level constexpr variable.
         if (activeEnv) {
@@ -1728,17 +1749,30 @@ SemanticAnalyzer::evalConstexprCall(CallExprAST& call, int depth) {
     }
     // The call may not have been through visit(CallExprAST) yet (e.g. a
     // `constexpr` initializer is folded before its subexpressions are typed),
-    // so resolve a namespace-qualified callee here as well.
+    // so resolve a namespace-qualified callee here as well. Callbacks used by
+    // compile-time containers need not be marked constexpr, so fall back to
+    // the all-functions table.
+    auto lookup = [&](const std::string& name) -> FunctionDeclAST* {
+        auto ct = constexprFunctions.find(name);
+        if (ct != constexprFunctions.end()) return ct->second;
+        if (m_ctInFunctionBody) {
+            auto all = m_allFunctions.find(name);
+            if (all != m_allFunctions.end()) return all->second;
+        }
+        return nullptr;
+    };
     std::string calleeName = call.callee;
-    auto it = constexprFunctions.find(calleeName);
-    if (it == constexprFunctions.end()) {
+    FunctionDeclAST* fn = lookup(calleeName);
+    if (!fn) {
         calleeName = resolveNamespaceName(calleeName);
-        it = constexprFunctions.find(calleeName);
+        fn = lookup(calleeName);
     }
-    if (it == constexprFunctions.end()) {
-        return std::nullopt; // not a constexpr function (e.g. a libc call)
+    if (!fn && !call.resolvedParamTypes.empty()) {
+        fn = lookup(mangleFunction(call.callee, call.resolvedParamTypes));
     }
-    FunctionDeclAST* fn = it->second;
+    if (!fn) {
+        return std::nullopt; // not a user function (e.g. a libc call)
+    }
     if (!fn->body || call.args.size() != fn->params.size()) {
         return std::nullopt;
     }
@@ -1756,8 +1790,11 @@ SemanticAnalyzer::evalConstexprCall(CallExprAST& call, int depth) {
     ConstEnv* saved = activeEnv;
     activeEnv = &env;
     constexprCallDepth++;
+    bool savedInBody = m_ctInFunctionBody;
+    m_ctInFunctionBody = true;
     CtFlow flow = CtFlow::Normal;
     auto result = evalConstexprStmt(fn->body.get(), env, depth + 1, flow);
+    m_ctInFunctionBody = savedInBody;
     constexprCallDepth--;
     activeEnv = saved;
     return flow == CtFlow::Return ? result : std::nullopt;
@@ -6384,6 +6421,8 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
     }
     auto* funcType = new FunctionType(node.returnType, std::move(paramTypes), node.isVarArg);
     std::string signature = mangleFunction(node.name, funcType->paramTypes);
+    m_allFunctions[node.name] = &node;
+    m_allFunctions[signature] = &node;
     Symbol* declaredSym = declareSymbol(node.name, funcType);
     if (!declaredSym) {
         // A matching declaration already exists. That is legal for repeated

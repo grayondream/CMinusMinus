@@ -146,6 +146,14 @@ int32 main() { constexpr int32 x = sumOdd(9); return x - 25; }
 )", "test_constexpr_do_while.c"), 0);
 }
 
+TEST_F(ConstexprFunctionE2E, ConstexprCallbackCall) {
+    EXPECT_EQ(runSource(R"(
+uint64 mix(uint64 x) { return (x ^ (x >> 30)) * 3; }
+constexpr uint64 apply(uint64 x) { return mix(x); }
+int32 main() { constexpr uint64 v = apply(7); return v == mix(7) ? 0 : 1; }
+)", "test_constexpr_callback.c"), 0);
+}
+
 TEST_F(ConstexprFunctionE2E, ConstexprCompoundAssignAndInc) {
     EXPECT_EQ(runSource(R"(
 constexpr int32 calc() {
