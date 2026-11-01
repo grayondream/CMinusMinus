@@ -1115,3 +1115,17 @@
 - **SG-07 相邻字符串拼接**：parser 字符串主表达式拼接相邻 token（含 raw/多行），`"ab" "cd"` → `"abcd"`。
 - **示例**：`all_features.c`、`full_feature.c` 新增第 27 节覆盖上述 7 项。
 - **验证**：新增 7 个 `SyntaxGapsE2E` 回归测试；全量 `ctest --test-dir build -j8` **1611/1611** 通过（2 个既有 `GTEST_SKIP`）；两个示例输出 `ALL FEATURES OK` / `FULL FEATURE OK`。
+
+## 2026-11-01 — compile_time 开发体验（CTX-01，CT-15 ~ CT-21）
+
+- 背景：按已确认的 1 → 2 → 3 计划，为 `compile_time` 补充开发期便利设施；所有新增标量查询必须停留在编译期，不能引入运行时调用或运行时循环。
+- 完成事项：
+  - **第一批（CT-15/16/17/18）**：`file/line/column/function`；`fail/warn/debug`；`assert_eq/ne/size/align/offset`；`is_same`/`is_*` 类型谓词；`int_min/max`、`uint_max`、`bit_width`、`float_epsilon/max/digits`；`has_field`/`field_*`；`has_attribute`/`attribute_*`；`target.endian/pointer_width/triple/has_feature/is`；`build.mode/compiler/host_*`、`version.major/minor/patch/at_least`。
+  - **第二批（CT-17/19）**：`size_of(expr)`/`align_of(expr)`、`offset_of(T,"a.b")`、裸字段名、`bit_size_of`、`padding_of`、`is_packed`、`type_name_of`/`type_kind_of`、`enum_*`、`method_*`/`base_name_of`/`is_base_of`、`layout_size_of/align_of`、`format`/`to_string`。
+  - **第三批（CT-20/21）**：`type_of/array_of/pointer_to/const_of` 编译期类型值；`is_convertible/is_assignable`；`template_name_of/template_arg_count/template_arg_name`；`compile_time.repeat(N) { ... }` 编译期展开（上限 1024，零运行时循环）。
+  - 性能：`CompileTimeEvaluator` 新增按 `Type*` 的 `LayoutBuilder` 缓存；标量查询继续走 `ctInt/ctFloat` 的 LLVM 常量路径；仅 `fields_of/attributes_of` 保留运行时只读表。
+- 关键文件：`src/frontend/Parser.{h,cpp}`（`CTArgPolicy`、repeat 解析）、`src/sema/CompileTimeEvaluator.{h,cpp}`（查询分派/布局缓存/字段/枚举/类/格式化/类型值）、`src/sema/SemanticAnalyzer.{h,cpp}`（诊断/断言/布尔与无符号映射/repeat）、`src/ast/Type.h`（字段注解保留、`Type::annotations`）、`src/ast/Decl.{h,cpp}`（`CompileTimeRepeatStmtAST`）、`src/ast/Expr.h`（`ConstValue::TYPE` 配套节点字段）。
+- 测试：新增 `tests/sema/test_compile_time_ergonomics.cpp`（25 个 case）、`tests/frontend/test_compile_time_parse.cpp` 的 `IsSameWrapsBothTypeArgs`/`AssertSizeFirstTypeRestExpr`/`FailTakesExpressionArg`/`RepeatParses`、`tests/e2e/test_compile_time.cpp` 的 `ErgonomicsScalarQueries`/`ErgonomicsReflectionQueries`/`ErgonomicsBatch2Queries`/`RepeatUnrollsAtCompileTime`。
+- 验证：`ctest --test-dir build -j8` → **1648/1648** 通过，2 个既有 `GTEST_SKIP` 不变。
+- 文档：`docs/spec/compile_time.md`（§4/§5/§7/§9 扩展）、`docs/spec/grammar.ebnf`（compile-time-member/repeat）、`TODO.md`（CT-15 ~ CT-22）、本文件。
+- 遗留：**CT-22** `compile_time.for_fields(T, f)` / `for_enum_values(E, v)` 未实现——直接复用同一 body AST 无法为每个字段/枚举值生成不同的运行时绑定，需要 AST 克隆或 codegen 特化；不以运行时循环冒充编译期展开。**CT-09** 哈希缓存仍未做（当前仅 Type* 布局缓存）。

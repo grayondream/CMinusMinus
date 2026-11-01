@@ -39,19 +39,30 @@ compile_time.if (compile_time.target.os == "linux") {
 
 | 成员 | 类型 | 取值示例 |
 |---|---|---|
-| `compile_time.target.os` | `str` | `"linux"`, `"macos"`, `"windows"` |
-| `compile_time.target.arch` | `str` | `"x86_64"`, `"aarch64"` |
-| `compile_time.target.cpu` | `str` | CPU 名（来自目标三元组/特性） |
+| `compile_time.target.os` | `string_view` | `"linux"`, `"macos"`, `"windows"` |
+| `compile_time.target.arch` | `string_view` | `"x86_64"`, `"aarch64"` |
+| `compile_time.target.cpu` | `string_view` | CPU 名（来自目标三元组/特性） |
+| `compile_time.target.endian` | `string_view` | `"little"` / `"big"` |
+| `compile_time.target.pointer_width` | `usize` | 指针位宽（当前 host 64） |
+| `compile_time.target.triple` | `string_view` | 默认目标三元组 |
+| `compile_time.target.is("linux")` | `bool` | OS 比较的便捷形式 |
+| `compile_time.target.has_feature("avx2")` | `bool` | host CPU 特性查询 |
 
-- 取值来自 `-target` 三元组（CG-16），保证跨平台可预测。
+- 取值来自 `-target` 三元组（CG-16）/ host 默认三元组，保证跨平台可预测。
 
 ## 5. 构建查询（CT-05）
 
 | 成员 | 类型 | 说明 |
 |---|---|---|
 | `compile_time.build.debug` | `bool` | Debug 构建 |
-| `compile_time.build.optimize` | `str` | `"O0".."O3"/"Os"/"Oz"` |
-| `compile_time.build.version` | `str` | 编译器版本（无 edition，见 NG-06） |
+| `compile_time.build.optimize` | `string_view` | `"O0".."O3"/"Os"/"Oz"` |
+| `compile_time.build.mode` | `string_view` | `"debug"` / `"release"` |
+| `compile_time.build.compiler` | `string_view` | `"my_llvm_c"` |
+| `compile_time.build.host_os` | `string_view` | host OS |
+| `compile_time.build.host_arch` | `string_view` | host 架构 |
+| `compile_time.build.version` | `string_view` | 编译器版本（无 edition，见 NG-06） |
+| `compile_time.version.major/minor/patch` | `usize` | 语义化版本分量 |
+| `compile_time.version.at_least("x.y.z")` | `bool` | 版本下限判断 |
 
 ## 6. 编译期求值器（CT-06）
 
@@ -67,16 +78,79 @@ compile_time.if (compile_time.target.os == "linux") {
 | API | 返回 | 说明 |
 |---|---|---|
 | `compile_time.name_of(T)` | `string_view` | 类型名（`typeToString`） |
-| `compile_time.size_of(T)` | `usize` | 分配大小 |
-| `compile_time.align_of(T)` | `usize` | ABI 对齐 |
-| `compile_time.fields_of(T)` | `Slice<FieldInfo>` | 字段列表（仅聚合类型） |
-| `compile_time.offset_of(T, "f")` | `usize` | 字段偏移 |
-| `compile_time.attributes_of(T)` | `Slice<Attribute>` | 注解列表（当前含 deprecated 标记） |
+| `compile_time.size_of(T)` / `size_of(expr)` | `usize` | 分配大小；表达式形式按表达式类型 |
+| `compile_time.align_of(T)` / `align_of(expr)` | `usize` | ABI 对齐；表达式形式按表达式类型 |
+| `compile_time.bit_size_of(T)` | `usize` | 位大小 |
+| `compile_time.padding_of(T)` | `usize` | 聚合填充字节数（含尾填充） |
+| `compile_time.is_packed(T)` | `bool` | `[[packed]]` 查询 |
+| `compile_time.offset_of(T, "f")` / `offset_of(T, f)` / `offset_of(T, "a.b")` | `usize` | 字段/嵌套字段偏移；位域拒绝 |
+| `compile_time.fields_of(T)` | `Slice<FieldInfo>` | 运行时字段表（仅聚合类型） |
+| `compile_time.attributes_of(T)` | `Slice<Attribute>` | 运行时注解读表（当前含 deprecated 标记） |
 
 - `FieldInfo` 内建类型：`{ string_view name; usize offset; usize size; }`。
-- `Attribute` 内建类型：`{ string_view name; }`（`args` 反射另轮）。
-- 反射结果经 sema→codegen 注册表物化为全局常量数组 + slice 视图（运行时生命周期 = 程序全程）。
+- `Attribute` 内建类型：`{ string_view name; }`。
+- 反射表经 sema→codegen 注册表物化为全局常量数组 + slice 视图（运行时生命周期 = 程序全程）。
 - 取代 `type_info(T)`（NG-12）；类型/ABI 细节见 [`abi.md`](./abi.md)。
+
+### 7.1 编译期标量查询
+
+下列 API **只返回编译期常量**，不生成运行时调用、不生成全局表：
+
+| 类别 | API |
+|---|---|
+| 类型谓词 | `is_same(A,B)`、`is_integer`、`is_float`、`is_bool`、`is_pointer`、`is_array`、`is_aggregate`、`is_class`、`is_struct`、`is_union`、`is_enum`、`is_void`、`is_signed` |
+| 数值极限 | `int_min(T)`、`int_max(T)`、`uint_max(T)`、`bit_width(T)`、`float_epsilon(T)`、`float_max(T)`、`float_digits(T)` |
+| 类型名 | `type_name_of(expr)`、`type_kind_of(expr)`（kind 为 `integer`/`float`/`pointer`/`struct`/...） |
+| 布局 | `layout_size_of(T)`、`layout_align_of(T)` |
+| 字段 | `has_field(T,"f")`、`field_count_of(T)`、`field_name_at(T,i)`、`field_type_name_of(T,"f")`、`field_size_of(T,"f")`、`field_offset_of(T,"f")`、`field_is_bitfield(T,"f")`、`field_bit_width_of(T,"f")` |
+| 字段注解 | `field_annotation_count_of(T,"f")`、`field_annotation_name_at(T,"f",i)`、`field_annotation_arg_of(T,"f","name",i)` |
+| 类型注解 | `has_attribute(T,"name")`、`attribute_count_of(T)`、`attribute_name_at(T,i)`、`attribute_arg_of(T,"name",i)` |
+| 枚举 | `enum_count_of(E)`、`enum_name_at(E,i)`、`enum_value_at(E,i)`、`enum_value_of(E,"name")`、`enum_name_of(E,value)`、`enum_underlying_name(E)` |
+| 类/继承 | `method_count_of(C)`、`has_method(C,"f")`、`method_name_at(C,i)`、`method_param_count(C,"f")`、`method_param_type_name(C,"f",i)`、`method_return_type_name(C,"f")`、`base_name_of(C)`、`is_base_of(Base,Derived)` |
+| 源码位置 | `file`、`line`、`column`、`function` |
+
+- 字段查询基于 `semanticFields`，位域不会在布局物化后丢失。
+- `field_offset_of` 对位域发出 `cannot take offset of a bit-field`。
+- `uint_max(uint64)` 以 `uint64` 位模式返回；`int128/uint128` 极限超出当前 `ConstValue` 64 位表示，诊断拒绝。
+- `method_*` 继承链查找；静态方法不在 `ClassType::methods` 中，因此不参与这些查询。
+
+### 7.2 诊断、断言与格式化
+
+| API | 说明 |
+|---|---|
+| `compile_time.fail(msg)` | 无条件编译错误 |
+| `compile_time.warn(msg)` | 编译警告（受 `-Werror` 影响） |
+| `compile_time.debug(msg)` | 仅 Debug 构建输出警告；Release 静默 |
+| `compile_time.assert_eq(a,b)` / `assert_ne(a,b)` | 常量比较；失败消息含两侧值 |
+| `compile_time.assert_size(T,N)` / `assert_align(T,N)` / `assert_offset(T,"f",N)` | 布局断言；失败消息含实际/期望值 |
+| `compile_time.format(fmt, args...)` | 编译期格式化，支持 `%d/%i/%u/%x/%X/%s/%c/%f/%%` |
+| `compile_time.to_string(value)` | 编译期常量转字符串；bool 输出 `true`/`false` |
+
+字符串结果只能用于编译期上下文；逃逸到运行时报
+`compile-time string value cannot be used in runtime context`。
+
+### 7.3 类型值、转换与模板内省
+
+| API | 说明 |
+|---|---|
+| `type_of(T)`、`array_of(T,N)`、`pointer_to(T)`、`const_of(T)` | 编译期类型值，可嵌套进其他类型查询（如 `size_of(array_of(int32,4))`） |
+| `is_convertible(A,B)`、`is_assignable(A,B)` | 基于现有隐式转换秩 |
+| `template_name_of(T)`、`template_arg_count(T)`、`template_arg_name(T,i)` | 模板实例占位内省 |
+
+类型值不得逃逸到运行时；`compile-time type value cannot be used in runtime context`。
+
+### 7.4 编译期重复展开
+
+```smc
+compile_time.repeat(3) {
+    total += 1;
+}
+```
+
+- 计数必须是编译期非负整数，上限 1024。
+- sema 只分析一次 body；codegen 展开 `iterations` 份，每次使用独立作用域。
+- 不生成运行时循环计数器；`break`/`continue`/`return` 在展开体中按现有控制流语义终止。
+- 字段/枚举遍历（`for_fields`/`for_enum_values`）需要 AST 克隆或 codegen 特化，暂未实现。
 
 ## 8. 类型作为值（CT-08）
 
@@ -89,6 +163,10 @@ compile_time.if (compile_time.target.os == "linux") {
 - **诊断（CT-10）**：错误包含源码位置、求值栈、原因；失败即中止该编译单元。
 - **沙箱（CT-11）**：默认禁止文件/网络/系统访问；如需，必须显式白名单（接口待定）。
 - **LLVM 常量集成（CT-12）**：求值结果直接生成 `llvm::Constant`，不留运行时指令。
+- **CTX-01 性能边界**：类型谓词、极限、字段/枚举/类查询全部是编译期标量，零运行时 IR；
+  `LayoutBuilder` 结果按 `Type*` 在单次 sema 内缓存，重复 `size_of`/字段查询不重复布局。
+  仅 `fields_of`/`attributes_of` 保留运行时只读表；`compile_time.repeat` 展开代码但不生成
+  运行时循环计数器。
 
 ## 10. 与 `constexpr` 的边界（CT-14 / DEC-05）
 
@@ -110,3 +188,4 @@ compile_time.if (compile_time.target.os == "linux") {
 | DEC-05 | `constexpr` 与 `compile_time` 是否合并 |
 | DEC-09 | 内联 `asm`（与 `compile_time` 正交，但共享目标查询） |
 | CT-13 | 反射 API 精确签名与返回类型 |
+| CT-22 | `for_fields`/`for_enum_values` 的 AST 克隆或 codegen 特化方案 |

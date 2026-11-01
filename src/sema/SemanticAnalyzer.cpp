@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <climits>
 #include <functional>
+#include <sstream>
 #include <unordered_map>
 
 // Strip any number of typedef/alias layers, returning the underlying type.
@@ -905,9 +906,47 @@ bool SemanticAnalyzer::containsCompileTimeRoot(const ExprAST* expr) {
 }
 
 // INT 结果的节点类型映射：按值域 int32/int64（spec §4）。
-static Type* ctIntTypeFor(TypeContext* typeCtx, long long v) {
+// CTX-01: unsigned limits (uint_max) keep their unsigned type.
+static Type* ctIntTypeFor(TypeContext* typeCtx, long long v,
+                          bool isUnsigned = false) {
+    if (isUnsigned) return typeCtx->getUInt64();
     return (v < -2147483648LL || v > 2147483647LL)
         ? typeCtx->getInt64() : typeCtx->getInt32();
+}
+
+// CTX-01: scalar boolean queries. Keeping their AST type bool lets users
+// assign the result to a bool parameter without an extra cast.
+static bool ctBoolQuery(const std::string& name) {
+    return name == "is_same" || name == "is_integer" || name == "is_float" ||
+           name == "is_bool" || name == "is_pointer" || name == "is_array" ||
+           name == "is_aggregate" || name == "is_class" || name == "is_struct" ||
+           name == "is_union" || name == "is_enum" || name == "is_void" ||
+           name == "is_signed" || name == "is_convertible" ||
+           name == "is_assignable" || name == "has_field" ||
+           name == "has_attribute" || name == "field_is_bitfield" ||
+           name == "has_method" || name == "is_base_of" || name == "is" ||
+           name == "at_least" ||
+           name == "has_feature" || name == "debug";
+}
+
+// CTX-01: human-readable value for assertion diagnostics.
+static std::string ctValueToString(const CompileTimeEvaluator::ConstValue& v) {
+    switch (v.type) {
+        case CompileTimeEvaluator::ConstValue::INT:
+            return std::to_string(v.intVal);
+        case CompileTimeEvaluator::ConstValue::DOUBLE: {
+            std::ostringstream os;
+            os << v.doubleVal;
+            return os.str();
+        }
+        case CompileTimeEvaluator::ConstValue::CHAR:
+            return std::string("'") + v.charVal + "'";
+        case CompileTimeEvaluator::ConstValue::STR:
+            return "\"" + v.strVal + "\"";
+        case CompileTimeEvaluator::ConstValue::TYPE:
+            return "<type>";
+    }
+    return "?";
 }
 
 // P1-04 评审 I3: 沿 typedef/指针/数组包装层检查毒化标志，返回毒化层
@@ -1115,10 +1154,15 @@ bool SemanticAnalyzer::tryAnalyzeCompileTimeChain(MemberAccessExprAST& node) {
     switch (v->type) {
         case ConstValue::INT:
             node.ctInt = v->intVal;
-            // 成员值类型映射（spec §4）：build.debug → bool，其余按值域。
-            node.type = (members.size() == 2 && members[0] == "build" && members[1] == "debug")
-                ? typeCtx->getBool()
-                : ctIntTypeFor(typeCtx, v->intVal);
+            // 成员值类型映射（spec §4）：bool 查询 → bool，无符号极限 →
+            // uint64，其余按值域。
+            if (!members.empty() && ctBoolQuery(members.back())) {
+                node.type = typeCtx->getBool();
+            } else if (v->isUnsigned) {
+                node.type = typeCtx->getUInt64();
+            } else {
+                node.type = ctIntTypeFor(typeCtx, v->intVal);
+            }
             break;
         case ConstValue::DOUBLE:
             node.ctFloat = v->doubleVal;
@@ -1126,6 +1170,10 @@ bool SemanticAnalyzer::tryAnalyzeCompileTimeChain(MemberAccessExprAST& node) {
             break;
         case ConstValue::CHAR:
             // CHAR 有运行时类型——防御回退（评审 I2）。
+            node.type = nullptr;
+            break;
+        case ConstValue::TYPE:
+            emitError("compile-time type value cannot be used in runtime context", node);
             node.type = nullptr;
             break;
         default: // STR
@@ -1173,6 +1221,125 @@ bool SemanticAnalyzer::tryAnalyzeCompileTimeCall(MethodCallExprAST& node) {
         return true;
     }
 
+    // CTX-01: compile-time diagnostics.
+    if (node.methodName == "fail" || node.methodName == "warn" ||
+        node.methodName == "debug") {
+        if (node.args.size() != 1) {
+            emitError("compile_time." + node.methodName + " requires exactly one message", node);
+            node.type = nullptr;
+            return true;
+        }
+        auto msg = ctEval().eval(node.args[0].get(), node);
+        if (!msg || msg->type != ConstValue::STR) {
+            emitError("compile_time." + node.methodName + " message must be a compile-time string",
+                      node);
+            node.type = nullptr;
+            return true;
+        }
+        if (node.methodName == "fail") {
+            emitError("compile_time.fail: " + msg->strVal, node);
+        } else if (node.methodName == "warn") {
+            emitWarning("compile_time.warn: " + msg->strVal, node);
+        } else if (m_ctBuildDebug) {
+            emitWarning("compile_time.debug: " + msg->strVal, node);
+        }
+        node.type = nullptr;
+        return true;
+    }
+
+    // CTX-01: assertion helpers. They are sema-only and emit no runtime code.
+    if (node.methodName == "assert_eq" || node.methodName == "assert_ne") {
+        if (node.args.size() != 2) {
+            emitError("compile_time." + node.methodName + " requires (left, right)", node);
+            node.type = nullptr;
+            return true;
+        }
+        auto left = ctEval().eval(node.args[0].get(), node);
+        auto right = ctEval().eval(node.args[1].get(), node);
+        if (!left || !right) {
+            emitError("compile_time." + node.methodName +
+                          " arguments must be compile-time constants",
+                      node);
+            node.type = nullptr;
+            return true;
+        }
+        bool equal = left->type == right->type;
+        if (equal) {
+            switch (left->type) {
+                case ConstValue::INT: equal = left->intVal == right->intVal; break;
+                case ConstValue::DOUBLE: equal = left->doubleVal == right->doubleVal; break;
+                case ConstValue::CHAR: equal = left->charVal == right->charVal; break;
+                case ConstValue::STR: equal = left->strVal == right->strVal; break;
+            }
+        }
+        const bool wantEqual = node.methodName == "assert_eq";
+        if (equal != wantEqual) {
+            emitError("compile_time." + node.methodName + " failed: " +
+                          ctValueToString(*left) + " vs " + ctValueToString(*right),
+                      node);
+        }
+        node.type = nullptr;
+        return true;
+    }
+    if (node.methodName == "assert_size" || node.methodName == "assert_align" ||
+        node.methodName == "assert_offset") {
+        const bool isOffset = node.methodName == "assert_offset";
+        const size_t expectedArgs = isOffset ? 3 : 2;
+        if (node.args.size() != expectedArgs) {
+            emitError("compile_time." + node.methodName + " has the wrong argument count", node);
+            node.type = nullptr;
+            return true;
+        }
+        Type* argType = nullptr;
+        if (auto* sized = dynamic_cast<SizeofExprAST*>(node.args[0].get()))
+            argType = sized->sizeofType;
+        else if (auto* name = dynamic_cast<VariableExprAST*>(node.args[0].get()))
+            argType = resolveTypeByName(name->name);
+        if (!argType) {
+            emitError("unknown type in compile_time." + node.methodName, node);
+            node.type = nullptr;
+            return true;
+        }
+        std::string field;
+        if (isOffset) {
+            if (auto* s = dynamic_cast<StringExprAST*>(node.args[1].get())) field = s->value;
+            else if (auto* v = dynamic_cast<VariableExprAST*>(node.args[1].get())) field = v->name;
+            else {
+                emitError("compile_time.assert_offset field must be a string literal", node);
+                node.type = nullptr;
+                return true;
+            }
+        }
+        auto expected = ctEval().eval(node.args[expectedArgs - 1].get(), node);
+        if (!expected || expected->type != ConstValue::INT) {
+            emitError("compile_time." + node.methodName +
+                          " expected value must be a compile-time integer",
+                      node);
+            node.type = nullptr;
+            return true;
+        }
+        auto layoutCall = std::make_unique<MethodCallExprAST>(
+            std::make_unique<VariableExprAST>("compile_time"),
+            isOffset ? "offset_of" : (node.methodName == "assert_size" ? "size_of" : "align_of"),
+            std::vector<std::unique_ptr<ExprAST>>{});
+        layoutCall->args.push_back(std::make_unique<SizeofExprAST>(argType, nullptr));
+        if (isOffset) layoutCall->args.push_back(std::make_unique<StringExprAST>(field));
+        auto actual = ctEval().eval(layoutCall.get(), node);
+        if (!actual || actual->type != ConstValue::INT) {
+            node.type = nullptr;
+            return true;
+        }
+        if (actual->intVal != expected->intVal) {
+            emitError("compile_time." + node.methodName + " failed for '" +
+                          typeToString(argType) + "': expected " +
+                          std::to_string(expected->intVal) + ", got " +
+                          std::to_string(actual->intVal),
+                      node);
+        }
+        node.type = nullptr;
+        return true;
+    }
+
     // CT-07: compile_time reflection — name_of / fields_of / attributes_of.
     if (node.methodName == "name_of" || node.methodName == "fields_of" ||
         node.methodName == "attributes_of") {
@@ -1182,13 +1349,22 @@ bool SemanticAnalyzer::tryAnalyzeCompileTimeCall(MethodCallExprAST& node) {
     auto v = ctEval().eval(&node, node);
     if (v && v->type == ConstValue::INT) {
         node.ctInt = v->intVal;
-        node.type = ctIntTypeFor(typeCtx, v->intVal);
+        if (ctBoolQuery(node.methodName)) {
+            node.type = typeCtx->getBool();
+        } else if (v->isUnsigned) {
+            node.type = typeCtx->getUInt64();
+        } else {
+            node.type = ctIntTypeFor(typeCtx, v->intVal);
+        }
     } else if (v && v->type == ConstValue::DOUBLE) {
         node.ctFloat = v->doubleVal;
         node.type = typeCtx->getFloat64();
     } else if (v && v->type == ConstValue::STR) {
         // STR 结果逃逸（理由同链形钩子）。
         emitError("compile-time string value cannot be used in runtime context", node);
+        node.type = nullptr;
+    } else if (v && v->type == ConstValue::TYPE) {
+        emitError("compile-time type value cannot be used in runtime context", node);
         node.type = nullptr;
     } else if (v) {
         // CHAR：有运行时类型，防御回退（评审 I2）。
@@ -5461,6 +5637,7 @@ void SemanticAnalyzer::visitStructDeclImpl(StructDeclAST& node) {
             // members but are unrelated subclasses; dispatch to the actual
             // kind instead of casting a ClassType to StructType (UB).
             auto applyAnnotations = [&](auto* st) {
+                st->annotations = node.annotations;
                 for (const auto& ann : node.annotations) {
                     if (ann.name == "packed") st->isPacked = true;
                     else if (ann.name == "repr") st->reprC = true;
@@ -5507,7 +5684,7 @@ void SemanticAnalyzer::visitStructDeclImpl(StructDeclAST& node) {
         // Add fields if not already added
         for (auto& field : node.fields) {
             if (!classType->getFieldType(field.name)) {
-                classType->addField(field.name, field.type, field.bitWidth);
+                classType->addField(field.name, field.type, field.bitWidth, field.annotations);
                 if (field.flexibleArray && !classType->fields.empty())
                     classType->fields.back().flexibleArray = true;
             }
@@ -5695,7 +5872,7 @@ void SemanticAnalyzer::visitStructDeclImpl(StructDeclAST& node) {
         }
         for (auto& field : node.fields) {
             if (!structType->getFieldType(field.name)) {
-                structType->addField(field.name, field.type, field.bitWidth);
+                structType->addField(field.name, field.type, field.bitWidth, field.annotations);
                 if (field.flexibleArray && !structType->fields.empty())
                     structType->fields.back().flexibleArray = true;
             }
@@ -5767,6 +5944,7 @@ void SemanticAnalyzer::visit(UnionDeclAST& node) {
     {
         auto* unionType = node.name.empty() ? nullptr : typeCtx->getUnion(node.name);
         if (unionType) {
+            unionType->annotations = node.annotations;
             for (const auto& ann : node.annotations) {
                 if (ann.name == "align") unionType->forcedAlign = ctAlignArg(ann, *this);
                 else if (ann.name == "repr") unionType->reprC = true;
@@ -5803,7 +5981,7 @@ void SemanticAnalyzer::visit(UnionDeclAST& node) {
             }
         }
         if (!exists) {
-            unionType->addMember(member.name, member.type, member.bitWidth);
+            unionType->addMember(member.name, member.type, member.bitWidth, member.annotations);
             if (member.flexibleArray && !unionType->members.empty())
                 unionType->members.back().flexibleArray = true;
         }
@@ -5835,6 +6013,7 @@ void SemanticAnalyzer::visit(EnumDeclAST& node) {
             typeCtx->addEnum(node.name, enumType);
         }
     }
+    enumType->annotations = node.annotations;
     // Redef 轮: duplicate definition of the same name (any kind) is E2004.
     if (!node.isForwardDecl && !node.name.empty()) {
         if (isTypeRedefined(node.name)) {
@@ -6125,6 +6304,21 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
     exitScope();
     currentFunction = prevFunc;
     if (oocClass) currentClass = oocSavedClass;
+}
+
+void SemanticAnalyzer::visit(CompileTimeRepeatStmtAST& node) {
+    auto count = evalCompileTime(node.count.get(), node);
+    if (!count || count->type != ConstValue::INT) {
+        emitError("compile_time.repeat count must be a compile-time integer", node);
+        return;
+    }
+    if (count->intVal < 0 || count->intVal > 1024) {
+        emitError("compile_time.repeat count must be between 0 and 1024", node);
+        return;
+    }
+    node.ctResolved = true;
+    node.iterations = static_cast<int>(count->intVal);
+    if (node.body) visit(*node.body);
 }
 
 void SemanticAnalyzer::visit(CompileTimeIfStmtAST& node) {
@@ -6694,6 +6888,7 @@ void SemanticAnalyzer::visit(StmtAST& stmt) {
     if (auto* s = dynamic_cast<DeclStmtAST*>(&stmt)) { visit(*s); return; }
     if (auto* s = dynamic_cast<DeferStmtAST*>(&stmt)) { visit(*s); return; }
     if (auto* s = dynamic_cast<CompileTimeIfStmtAST*>(&stmt)) { visit(*s); return; }
+    if (auto* s = dynamic_cast<CompileTimeRepeatStmtAST*>(&stmt)) { visit(*s); return; }
 }
 
 bool SemanticAnalyzer::isTypeRedefined(const std::string& name) const {

@@ -1541,6 +1541,18 @@ llvm::Value* CompileTimeIfStmtAST::codegen(CodegenContext& ctx) {
     return live ? live->codegen(ctx) : nullptr;
 }
 
+llvm::Value* CompileTimeRepeatStmtAST::codegen(CodegenContext& ctx) {
+    if (!ctResolved || !body) return nullptr;
+    llvm::Value* last = nullptr;
+    for (int i = 0; i < iterations; ++i) {
+        if (ctx.getBuilder().GetInsertBlock()->getTerminator()) break;
+        ctx.pushScope();
+        last = body->codegen(ctx);
+        ctx.popScope();
+    }
+    return last;
+}
+
 llvm::Value* CompileTimeAssertDeclAST::codegen(CodegenContext& ctx) {
     (void)ctx;
     return nullptr;

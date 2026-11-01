@@ -242,6 +242,76 @@ int32 main() { Ghost g; return g.x; }
     EXPECT_TRUE(found);
 }
 
+// ---- CTX-01: developer ergonomics, batch 1 --------------------------------
+
+TEST_F(CompileTimeE2E, ErgonomicsScalarQueries) {
+    int r = runSource(R"(
+constexpr bool same = compile_time.is_same(int32, int32);
+int32 main() {
+    compile_time.assert_size(int32, 4);
+    compile_time.assert_align(int32, 4);
+    compile_time.static_assert(compile_time.line > 0, "line");
+    if (!same) return 1;
+    if (compile_time.int_max(int32) != 2147483647) return 2;
+    if (compile_time.bit_width(int64) != 64) return 3;
+    if (compile_time.target.pointer_width != 64) return 4;
+    if (compile_time.version.major != 1) return 5;
+    if (!compile_time.version.at_least("1.0.0")) return 6;
+    return 42;
+}
+)", "ct_ergonomics_scalar.c");
+    EXPECT_EQ(r, 42);
+}
+
+TEST_F(CompileTimeE2E, ErgonomicsReflectionQueries) {
+    int r = runSource(R"(
+[[align(16)]] struct E2ES { int32 a; int8 b; };
+int32 main() {
+    if (!compile_time.has_field(E2ES, "a")) return 1;
+    if (compile_time.field_count_of(E2ES) != 2) return 2;
+    if (compile_time.field_offset_of(E2ES, "b") != 4) return 3;
+    if (!compile_time.has_attribute(E2ES, "align")) return 4;
+    if (compile_time.attribute_arg_of(E2ES, "align", 0) != 16) return 5;
+    return 42;
+}
+)", "ct_ergonomics_reflection.c");
+    EXPECT_EQ(r, 42);
+}
+
+TEST_F(CompileTimeE2E, ErgonomicsBatch2Queries) {
+    int r = runSource(R"(
+enum E2EColor { E2ERed, E2EGreen = 5, E2EBlue };
+struct E2EInner { int32 x; int8 y; };
+struct E2EOuter { int32 a; E2EInner in; };
+class E2EBase { public: int32 f(int32 x); };
+class E2EDerived : E2EBase { public: int32 g(); };
+int32 main() {
+    if (compile_time.enum_count_of(E2EColor) != 3) return 1;
+    if (compile_time.enum_value_of(E2EColor, "E2EBlue") != 6) return 2;
+    if (compile_time.offset_of(E2EOuter, "in.y") != 8) return 3;
+    if (compile_time.padding_of(E2EInner) != 3) return 4;
+    if (!compile_time.has_method(E2EDerived, "f")) return 5;
+    if (!compile_time.is_base_of(E2EBase, E2EDerived)) return 6;
+    if (compile_time.format("%d/%s/%x", 42, "ok", 255) != "42/ok/ff") return 7;
+    if (compile_time.to_string(true) != "true") return 8;
+    if (compile_time.type_kind_of(1) != "integer") return 9;
+    return 42;
+}
+)", "ct_ergonomics_batch2.c");
+    EXPECT_EQ(r, 42);
+}
+
+TEST_F(CompileTimeE2E, RepeatUnrollsAtCompileTime) {
+    int r = runSource(R"(
+int32 main() {
+    int32 total = 0;
+    compile_time.repeat(3) { total += 1; }
+    return total;
+}
+)", "ct_repeat.c");
+    EXPECT_EQ(r, 3);
+}
+
 TEST_F(CompileTimeE2E, CTDepthLimitE2E) {
     // 深度超限：100 层嵌套加法 → 诊断，编译失败（e2e 复 pin）。
     std::string expr = "compile_time.size_of(int32) + ";

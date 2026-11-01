@@ -315,6 +315,17 @@ public:
     llvm::Value* codegen(CodegenContext& ctx) override;
 };
 
+// CTX-01 / E2: compile-time repeat — the body is emitted `iterations` times at
+// codegen time; no runtime loop or counter is generated.
+class CompileTimeRepeatStmtAST : public StmtAST {
+public:
+    std::unique_ptr<ExprAST> count;
+    std::unique_ptr<CompoundStmtAST> body;
+    bool ctResolved = false;
+    int iterations = 0;
+    llvm::Value* codegen(CodegenContext& ctx) override;
+};
+
 class ModuleDeclAST : public DeclAST {
 public:
     std::string name;

@@ -46,6 +46,7 @@
 > **进度快照（2026-10-26，基础 C 声明/语句收口）**：补齐 9 项基础语法：空语句 `;`；聚合成员多声明符 `struct S { int32 a, b; }`；聚合成员直接函数指针字段与指向数组的指针字段；`sizeof`/`alignof` 的完整 type-id（数组/抽象函数指针）；后置限定符 `int32 const`；块内 `extern`；record 定义后的 attached 指针/函数声明符；多声明符中的复杂后继（`int32 (*f)(int), (*g)(int);`）。顺带把带方法的 `struct` 正确路由为 class 类型，并修复布局注解对 `ClassType` 的 UB 强转。全量 **1572/1572**；两个示例仍输出 OK。提交线：0bc3be2、88fca71、b07dc1f、42d3ed1、dfcb9cc、607ff32、dad042d、31a68fb、27a1242。
 > **进度快照（2026-10-27，语法缺口审计）**：对第三轮收口后的剩余语法缺口做规范+CLI 复核，按“规范已承诺 / C 兼容性 / 规范未覆盖扩展 / 非语法边界 / Non-goals”分类，详细清单见 **§24**（SG-01 ~ SG-11、SG-B01 ~ SG-B06）。本轮不改代码。
 > **进度快照（2026-10-31，P1/P2 语法缺口收口）**：SG-01 ~ SG-07 已全部修复并新增 7 个 `SyntaxGapsE2E` 回归测试；全量 **1611/1611** 通过（2 个既有 `GTEST_SKIP`）。剩余为需要产品裁决的 SG-08 ~ SG-11、SG-20 ~ SG-23，以及非语法的 SG-B01 ~ SG-B06。
+> **进度快照（2026-11-01，compile_time 开发体验）**：CT-15 ~ CT-21 完成——源码位置/诊断断言、类型谓词与数值极限、字段/注解/枚举/类/继承标量查询、目标/构建扩展、`format/to_string`、类型值与模板内省、`compile_time.repeat`；全部标量查询无运行时 IR，`LayoutBuilder` 按 `Type*` 缓存。全量 **1648/1648** 通过（2 个既有 `GTEST_SKIP`）。CT-22（`for_fields`/`for_enum_values`）因需 AST 克隆/codegen 特化留待单独设计。
 >
 > **进度快照（2026-10-27，语法缺口补充审计）**：在 §24 基础上继续补漏，新增 **§25**（SG-12 ~ SG-23、SG-B07 ~ SG-B09），覆盖数组/位域常量表达式、声明符递归与函数类型形参、静态成员类外定义、C 字面量、asm、模块/控制流/类模板扩展。新补项中 P1 为 SG-12、SG-14；SG-12、SG-13、SG-14、SG-15、SG-16、SG-17 与 SG-B07、SG-B09 已修复（SG-15 于 2026-10-28）；SG-18、SG-19 已全部修复；SG-20 ~ SG-23 仍挂账（SG-B07 ~ SG-B09 已全部修复）。
 
@@ -330,6 +331,14 @@
 - `[x]` **CT-12** 与 LLVM 常量集成——表达式节点 `ctInt/ctFloat/ctHandled`，codegen 直接出 `llvm::Constant`，零运行时指令（2026-10-06）。
 - `[x]` **CT-13** `(新)` `compile_time` 反射 API 的精确签名与返回类型。**完成**（2026-10-19）：`name_of(T)→string_view`、`fields_of(T)→Slice<FieldInfo>`、`attributes_of(T)→Slice<Attribute>`（见 `docs/spec/compile_time.md` §7）。
 - `[x]` **CT-14** `(新)` `constexpr` 与 `compile_time` 边界与互操作——并存 + 共享内核（DEC-05 裁决，2026-10-06）。
+- `[x]` **CT-15** `(新)` 编译期源码位置与诊断：`file/line/column/function`、`fail/warn/debug`、`assert_eq/ne/size/align/offset`（2026-11-01）。
+- `[x]` **CT-16** `(新)` 类型谓词与数值极限：`is_same`/`is_*`、`int_min/max`、`uint_max`、`bit_width`、`float_*`（2026-11-01）。
+- `[x]` **CT-17** `(新)` 字段/注解/枚举/类/继承编译期标量查询：`field_*`、`*_attribute_*`、`enum_*`、`method_*`、`base_name_of`/`is_base_of`（2026-11-01）。
+- `[x]` **CT-18** `(新)` 目标/构建查询扩展：`target.endian/pointer_width/triple/has_feature/is`、`build.mode/compiler/host_*`、`version.*`（2026-11-01）。
+- `[x]` **CT-19** `(新)` 编译期字符串：`format`、`to_string`（2026-11-01）。
+- `[x]` **CT-20** `(新)` 类型值与模板内省：`type_of/array_of/pointer_to/const_of`、`is_convertible/is_assignable`、`template_name_of/template_arg_*`（2026-11-01）。
+- `[x]` **CT-21** `(新)` `compile_time.repeat(N) { ... }` 编译期展开（上限 1024；零运行时循环）（2026-11-01）。
+- `[ ]` **CT-22** `(新)` `compile_time.for_fields(T, f)` / `for_enum_values(E, v)`——需要 AST 克隆或 codegen 特化，单独设计（不伪装成运行时循环）。
 
 ---
 

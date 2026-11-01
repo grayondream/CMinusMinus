@@ -1,12 +1,70 @@
 #include "Parser.h"
 #include <memory>
 #include <functional>
+#include <unordered_set>
 #include "ast/Decl.h"
 #include "ast/Mangle.h"
 #include "frontend/OperatorPrecedence.h"
 #include "frontend/Token.h"
 
 namespace {
+
+// CTX-01: compile_time query argument policy.
+//   None       — every argument is an ordinary expression
+//   FirstType  — first argument may be a type-id; the rest are expressions
+//   AllTypes   — every argument may be a type-id (is_same/is_convertible/...)
+enum class CTArgPolicy { None, FirstType, AllTypes };
+
+CTArgPolicy ctArgPolicyFor(const std::string& member) {
+    static const std::unordered_set<std::string> kAllTypes = {
+        "is_same", "is_convertible", "is_assignable", "is_base_of",
+    };
+    // (is_same/is_convertible/is_assignable/is_base_of all take two types.)
+    static const std::unordered_set<std::string> kFirstType = {
+        // layout / reflection
+        "size_of", "align_of", "offset_of", "name_of", "fields_of",
+        "attributes_of", "bit_size_of", "padding_of", "is_packed",
+        "type_of", "array_of", "pointer_to", "const_of",
+        "type_name_of", "type_kind_of", "layout_size_of", "layout_align_of",
+        // type predicates
+        "is_integer", "is_float", "is_bool", "is_pointer", "is_array",
+        "is_aggregate", "is_class", "is_struct", "is_union", "is_enum",
+        "is_void", "is_signed",
+        // numeric limits
+        "int_min", "int_max", "uint_max", "bit_width",
+        "float_epsilon", "float_max", "float_digits",
+        // field / attribute reflection
+        "has_field", "field_count_of", "field_name_at", "field_type_name_of",
+        "field_size_of", "field_offset_of", "field_is_bitfield",
+        "field_bit_width_of", "field_annotation_count_of",
+        "field_annotation_name_at", "field_annotation_arg_of",
+        "has_attribute", "attribute_count_of", "attribute_name_at",
+        "attribute_arg_of",
+        // enum reflection
+        "enum_count_of", "enum_name_at", "enum_value_at", "enum_value_of",
+        "enum_name_of", "enum_underlying_name",
+        // class / template reflection
+        "method_count_of", "has_method", "method_name_at",
+        "method_param_count", "method_param_type_name",
+        "method_return_type_name", "base_name_of",
+        "template_name_of", "template_arg_count", "template_arg_name",
+        // assertions with a leading type
+        "assert_size", "assert_align", "assert_offset",
+    };
+    if (kAllTypes.count(member)) return CTArgPolicy::AllTypes;
+    if (kFirstType.count(member)) return CTArgPolicy::FirstType;
+    return CTArgPolicy::None;
+}
+
+bool isCompileTimeChainRoot(const ExprAST* expr) {
+    const ExprAST* cur = expr;
+    while (auto* ma = dynamic_cast<const MemberAccessExprAST*>(cur)) {
+        cur = ma->object.get();
+    }
+    auto* var = dynamic_cast<const VariableExprAST*>(cur);
+    return var && var->name == "compile_time";
+}
+
 
 // Mangle a (possibly qualified) type name to a symbol-table key:
 // `A::B::T` / `A.B.T` -> `A_B_T`.
@@ -1236,32 +1294,28 @@ std::unique_ptr<ExprAST> Parser::parsePostfix(std::unique_ptr<ExprAST> lhs) {
             case TokenType::TOKEN_LPAREN: {
                 advance(); // consume '('
                 std::vector<std::unique_ptr<ExprAST>> args;
-                // P1-04 / CT-06: compile_time.size_of/align_of/offset_of 的
-                // 类型实参——内建标量类型是关键字，parseExpr 无法解析；此
-                // 处按 parseType 解析，包装为 SizeofExprAST(sizeofType=T,
-                // expr=nullptr) 供 sema/求值器取用（CT-08 类型值的最小切片）。
-                bool isCTTypeQuery = false;
-                std::string ctMember;
+                // P1-04 / CT-06 + CTX-01: compile_time queries take type
+                // arguments. Built-in scalar types are keywords, so parseExpr
+                // cannot handle them; parse them as type-ids and wrap them in a
+                // SizeofExprAST carrier. The per-member policy decides whether
+                // every argument or only the first may be a type.
+                CTArgPolicy ctPolicy = CTArgPolicy::None;
                 if (auto* memberAccess = dynamic_cast<MemberAccessExprAST*>(lhs.get())) {
-                    ctMember = memberAccess->memberName;
-                    if (ctMember == "size_of" || ctMember == "align_of"
-                        || ctMember == "offset_of" || ctMember == "name_of"
-                        || ctMember == "fields_of" || ctMember == "attributes_of") {
-                        const ExprAST* cur = memberAccess->object.get();
-                        while (auto* ma = dynamic_cast<const MemberAccessExprAST*>(cur)) {
-                            cur = ma->object.get();
-                        }
-                        if (auto* var = dynamic_cast<const VariableExprAST*>(cur)) {
-                            isCTTypeQuery = var->name == "compile_time";
-                        }
+                    if (isCompileTimeChainRoot(memberAccess->object.get())) {
+                        ctPolicy = ctArgPolicyFor(memberAccess->memberName);
                     }
                 }
                 if (!peek() || peek()->type != TokenType::TOKEN_RPAREN) {
                     bool firstArg = true;
                     while (true) {
                         std::unique_ptr<ExprAST> arg;
-                        if (isCTTypeQuery && (ctMember != "offset_of" || firstArg)
-                            && isTypeStart()) {
+                        bool tryType = false;
+                        if (ctPolicy == CTArgPolicy::AllTypes) {
+                            tryType = isTypeStart();
+                        } else if (ctPolicy == CTArgPolicy::FirstType && firstArg) {
+                            tryType = isTypeStart();
+                        }
+                        if (tryType) {
                             Type* ty = parseType();
                             if (!ty) return nullptr;
                             arg = std::make_unique<SizeofExprAST>(ty, nullptr);
@@ -1638,9 +1692,14 @@ std::unique_ptr<StmtAST> Parser::parseStmt() {
     // Function-body compile_time.if — statement form.
     if (peek() && peek()->type == TokenType::TOKEN_IDENTIFIER &&
         peek()->lexeme == "compile_time" && m_currentTokenPos + 2 < m_tokens.size() &&
-        m_tokens[m_currentTokenPos + 1].type == TokenType::TOKEN_DOT &&
-        m_tokens[m_currentTokenPos + 2].type == TokenType::TOKEN_IF) {
-        if (auto ctIf = parseCompileTimeIfStmt()) return ctIf;
+        m_tokens[m_currentTokenPos + 1].type == TokenType::TOKEN_DOT) {
+        const Token& member = m_tokens[m_currentTokenPos + 2];
+        if (member.type == TokenType::TOKEN_IF) {
+            if (auto ctIf = parseCompileTimeIfStmt()) return ctIf;
+        } else if (member.type == TokenType::TOKEN_IDENTIFIER &&
+                   member.lexeme == "repeat") {
+            if (auto ctRepeat = parseCompileTimeRepeatStmt()) return ctRepeat;
+        }
     }
 
     // Local record declarations: `struct S { ... };`, `union U { ... };`,
@@ -3176,7 +3235,7 @@ std::unique_ptr<DeclAST> Parser::parseDeclarationImpl() {
                     classType->fields.clear();
                 }
                 for (auto& field : structDecl->fields) {
-                    classType->addField(field.name, field.type, field.bitWidth);
+                    classType->addField(field.name, field.type, field.bitWidth, field.annotations);
                     if (field.flexibleArray && !classType->fields.empty())
                         classType->fields.back().flexibleArray = true;
                 }
@@ -3192,7 +3251,7 @@ std::unique_ptr<DeclAST> Parser::parseDeclarationImpl() {
                     structType->fields.clear();
                 }
                 for (auto& field : structDecl->fields) {
-                    structType->addField(field.name, field.type, field.bitWidth);
+                    structType->addField(field.name, field.type, field.bitWidth, field.annotations);
                     if (field.flexibleArray && !structType->fields.empty())
                         structType->fields.back().flexibleArray = true;
                 }
@@ -4295,8 +4354,13 @@ bool Parser::isCompileTimeDeclStart() const {
         return false;
     }
     const Token& member = m_tokens[m_currentTokenPos + 2];
-    return (member.type == TokenType::TOKEN_IDENTIFIER && member.lexeme == "static_assert")
-        || (member.type == TokenType::TOKEN_IF && member.lexeme == "if");
+    if (member.type == TokenType::TOKEN_IF && member.lexeme == "if") return true;
+    if (member.type != TokenType::TOKEN_IDENTIFIER) return false;
+    static const std::unordered_set<std::string> kDeclMembers = {
+        "static_assert", "fail", "warn", "debug",
+        "assert_eq", "assert_ne", "assert_size", "assert_align", "assert_offset",
+    };
+    return kDeclMembers.count(member.lexeme) != 0;
 }
 
 // P1-04 / CT-01: `compile_time.if (cond) { decls... } [else { decls... }]`。
@@ -4371,36 +4435,71 @@ std::unique_ptr<StmtAST> Parser::parseCompileTimeIfStmt() {
     return node;
 }
 
+std::unique_ptr<StmtAST> Parser::parseCompileTimeRepeatStmt() {
+    advance(); // compile_time
+    advance(); // .
+    advance(); // repeat
+    if (!expect(TokenType::TOKEN_LPAREN, "'(' after 'compile_time.repeat'")) {
+        return nullptr;
+    }
+    auto count = parseExpr(2);
+    if (!count) return nullptr;
+    if (!expect(TokenType::TOKEN_RPAREN, "')' after compile_time.repeat count")) {
+        return nullptr;
+    }
+    if (!check(TokenType::TOKEN_LBRACE)) {
+        errorUnexpected("expected '{' after compile_time.repeat count");
+        return nullptr;
+    }
+    auto node = std::make_unique<CompileTimeRepeatStmtAST>();
+    node->count = std::move(count);
+    node->body = parseCompoundStmt();
+    return node->body ? std::move(node) : nullptr;
+}
+
 // P1-04 / CT-01: `compile_time.static_assert(cond[, msg]);` —— 包装为
 // MethodCallExprAST（object=VariableExpr("compile_time")），sema 特判求值。
 std::unique_ptr<DeclAST> Parser::parseCompileTimeAssert() {
     advance(); // compile_time
     advance(); // .
-    advance(); // static_assert
-    if (!expect(TokenType::TOKEN_LPAREN, "'(' after 'compile_time.static_assert'")) {
+    std::string member = peek() ? peek()->lexeme : "static_assert";
+    advance(); // member
+    if (!expect(TokenType::TOKEN_LPAREN, "'(' after 'compile_time." + member + "'")) {
         return nullptr;
     }
+    CTArgPolicy policy = ctArgPolicyFor(member);
     std::vector<std::unique_ptr<ExprAST>> args;
     if (!check(TokenType::TOKEN_RPAREN)) {
+        bool firstArg = true;
         while (true) {
-            auto arg = parseExpr(2); // minPrec=2：实参间 ',' 分隔（与调用实参一致）
+            std::unique_ptr<ExprAST> arg;
+            bool tryType = (policy == CTArgPolicy::AllTypes) ||
+                           (policy == CTArgPolicy::FirstType && firstArg);
+            if (tryType && isTypeStart()) {
+                Type* ty = parseType();
+                if (!ty) return nullptr;
+                arg = std::make_unique<SizeofExprAST>(ty, nullptr);
+            } else {
+                arg = parseExpr(2); // minPrec=2：实参间 ',' 分隔（与调用实参一致）
+            }
             if (!arg) {
                 return nullptr;
             }
             args.push_back(std::move(arg));
+            firstArg = false;
             if (match(TokenType::TOKEN_COMMA)) {
                 continue;
             }
             break;
         }
     }
-    if (!expect(TokenType::TOKEN_RPAREN, "')' after 'compile_time.static_assert' arguments")) {
+    if (!expect(TokenType::TOKEN_RPAREN, "')' after compile_time." + member + " arguments")) {
         return nullptr;
     }
     match(TokenType::TOKEN_SEMICOLON); // 容错：无 ';' 也不报错
 
     auto call = std::make_unique<MethodCallExprAST>(
-        std::make_unique<VariableExprAST>("compile_time"), "static_assert", std::move(args));
+        std::make_unique<VariableExprAST>("compile_time"), member, std::move(args));
     auto node = std::make_unique<CompileTimeAssertDeclAST>();
     node->call = std::move(call);
     return node;
@@ -4891,7 +4990,7 @@ void Parser::registerNestedDeclType(DeclAST* decl) {
             if (!tc.getClass(sd->name)) {
                 auto* classType = new ClassType(sd->name);
                 for (auto& f : sd->fields) {
-                    classType->addField(f.name, f.type, f.bitWidth);
+                    classType->addField(f.name, f.type, f.bitWidth, f.annotations);
                     if (f.flexibleArray && !classType->fields.empty())
                         classType->fields.back().flexibleArray = true;
                 }
@@ -4909,7 +5008,7 @@ void Parser::registerNestedDeclType(DeclAST* decl) {
             if (!sd->isForwardDecl) {
                 structType->fields.clear();
                 for (auto& f : sd->fields) {
-                    structType->addField(f.name, f.type, f.bitWidth);
+                    structType->addField(f.name, f.type, f.bitWidth, f.annotations);
                     if (f.flexibleArray && !structType->fields.empty())
                         structType->fields.back().flexibleArray = true;
                 }
@@ -4931,7 +5030,7 @@ void Parser::registerNestedDeclType(DeclAST* decl) {
         if (!tc.getUnion(ud->name)) {
             auto* unionType = new UnionType(ud->name);
             for (auto& m : ud->members) {
-                unionType->addMember(m.name, m.type, m.bitWidth);
+                unionType->addMember(m.name, m.type, m.bitWidth, m.annotations);
                 if (m.flexibleArray && !unionType->members.empty())
                     unionType->members.back().flexibleArray = true;
             }
