@@ -13,6 +13,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "ast/CtValue.h"
 #include "ast/LayoutBuilder.h"
 #include "ast/Type.h"
 
@@ -30,20 +31,9 @@ class Type;
 
 class CompileTimeEvaluator {
 public:
-    struct ConstValue {
-        enum Type { INT, DOUBLE, CHAR, STR, TYPE } type;
-        // LEX-15: integer constants keep the full 64-bit literal range.
-        long long intVal = 0;
-        // CTX-01: unsigned integer constants keep their signedness so sema can
-        // map e.g. uint_max(uint64) to the uint64 type instead of int64.
-        bool isUnsigned = false;
-        // CTX-01: bool literal provenance for compile_time.to_string.
-        bool isBool = false;
-        double doubleVal = 0;
-        char charVal = 0;
-        std::string strVal; // STR 时有效（union 不能放 std::string）
-        ::Type* typeVal = nullptr; // TYPE 时有效（编译期类型值，不逃逸到运行时）
-    };
+    // Authoritative definition lives in ast/CtValue.h so the AST/codegen
+    // hand-off can carry folded container values without depending on sema.
+    using ConstValue = ::CtValue;
 
     // CT-07: one named (non-padding) field's layout, for fields_of.
     struct ReflectField {
@@ -68,7 +58,8 @@ private:
     // 递归深度上限（防编译期爆栈）；超限诊断一次（钉死文案，spec §3）。
     static constexpr int kMaxDepth = 64;
 
-    std::optional<ConstValue> evalBinary(ConstValue& left, ConstValue& right, int op);
+    std::optional<ConstValue> evalBinary(ConstValue& left, ConstValue& right, int op,
+                                         ::Type* resultType);
     // compile_time.<target|build>.<member> 值（CT-04/05）。
     std::optional<ConstValue> evalCTMemberChain(MemberAccessExprAST& node, ASTNode& at);
     // size_of/align_of/offset_of（CT-06 布局查询）。

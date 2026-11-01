@@ -1523,79 +1523,46 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
 
     if (auto* bin = dynamic_cast<BinaryExprAST*>(expr)) {
         auto left = evaluateConstexpr(bin->left.get());
+        if (!left) return std::nullopt;
+        if (bin->op == BinaryOp::And || bin->op == BinaryOp::Or) {
+            const bool truth = ctTruthy(*left);
+            if ((bin->op == BinaryOp::And && !truth) ||
+                (bin->op == BinaryOp::Or && truth)) {
+                return ctInt(truth ? 1 : 0, 1, true, true);
+            }
+        }
         auto right = evaluateConstexpr(bin->right.get());
-        if (!left || !right) return std::nullopt;
-
-        if (left->type == ConstValue::INT && right->type == ConstValue::INT) {
-            ConstValue cv;
-            cv.type = ConstValue::INT;
-            switch (bin->op) {
-                case BinaryOp::Add: cv.intVal = left->intVal + right->intVal; break;
-                case BinaryOp::Sub: cv.intVal = left->intVal - right->intVal; break;
-                case BinaryOp::Mul: cv.intVal = left->intVal * right->intVal; break;
-                case BinaryOp::Div:
-                    if (right->intVal == 0) return std::nullopt;
-                    cv.intVal = left->intVal / right->intVal;
-                    break;
-                case BinaryOp::Mod:
-                    if (right->intVal == 0) return std::nullopt;
-                    cv.intVal = left->intVal % right->intVal;
-                    break;
-                case BinaryOp::Eq: cv.intVal = left->intVal == right->intVal; break;
-                case BinaryOp::NotEq: cv.intVal = left->intVal != right->intVal; break;
-                case BinaryOp::Lt: cv.intVal = left->intVal < right->intVal; break;
-                case BinaryOp::Gt: cv.intVal = left->intVal > right->intVal; break;
-                case BinaryOp::Le: cv.intVal = left->intVal <= right->intVal; break;
-                case BinaryOp::Ge: cv.intVal = left->intVal >= right->intVal; break;
-                case BinaryOp::And: cv.intVal = left->intVal && right->intVal; break;
-                case BinaryOp::Or: cv.intVal = left->intVal || right->intVal; break;
-                case BinaryOp::BitAnd: cv.intVal = left->intVal & right->intVal; break;
-                case BinaryOp::BitOr: cv.intVal = left->intVal | right->intVal; break;
-                case BinaryOp::BitXor: cv.intVal = left->intVal ^ right->intVal; break;
-                case BinaryOp::LShift: cv.intVal = left->intVal << right->intVal; break;
-                case BinaryOp::RShift: cv.intVal = left->intVal >> right->intVal; break;
-                default: return std::nullopt;
-            }
-            return cv;
-        }
-
-        if (left->type == ConstValue::DOUBLE && right->type == ConstValue::DOUBLE) {
-            ConstValue cv;
-            cv.type = ConstValue::DOUBLE;
-            switch (bin->op) {
-                case BinaryOp::Add: cv.doubleVal = left->doubleVal + right->doubleVal; break;
-                case BinaryOp::Sub: cv.doubleVal = left->doubleVal - right->doubleVal; break;
-                case BinaryOp::Mul: cv.doubleVal = left->doubleVal * right->doubleVal; break;
-                case BinaryOp::Div:
-                    if (right->doubleVal == 0.0) return std::nullopt;
-                    cv.doubleVal = left->doubleVal / right->doubleVal;
-                    break;
-                case BinaryOp::Eq: cv.intVal = left->doubleVal == right->doubleVal; cv.type = ConstValue::INT; break;
-                case BinaryOp::NotEq: cv.intVal = left->doubleVal != right->doubleVal; cv.type = ConstValue::INT; break;
-                case BinaryOp::Lt: cv.intVal = left->doubleVal < right->doubleVal; cv.type = ConstValue::INT; break;
-                case BinaryOp::Gt: cv.intVal = left->doubleVal > right->doubleVal; cv.type = ConstValue::INT; break;
-                case BinaryOp::Le: cv.intVal = left->doubleVal <= right->doubleVal; cv.type = ConstValue::INT; break;
-                case BinaryOp::Ge: cv.intVal = left->doubleVal >= right->doubleVal; cv.type = ConstValue::INT; break;
-                default: return std::nullopt;
-            }
-            return cv;
-        }
-
-        return std::nullopt;
+        if (!right) return std::nullopt;
+        return ctBinary(*left, *right, static_cast<int>(bin->op), bin->type);
     }
 
     if (auto* unary = dynamic_cast<UnaryExprAST*>(expr)) {
         auto operand = evaluateConstexpr(unary->operand.get());
         if (!operand) return std::nullopt;
 
-        if (operand->type == ConstValue::INT) {
-            ConstValue cv;
-            cv.type = ConstValue::INT;
+        if (operand->type == ConstValue::INT || operand->type == ConstValue::CHAR) {
+            const bool isChar = operand->type == ConstValue::CHAR;
+            const long long raw = isChar ? operand->charVal : operand->intVal;
+            const unsigned opBits = isChar ? 8 : operand->bits;
+            const bool opUnsigned = isChar ? false : operand->isUnsigned;
             switch (unary->op) {
-                case UnaryOp::Plus: cv.intVal = operand->intVal; break;
-                case UnaryOp::Minus: cv.intVal = -operand->intVal; break;
-                case UnaryOp::Not: cv.intVal = !operand->intVal; break;
-                case UnaryOp::BitNot: cv.intVal = ~operand->intVal; break;
+                case UnaryOp::Plus: return *operand;
+                case UnaryOp::Minus:
+                    return ctNormalizeInt(static_cast<uint64_t>(-static_cast<uint64_t>(raw)),
+                                          opBits, opUnsigned);
+                case UnaryOp::Not:
+                    return ctInt(!ctTruthy(*operand) ? 1 : 0, 1, true, true);
+                case UnaryOp::BitNot:
+                    return ctNormalizeInt(~static_cast<uint64_t>(raw), opBits, opUnsigned);
+                default: return std::nullopt;
+            }
+        }
+        if (operand->type == ConstValue::DOUBLE) {
+            ConstValue cv;
+            cv.type = ConstValue::DOUBLE;
+            switch (unary->op) {
+                case UnaryOp::Plus:  cv.doubleVal = operand->doubleVal; break;
+                case UnaryOp::Minus: cv.doubleVal = -operand->doubleVal; break;
                 default: return std::nullopt;
             }
             return cv;
@@ -1610,36 +1577,7 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
         if (!operand) return std::nullopt;
         Type* to = stripTypedef(cast->castType);
         if (!to) return std::nullopt;
-
-        ConstValue cv;
-        if (isFloatType(to)) {
-            double d = 0.0;
-            switch (operand->type) {
-                case ConstValue::INT:    d = static_cast<double>(operand->intVal); break;
-                case ConstValue::CHAR:   d = static_cast<double>(operand->charVal); break;
-                case ConstValue::DOUBLE: d = operand->doubleVal; break;
-            }
-            cv.type = ConstValue::DOUBLE;
-            cv.doubleVal = d;
-            return cv;
-        }
-        if (isIntegerType(to)) {
-            long long v = 0;
-            switch (operand->type) {
-                case ConstValue::INT:    v = operand->intVal; break;
-                case ConstValue::CHAR:   v = operand->charVal; break;
-                case ConstValue::DOUBLE: v = static_cast<long long>(operand->doubleVal); break;
-            }
-            if (to->kind == TypeKind::Char) {
-                cv.type = ConstValue::CHAR;
-                cv.charVal = static_cast<char>(v);
-            } else {
-                cv.type = ConstValue::INT;
-                cv.intVal = static_cast<int>(v);
-            }
-            return cv;
-        }
-        return std::nullopt;
+        return ctCast(*operand, to);
     }
 
     if (auto* var = dynamic_cast<VariableExprAST*>(expr)) {

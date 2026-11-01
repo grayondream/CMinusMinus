@@ -111,19 +111,23 @@ std::optional<ConstValue> CompileTimeEvaluator::eval(ExprAST* expr, ASTNode& at)
             m_sema.emitError("128-bit integer literal is not supported in a constant expression", *expr);
             return std::nullopt;
         }
-        ConstValue cv;
-        cv.type = ConstValue::INT;
-        cv.intVal = num->value;
-        return cv;
+        unsigned bits = 32;
+        bool isUnsigned = false;
+        switch (num->literalKind) {
+            case LiteralKind::UInt: bits = 32; isUnsigned = true; break;
+            case LiteralKind::Long: bits = 64; isUnsigned = false; break;
+            case LiteralKind::ULong: bits = 64; isUnsigned = true; break;
+            case LiteralKind::Int:
+                bits = (num->value >= INT32_MIN && num->value <= INT32_MAX) ? 32 : 64;
+                break;
+            default: break;
+        }
+        return ctInt(num->value, bits, isUnsigned);
     }
 
     // Found issue: bool 字面量按整数（0/1）参与编译期求值。
     if (auto* bl = dynamic_cast<BoolLiteralExprAST*>(expr)) {
-        ConstValue cv;
-        cv.type = ConstValue::INT;
-        cv.intVal = bl->value ? 1 : 0;
-        cv.isBool = true;
-        return cv;
+        return ctInt(bl->value ? 1 : 0, 1, true, true);
     }
 
     if (auto* flt = dynamic_cast<FloatExprAST*>(expr)) {
@@ -152,17 +156,24 @@ std::optional<ConstValue> CompileTimeEvaluator::eval(ExprAST* expr, ASTNode& at)
         if (!operand) {
             return std::nullopt;
         }
-        if (operand->type == ConstValue::INT) {
-            ConstValue cv;
-            cv.type = ConstValue::INT;
+        if (operand->type == ConstValue::INT || operand->type == ConstValue::CHAR) {
+            const bool isChar = operand->type == ConstValue::CHAR;
+            const long long raw = isChar ? operand->charVal : operand->intVal;
+            const unsigned opBits = isChar ? 8 : operand->bits;
+            const bool opUnsigned = isChar ? false : operand->isUnsigned;
             switch (unary->op) {
-                case UnaryOp::Plus:   cv.intVal = operand->intVal; break;
-                case UnaryOp::Minus:  cv.intVal = -operand->intVal; break;
-                case UnaryOp::Not:    cv.intVal = !operand->intVal; break;
-                case UnaryOp::BitNot: cv.intVal = ~operand->intVal; break;
+                case UnaryOp::Plus:
+                    return *operand;
+                case UnaryOp::Minus:
+                    return ctNormalizeInt(static_cast<uint64_t>(-static_cast<uint64_t>(raw)),
+                                          opBits, opUnsigned);
+                case UnaryOp::Not:
+                    return ctInt(!ctTruthy(*operand) ? 1 : 0, 1, true, true);
+                case UnaryOp::BitNot:
+                    return ctNormalizeInt(~static_cast<uint64_t>(raw),
+                                          opBits, opUnsigned);
                 default: return std::nullopt;
             }
-            return cv;
         }
         if (operand->type == ConstValue::DOUBLE) {
             ConstValue cv;
@@ -182,20 +193,29 @@ std::optional<ConstValue> CompileTimeEvaluator::eval(ExprAST* expr, ASTNode& at)
         if (!left) {
             return std::nullopt;
         }
+        // Short-circuit && / || so a side-effectful or non-constant RHS is
+        // only evaluated when the result depends on it.
+        if (bin->op == BinaryOp::And || bin->op == BinaryOp::Or) {
+            const bool truth = ctTruthy(*left);
+            if ((bin->op == BinaryOp::And && !truth) ||
+                (bin->op == BinaryOp::Or && truth)) {
+                return ctInt(truth ? 1 : 0, 1, true, true);
+            }
+        }
         auto right = eval(bin->right.get(), at);
         if (!right) {
             return std::nullopt;
         }
-        return evalBinary(*left, *right, static_cast<int>(bin->op));
+        return evalBinary(*left, *right, static_cast<int>(bin->op), bin->type);
     }
 
     if (auto* ternary = dynamic_cast<TernaryExprAST*>(expr)) {
         auto cond = eval(ternary->cond.get(), at);
-        if (!cond || cond->type != ConstValue::INT) {
+        if (!cond) {
             return std::nullopt;
         }
-        return cond->intVal != 0 ? eval(ternary->then.get(), at)
-                                 : eval(ternary->elseExpr.get(), at);
+        return ctTruthy(*cond) ? eval(ternary->then.get(), at)
+                               : eval(ternary->elseExpr.get(), at);
     }
 
     // constexpr 变量（DEC-05：共享 constexprValues）；constexpr 函数调用
@@ -244,83 +264,9 @@ std::optional<ConstValue> CompileTimeEvaluator::eval(ExprAST* expr, ASTNode& at)
 }
 
 std::optional<ConstValue>
-CompileTimeEvaluator::evalBinary(ConstValue& left, ConstValue& right, int op) {
-    const BinaryOp binOp = static_cast<BinaryOp>(op);
-
-    if (left.type == ConstValue::STR && right.type == ConstValue::STR) {
-        // P1-06 (spec §2.5): `+` (concat) was removed with the language-level
-        // `str + str` operator; == / != (byte compare semantics) still fold.
-        ConstValue cv;
-        switch (binOp) {
-            case BinaryOp::Eq:
-                cv.type = ConstValue::INT;
-                cv.intVal = left.strVal == right.strVal;
-                return cv;
-            case BinaryOp::NotEq:
-                cv.type = ConstValue::INT;
-                cv.intVal = left.strVal != right.strVal;
-                return cv;
-            default:
-                return std::nullopt;
-        }
-    }
-
-    if (left.type == ConstValue::INT && right.type == ConstValue::INT) {
-        ConstValue cv;
-        cv.type = ConstValue::INT;
-        switch (binOp) {
-            case BinaryOp::Add: cv.intVal = left.intVal + right.intVal; break;
-            case BinaryOp::Sub: cv.intVal = left.intVal - right.intVal; break;
-            case BinaryOp::Mul: cv.intVal = left.intVal * right.intVal; break;
-            case BinaryOp::Div:
-                if (right.intVal == 0) return std::nullopt;
-                cv.intVal = left.intVal / right.intVal;
-                break;
-            case BinaryOp::Mod:
-                if (right.intVal == 0) return std::nullopt;
-                cv.intVal = left.intVal % right.intVal;
-                break;
-            case BinaryOp::Eq:     cv.intVal = left.intVal == right.intVal; break;
-            case BinaryOp::NotEq:  cv.intVal = left.intVal != right.intVal; break;
-            case BinaryOp::Lt:     cv.intVal = left.intVal < right.intVal; break;
-            case BinaryOp::Gt:     cv.intVal = left.intVal > right.intVal; break;
-            case BinaryOp::Le:     cv.intVal = left.intVal <= right.intVal; break;
-            case BinaryOp::Ge:     cv.intVal = left.intVal >= right.intVal; break;
-            case BinaryOp::And:    cv.intVal = left.intVal && right.intVal; break;
-            case BinaryOp::Or:     cv.intVal = left.intVal || right.intVal; break;
-            case BinaryOp::BitAnd: cv.intVal = left.intVal & right.intVal; break;
-            case BinaryOp::BitOr:  cv.intVal = left.intVal | right.intVal; break;
-            case BinaryOp::BitXor: cv.intVal = left.intVal ^ right.intVal; break;
-            case BinaryOp::LShift: cv.intVal = left.intVal << right.intVal; break;
-            case BinaryOp::RShift: cv.intVal = left.intVal >> right.intVal; break;
-            default: return std::nullopt;
-        }
-        return cv;
-    }
-
-    if (left.type == ConstValue::DOUBLE && right.type == ConstValue::DOUBLE) {
-        ConstValue cv;
-        cv.type = ConstValue::DOUBLE;
-        switch (binOp) {
-            case BinaryOp::Add: cv.doubleVal = left.doubleVal + right.doubleVal; break;
-            case BinaryOp::Sub: cv.doubleVal = left.doubleVal - right.doubleVal; break;
-            case BinaryOp::Mul: cv.doubleVal = left.doubleVal * right.doubleVal; break;
-            case BinaryOp::Div:
-                if (right.doubleVal == 0.0) return std::nullopt;
-                cv.doubleVal = left.doubleVal / right.doubleVal;
-                break;
-            case BinaryOp::Eq:    cv.intVal = left.doubleVal == right.doubleVal; cv.type = ConstValue::INT; break;
-            case BinaryOp::NotEq: cv.intVal = left.doubleVal != right.doubleVal; cv.type = ConstValue::INT; break;
-            case BinaryOp::Lt:    cv.intVal = left.doubleVal < right.doubleVal; cv.type = ConstValue::INT; break;
-            case BinaryOp::Gt:    cv.intVal = left.doubleVal > right.doubleVal; cv.type = ConstValue::INT; break;
-            case BinaryOp::Le:    cv.intVal = left.doubleVal <= right.doubleVal; cv.type = ConstValue::INT; break;
-            case BinaryOp::Ge:    cv.intVal = left.doubleVal >= right.doubleVal; cv.type = ConstValue::INT; break;
-            default: return std::nullopt;
-        }
-        return cv;
-    }
-
-    return std::nullopt;
+CompileTimeEvaluator::evalBinary(ConstValue& left, ConstValue& right, int op,
+                                 ::Type* resultType) {
+    return ctBinary(left, right, op, resultType);
 }
 
 std::optional<ConstValue>
