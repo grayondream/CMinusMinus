@@ -7051,8 +7051,8 @@ void SemanticAnalyzer::visitStructDeclImpl(StructDeclAST& node) {
         // instantiator clones unsupported resolved kinds with isAtomic set so
         // this diagnostic catches pointer/enum/aggregate/float/int128 instead
         // of silently dropping atomicity.
-        if (f.type && f.type->isAtomic &&
-            !isSupportedAtomicIntegerScalar(f.type)) {
+        Type* ft = stripTypedef(f.type);
+        if (ft && ft->isAtomic && !isSupportedAtomicIntegerScalar(ft)) {
             emitError(DiagnosticCode::SemAtomicNonScalar,
                       "atomic field requires a 1/2/4/8-byte integer scalar type "
                       "(got '" + typeToString(f.type) + "')",
@@ -7405,6 +7405,16 @@ void SemanticAnalyzer::visit(UnionDeclAST& node) {
         validateAnnotations(member.annotations, node, "field");
         // PAR-24: a private class-scoped alias may not name a union member.
         checkNestedTypeAccess(member.type, node);
+        // CON-01: same atomic restriction as a struct/class field; strip a
+        // typedef so `using A = atomic int128;` cannot bypass the check.
+        Type* mt = stripTypedef(member.type);
+        if (mt && mt->isAtomic && !isSupportedAtomicIntegerScalar(mt)) {
+            emitError(DiagnosticCode::SemAtomicNonScalar,
+                      "atomic member requires a 1/2/4/8-byte integer scalar "
+                      "type (got '" + typeToString(member.type) + "')",
+                      node);
+            return;
+        }
         // P1-07 / SEM-12: 位域基础类型与宽度范围校验。
         checkBitFieldField(member, node);
     }

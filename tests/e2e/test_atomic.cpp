@@ -423,7 +423,12 @@ TEST_F(AtomicE2E, AtomicInt128Rejected) {
 TEST_F(AtomicE2E, AtomicTemplateUnsupportedRejected) {
     auto expectError = [](const std::string& src) {
         auto errors = semanticErrors(src, "at_tmpl_bad.c");
-        EXPECT_FALSE(errors.empty()) << src;
+        ASSERT_FALSE(errors.empty()) << src;
+        bool mentionsLimit = false;
+        for (const auto& e : errors) {
+            if (e.find("1/2/4/8") != std::string::npos) mentionsLimit = true;
+        }
+        EXPECT_TRUE(mentionsLimit) << src;
     };
     expectError(R"(
         template<typename T> struct S { atomic T v; };
@@ -446,5 +451,35 @@ TEST_F(AtomicE2E, AtomicTemplateUnsupportedRejected) {
     expectError(R"(
         template<typename T> struct S { atomic T v; };
         int32 main() { S<int128> s; return 0; }
+    )");
+}
+
+TEST_F(AtomicE2E, AtomicUnionAndTypedefFieldsRejected) {
+    auto expectError = [](const std::string& src) {
+        auto errors = semanticErrors(src, "at_union_alias.c");
+        ASSERT_FALSE(errors.empty()) << src;
+        bool mentionsLimit = false;
+        for (const auto& e : errors) {
+            if (e.find("1/2/4/8") != std::string::npos) mentionsLimit = true;
+        }
+        EXPECT_TRUE(mentionsLimit) << src;
+    };
+    expectError(R"(
+        union U { atomic int128 x; };
+        int32 main() { return 0; }
+    )");
+    expectError(R"(
+        union U { atomic float32 x; };
+        int32 main() { return 0; }
+    )");
+    expectError(R"(
+        using A = atomic int128;
+        struct S { A x; };
+        int32 main() { return 0; }
+    )");
+    expectError(R"(
+        using A = atomic float32;
+        struct S { A x; };
+        int32 main() { return 0; }
     )");
 }
