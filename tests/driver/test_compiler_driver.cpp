@@ -1,14 +1,28 @@
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string>
 
+#include <unistd.h>
+
 #include "driver/CompilerDriver.h"
+
+#include "llvm/Support/TargetSelect.h"
 
 class CompilerDriverTest : public ::testing::Test {
 protected:
     void SetUp() override {
+        static bool init = false;
+        if (!init) {
+            llvm::InitializeAllTargetInfos();
+            llvm::InitializeAllTargets();
+            llvm::InitializeAllTargetMCs();
+            llvm::InitializeAllAsmParsers();
+            llvm::InitializeAllAsmPrinters();
+            init = true;
+        }
         driver = CompilerDriver();
     }
 
@@ -225,4 +239,36 @@ TEST_F(CompilerDriverTest, InvalidCharacterFailsCompilation) {
     ASSERT_TRUE(driver.parseArguments(3, argv));
     EXPECT_EQ(driver.run(), 1);
     std::filesystem::remove(p);
+}
+
+TEST_F(CompilerDriverTest, ThreadProgramLinksAndRuns) {
+    // std.thread requires the driver to append -l pthread for generated
+    // programs; this exercises the real compile+link path, not the JIT.
+    const std::filesystem::path dir =
+        std::filesystem::temp_directory_path() /
+        ("smc_thread_driver_" + std::to_string(::getpid()));
+    std::filesystem::create_directories(dir);
+    const std::filesystem::path src = dir / "thread.c";
+    const std::filesystem::path out = dir / "thread";
+    {
+        std::ofstream f(src);
+        f << "import std.thread;\n"
+             "int64 seen = 0;\n"
+             "void* worker(void* arg) { seen = (int64)arg; return null; }\n"
+             "int32 main() {\n"
+             "    std::Thread t;\n"
+             "    t.init();\n"
+             "    if (!t.start(worker, (void*)5)) return 1;\n"
+             "    if (!t.join()) return 2;\n"
+             "    return seen == 5 ? 0 : 3;\n"
+             "}\n";
+    }
+    const std::string srcPath = src.string();
+    const std::string outPath = out.string();
+    const char* argv[] = {"my_llvm_c", "-M", STD_DIR, srcPath.c_str(),
+                          "-o", outPath.c_str()};
+    ASSERT_TRUE(driver.parseArguments(6, argv));
+    EXPECT_EQ(driver.run(), 0);
+    EXPECT_EQ(std::system(outPath.c_str()), 0);
+    std::filesystem::remove_all(dir);
 }
