@@ -111,6 +111,32 @@ static bool atomicValueBits(Type* type, unsigned& bits) {
     }
 }
 
+// The legacy `atomic T` qualifier (and the instantiated form of a template
+// field `atomic T`) is restricted to 1/2/4/8-byte integer scalars. Wider
+// integers, floats, pointers, enums and aggregates belong to std::Atomic<T>,
+// which has its own explicit API; silently dropping the qualifier is never OK.
+static bool isSupportedAtomicIntegerScalar(Type* type) {
+    Type* t = stripTypedef(type);
+    if (!t) return false;
+    switch (t->kind) {
+        case TypeKind::Char:
+        case TypeKind::Bool:
+        case TypeKind::Int8:
+        case TypeKind::Int16:
+        case TypeKind::Int32:
+        case TypeKind::Int64:
+        case TypeKind::UInt8:
+        case TypeKind::UInt16:
+        case TypeKind::UInt32:
+        case TypeKind::UInt64:
+        case TypeKind::ISize:
+        case TypeKind::USize:
+            return true;
+        default:
+            return false;
+    }
+}
+
 static AtomicBuiltin atomicBuiltinForName(const std::string& name) {
     if (name == "__smc_atomic_load") return AtomicBuiltin::Load;
     if (name == "__smc_atomic_store") return AtomicBuiltin::Store;
@@ -6530,10 +6556,11 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
             atomicUnderComposite = inner && inner->isAtomic;
         }
         if (atomicUnderComposite ||
-            (outer && outer->isAtomic && !isIntegerType(outer))) {
+            (outer && outer->isAtomic &&
+             !isSupportedAtomicIntegerScalar(outer))) {
             emitError(DiagnosticCode::SemAtomicNonScalar,
-                      "atomic requires an integer scalar type (got '" +
-                          typeToString(node.type) + "')",
+                      "atomic requires a 1/2/4/8-byte integer scalar type "
+                      "(got '" + typeToString(node.type) + "')",
                       node);
         }
     }
@@ -7019,6 +7046,19 @@ void SemanticAnalyzer::visitStructDeclImpl(StructDeclAST& node) {
         checkDeprecatedTypeUse(f.type, node);
         // P1-04 评审 I3: 字段类型不得来自 compile_time.if 死分支。
         checkCtDeadBranchUse(f.type, node);
+        // CON-01: template `atomic T` fields must resolve to the same 1/2/4/8
+        // byte integer scalar set as a direct `atomic T` declaration. The
+        // instantiator clones unsupported resolved kinds with isAtomic set so
+        // this diagnostic catches pointer/enum/aggregate/float/int128 instead
+        // of silently dropping atomicity.
+        if (f.type && f.type->isAtomic &&
+            !isSupportedAtomicIntegerScalar(f.type)) {
+            emitError(DiagnosticCode::SemAtomicNonScalar,
+                      "atomic field requires a 1/2/4/8-byte integer scalar type "
+                      "(got '" + typeToString(f.type) + "')",
+                      node);
+            return;
+        }
         // P1-07 / SEM-12: 位域基础类型与宽度范围校验。
         checkBitFieldField(f, node);
     }

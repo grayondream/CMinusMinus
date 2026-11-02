@@ -878,6 +878,9 @@ static llvm::Value* emitAtomicBuiltin(CodegenContext& ctx, CallExprAST& node) {
 
     if (node.atomicBuiltin == AtomicBuiltin::ThreadFence ||
         node.atomicBuiltin == AtomicBuiltin::SignalFence) {
+        // LLVM rejects `fence monotonic`; a relaxed fence is a no-op in the
+        // language contract (compiler barrier only), so emit nothing.
+        if (node.atomicOrder == 0) return nullptr;
         llvm::AtomicOrdering order = toLLVMAtomicOrder(node.atomicOrder);
         if (node.atomicBuiltin == AtomicBuiltin::SignalFence) {
             builder.CreateFence(order, llvm::SyncScope::SingleThread);

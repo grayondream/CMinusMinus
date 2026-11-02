@@ -61,6 +61,24 @@ static std::string compileToIR(const std::string& source, const std::string& fil
     return os.str();
 }
 
+static std::vector<std::string> semanticErrors(const std::string& source,
+                                               const std::string& filename) {
+    Lexer lexer(filename, source);
+    auto tokens = lexer.tokenize();
+    Parser parser(tokens);
+    auto ast = parser.parse();
+    std::vector<std::string> errors;
+    if (!ast) {
+        errors.push_back("parse failed");
+        return errors;
+    }
+    for (auto& e : parser.getErrors()) errors.push_back(e.format());
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    for (auto& e : analyzer.getErrors()) errors.push_back(e.format());
+    return errors;
+}
+
 static int runSource(const std::string& source, const std::string& filename) {
     Lexer lexer(filename, source);
     auto tokens = lexer.tokenize();
@@ -386,5 +404,47 @@ TEST_F(AtomicE2E, AtomicBuiltinRejectsBadTypesAndOrders) {
         int32 main() {
             return __smc_atomic_compare_exchange_strong(&x, &expected, 1, 5, 3);
         }
+    )");
+}
+
+TEST_F(AtomicE2E, AtomicInt128Rejected) {
+    auto errors = semanticErrors(R"(
+        atomic int128 x;
+        int32 main() { return 0; }
+    )", "at_int128.c");
+    ASSERT_FALSE(errors.empty());
+    bool mentionsLimit = false;
+    for (const auto& e : errors) {
+        if (e.find("1/2/4/8") != std::string::npos) mentionsLimit = true;
+    }
+    EXPECT_TRUE(mentionsLimit);
+}
+
+TEST_F(AtomicE2E, AtomicTemplateUnsupportedRejected) {
+    auto expectError = [](const std::string& src) {
+        auto errors = semanticErrors(src, "at_tmpl_bad.c");
+        EXPECT_FALSE(errors.empty()) << src;
+    };
+    expectError(R"(
+        template<typename T> struct S { atomic T v; };
+        int32 main() { S<int32*> s; return 0; }
+    )");
+    expectError(R"(
+        template<typename T> struct S { atomic T v; };
+        struct X { int32 a; };
+        int32 main() { S<X> s; return 0; }
+    )");
+    expectError(R"(
+        template<typename T> struct S { atomic T v; };
+        enum E : int32 { A = 1 };
+        int32 main() { S<E> s; return 0; }
+    )");
+    expectError(R"(
+        template<typename T> struct S { atomic T v; };
+        int32 main() { S<float32> s; return 0; }
+    )");
+    expectError(R"(
+        template<typename T> struct S { atomic T v; };
+        int32 main() { S<int128> s; return 0; }
     )");
 }

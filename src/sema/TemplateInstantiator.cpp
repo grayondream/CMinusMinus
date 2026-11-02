@@ -61,9 +61,10 @@ bool TemplateInstantiator::evalIntExpr(
 }
 
 // CON-01: a template field `atomic T` stores the qualifier on the TypeVar
-// placeholder. Once T is known, clone the resolved scalar and re-apply the
-// qualifier; concrete parser clones use the same representation. Aggregates
-// are left untouched (sema diagnoses `atomic` on non-integer types).
+// placeholder. Once T is known, clone the resolved type and re-apply the
+// qualifier. The clone keeps enough identity (kind/name) for sema to reject
+// unsupported resolved types: pointer, enum, aggregate, float, int128 and
+// array/slice kinds must never silently lose atomicity.
 static Type* applyAtomicQualifier(Type* resolved, const Type* qualifier) {
     if (!resolved || resolved->isAtomic) return resolved;
     Type* base = resolved;
@@ -71,6 +72,8 @@ static Type* applyAtomicQualifier(Type* resolved, const Type* qualifier) {
         base = static_cast<TypedefType*>(base)->aliasedType;
     }
     if (!base) return resolved;
+
+    Type* copy = nullptr;
     switch (base->kind) {
         case TypeKind::Char:
         case TypeKind::Bool:
@@ -83,11 +86,45 @@ static Type* applyAtomicQualifier(Type* resolved, const Type* qualifier) {
         case TypeKind::ISize: case TypeKind::USize:
         case TypeKind::Float16: case TypeKind::Float32:
         case TypeKind::Float64: case TypeKind::Float128:
+            copy = new Type(base->kind, base->base);
             break;
-        default:
+        case TypeKind::Pointer:
+            copy = new Type(TypeKind::Pointer, base->base);
+            break;
+        case TypeKind::Enum: {
+            auto* et = static_cast<EnumType*>(base);
+            auto* ec = new EnumType(et->name);
+            ec->values = et->values;
+            ec->underlyingType = et->underlyingType;
+            ec->isComplete = et->isComplete;
+            copy = ec;
+            break;
+        }
+        case TypeKind::Struct: {
+            auto* st = static_cast<StructType*>(base);
+            copy = new StructType(st->name);
+            break;
+        }
+        case TypeKind::Class: {
+            auto* ct = static_cast<ClassType*>(base);
+            copy = new ClassType(ct->name);
+            break;
+        }
+        case TypeKind::Union: {
+            auto* ut = static_cast<UnionType*>(base);
+            copy = new UnionType(ut->name);
+            break;
+        }
+        case TypeKind::TypeVar:
+        case TypeKind::TypeInstance:
             return resolved;
+        default:
+            // Sentinel: unsupported composite kinds become an atomic pointer
+            // solely so the field/var validator reports a real diagnostic
+            // instead of silently dropping the qualifier.
+            copy = new Type(TypeKind::Pointer, base);
+            break;
     }
-    auto* copy = new Type(base->kind, base->base);
     copy->isConst = base->isConst || (qualifier && qualifier->isConst);
     copy->isVolatile = base->isVolatile || (qualifier && qualifier->isVolatile);
     copy->isAtomic = true;
