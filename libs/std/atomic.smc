@@ -366,6 +366,9 @@ template<typename T> struct Atomic {
         if (order == std::MemoryOrderRelaxed) {
             return std::atomic_exchange_relaxed(&this->value, desired);
         }
+        if (order == std::MemoryOrderConsume) {
+            return std::atomic_exchange_acquire(&this->value, desired);
+        }
         if (order == std::MemoryOrderAcquire) {
             return std::atomic_exchange_acquire(&this->value, desired);
         }
@@ -389,6 +392,9 @@ template<typename T> struct Atomic {
                          compile_time.is_pointer(T)) {
             if (order == std::MemoryOrderRelaxed) {
                 return std::atomic_fetch_add_relaxed(&this->value, delta);
+            }
+            if (order == std::MemoryOrderConsume) {
+                return std::atomic_fetch_add_acquire(&this->value, delta);
             }
             if (order == std::MemoryOrderAcquire) {
                 return std::atomic_fetch_add_acquire(&this->value, delta);
@@ -418,6 +424,9 @@ template<typename T> struct Atomic {
             if (order == std::MemoryOrderRelaxed) {
                 return std::atomic_fetch_sub_relaxed(&this->value, delta);
             }
+            if (order == std::MemoryOrderConsume) {
+                return std::atomic_fetch_sub_acquire(&this->value, delta);
+            }
             if (order == std::MemoryOrderAcquire) {
                 return std::atomic_fetch_sub_acquire(&this->value, delta);
             }
@@ -444,6 +453,9 @@ template<typename T> struct Atomic {
                          !compile_time.is_enum(T)) {
             if (order == std::MemoryOrderRelaxed) {
                 return std::atomic_fetch_and_relaxed(&this->value, operand);
+            }
+            if (order == std::MemoryOrderConsume) {
+                return std::atomic_fetch_and_acquire(&this->value, operand);
             }
             if (order == std::MemoryOrderAcquire) {
                 return std::atomic_fetch_and_acquire(&this->value, operand);
@@ -472,6 +484,9 @@ template<typename T> struct Atomic {
             if (order == std::MemoryOrderRelaxed) {
                 return std::atomic_fetch_or_relaxed(&this->value, operand);
             }
+            if (order == std::MemoryOrderConsume) {
+                return std::atomic_fetch_or_acquire(&this->value, operand);
+            }
             if (order == std::MemoryOrderAcquire) {
                 return std::atomic_fetch_or_acquire(&this->value, operand);
             }
@@ -498,6 +513,9 @@ template<typename T> struct Atomic {
                          !compile_time.is_enum(T)) {
             if (order == std::MemoryOrderRelaxed) {
                 return std::atomic_fetch_xor_relaxed(&this->value, operand);
+            }
+            if (order == std::MemoryOrderConsume) {
+                return std::atomic_fetch_xor_acquire(&this->value, operand);
             }
             if (order == std::MemoryOrderAcquire) {
                 return std::atomic_fetch_xor_acquire(&this->value, operand);

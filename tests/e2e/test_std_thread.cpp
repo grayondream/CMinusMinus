@@ -124,6 +124,8 @@ TEST_F(StdThreadTest, RepeatedLifecycleReturnsFalse) {
         int32 main() {
             std::Thread t;
             t.init();
+            if (t.join()) return 10;
+            if (t.detach()) return 11;
             if (!t.start(noop, null)) return 1;
             if (t.start(noop, null)) return 2;
             if (!t.join()) return 3;

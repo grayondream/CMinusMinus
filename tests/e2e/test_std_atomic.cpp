@@ -128,6 +128,11 @@ TEST_F(StdAtomicTest, RuntimeOrderRmwAndFences) {
             if (a.fetch_or_order(8, std::MemoryOrderSeqCst) != 6) return 5;
             if (a.fetch_xor_order(1, std::MemoryOrderRelaxed) != 14) return 6;
             if (a.load_order(std::MemoryOrderSeqCst) != 15) return 7;
+            if (a.exchange_order(5, std::MemoryOrderConsume) != 15) return 8;
+            if (a.fetch_add_order(1, std::MemoryOrderConsume) != 5) return 9;
+            if (a.load() != 6) return 10;
+            std::atomic_thread_fence<0>();
+            std::atomic_signal_fence<0>();
             std::atomic_thread_fence<5>();
             std::atomic_signal_fence<5>();
             std::atomic_thread_fence_seq_cst();
@@ -182,6 +187,21 @@ TEST_F(StdAtomicTest, FloatBoolEnumAndPointer) {
             int32* oldp = p.fetch_add(1);
             if (oldp != &arr[0]) return 7;
             if (p.load() != &arr[1]) return 8;
+
+            int16 v16 = 1;
+            std::Atomic<int16> a16 = {v16};
+            int16 two16 = 2;
+            a16.store(two16);
+            int16 expected16 = 2;
+            if (!a16.compare_exchange_strong(&expected16, v16)) return 9;
+            if (a16.load() != 1) return 10;
+
+            uint8 v8 = 3;
+            std::Atomic<uint8> a8 = {v8};
+            uint8 expected8 = 3;
+            uint8 four8 = 4;
+            if (!a8.compare_exchange_strong(&expected8, four8)) return 11;
+            if (a8.load() != 4) return 12;
             return 0;
         }
     )", "std_atomic_types.c"), 0);
@@ -215,6 +235,18 @@ TEST_F(StdAtomicTest, UnsupportedSizeRejected) {
         if (e.find("1/2/4/8") != std::string::npos) mentionsLimit = true;
     }
     EXPECT_TRUE(mentionsLimit);
+
+    std::vector<std::string> aggregateErrors;
+    int aggregateRc = runWithImports(R"(
+        import std.atomic;
+        struct Pair { int32 a; int32 b; };
+        int32 main() {
+            std::Atomic<Pair> a;
+            return a.is_lock_free() ? 0 : 1;
+        }
+    )", "std_atomic_bad_struct.c", &aggregateErrors);
+    EXPECT_EQ(aggregateRc, -1);
+    EXPECT_FALSE(aggregateErrors.empty());
 }
 
 TEST_F(StdAtomicTest, SeqCstConvenience) {
@@ -227,7 +259,10 @@ TEST_F(StdAtomicTest, SeqCstConvenience) {
             int32 expected = 4;
             if (!a.compare_exchange_strong(&expected, 9)) return 1;
             if (a.fetch_add(2) != 9) return 2;
-            return a.load() == 11 ? 0 : 3;
+            int32 wrong = 999;
+            if (a.compare_exchange_strong(&wrong, 99)) return 3;
+            if (wrong != a.load()) return 4;
+            return a.load() == 11 ? 0 : 5;
         }
     )", "std_atomic_seq.c"), 0);
 }
