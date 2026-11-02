@@ -1216,5 +1216,6 @@
   - `tests/e2e/test_std_thread.cpp`：start/join/参数、状态机/ID、重复 lifecycle、detach 完成轮询、hardware_concurrency、yield/sleep、TLS 每线程、4×10000 原子计数压力。
   - 顺带把 `tests/driver/test_module_visibility.cpp` 的固定临时目录改为 pid 唯一，修复 `ctest -j8` 的并行 flake。
 - 文档：`docs/spec/stdlib.md` §18/§19（API/限制/线程生命周期）、`docs/spec/abi.md` 原子 ABI 行与自然对齐说明、`TODO.md` CON-02/03/05/06/09、STD-24/25、P2-01。
-- 验收：全量 `ctest --test-dir build -j8` **1722/1722** 通过（2 个既有 `GTEST_SKIP`）；`examples/all_features.c` 第 28 节运行输出 `ALL FEATURES OK`；生成程序自动链接 pthread 实测退出 0。
+- 验收：全量 `ctest --test-dir build -j8` **1725/1725** 通过（2 个既有 `GTEST_SKIP`）；`examples/all_features.c` 第 28 节运行输出 `ALL FEATURES OK`；生成程序自动链接 pthread 实测退出 0。
+- 评审收口（2026-11-02）：relaxed fence 不再发出非法 `fence monotonic`；`_order` 的 exchange/fetch 把 `Consume` 分派到 acquire；`atomic int128` 与模板 `atomic T` 的指针/enum/聚合/float/int128 解析改为编译期拒绝（不再静默丢原子性或退化为普通访问）；新增失败 CAS 回写、1/2 字节原子、Consume、relaxed fence、未 start 的 join/detach、驱动 pthread 链接测试。
 - 已知限制：显式 CAS 的跨模块 enum 常量模板实参 v1 用数值 0..5；bool/enum/float RMW 是运行时 panic；`Thread` 无析构/所有权转移；无 mutex/condvar、跨平台线程后端、16 字节原子。
