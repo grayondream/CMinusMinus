@@ -3337,3 +3337,15 @@ TEST(LambdaSemaGaps, ExplicitReturnTypeStillAuthoritative) {
                 hasMsg(errs, "non-void"))
         << "expected explicit void return type to reject a value return";
 }
+
+TEST(LambdaSemaGaps, FileScopeCaptureInitializerDiagnosed) {
+    auto errs = semaErrorsOf(R"(
+        int32 k = 5;
+        auto f = [x = k + 1]() -> int32 { return x; };
+    )");
+    EXPECT_FALSE(errs.empty()) << "expected a diagnostic for a capture initializer "
+                                  "in a global initializer";
+    EXPECT_TRUE(hasMsg(errs, "enclosing function scope") ||
+                hasMsg(errs, "global initializer"))
+        << "expected the global-scope capture diagnostic";
+}

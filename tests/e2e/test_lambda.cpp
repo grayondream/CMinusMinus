@@ -279,3 +279,40 @@ TEST_F(LambdaE2E, ReturnInferenceSeesBodyLocal) {
         }
     )", "lam_retlocal.c"), 0);
 }
+
+TEST_F(LambdaE2E, CaptureInitializerArrayByValue) {
+    EXPECT_EQ(runSource(R"(
+        int32 main() {
+            int32 arr[3] = { 1, 2, 3 };
+            auto f = [t = arr]() -> int32 { return t[0] + t[2]; };
+            arr[0] = 99;
+            return f() == 4 ? 0 : 1;
+        }
+    )", "lam_init_array.c"), 0);
+}
+
+TEST_F(LambdaE2E, CaptureInitializerArrayImmediate) {
+    EXPECT_EQ(runSource(R"(
+        int32 main() {
+            int32 arr[3] = { 1, 2, 3 };
+            int32 r = [t = arr]() -> int32 { return t[0] + t[2]; }();
+            return r == 4 ? 0 : 1;
+        }
+    )", "lam_init_array_imm.c"), 0);
+}
+
+TEST_F(LambdaE2E, CaptureInitializerMemberArrayByValue) {
+    EXPECT_EQ(runSource(R"(
+        class LambdaArrayHolder {
+        public:
+            int32 a[3];
+        };
+        int32 main() {
+            LambdaArrayHolder p;
+            p.a[0] = 1; p.a[1] = 2; p.a[2] = 3;
+            auto f = [t = p.a]() -> int32 { return t[0] + t[2]; };
+            p.a[0] = 99;
+            return f() == 4 ? 0 : 1;
+        }
+    )", "lam_init_member_array.c"), 0);
+}

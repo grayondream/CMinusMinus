@@ -3076,9 +3076,23 @@ static bool emitClosureCaptures(LambdaExprAST& lambda, CodegenContext& ctx,
                 }
                 builder.CreateStore(v, fieldPtr);
             } else {
-                if (cap.init->isLValue) v = readLValue(ctx, *cap.init, v);
-                v = ctx.castValue(v, cap.init->type, fieldLLVM);
-                builder.CreateStore(v, fieldPtr);
+                Type* initType = stripTypedefsT12(cap.init->type);
+                if (initType && initType->kind == TypeKind::Array) {
+                    // Arrays are copied as whole aggregates. readLValue would
+                    // decay an array lvalue to a pointer, so mirror the plain
+                    // by-value capture path and load the array value directly.
+                    if (cap.init->isLValue) {
+                        v = builder.CreateLoad(fieldLLVM, v, "cap.array");
+                    } else if (v->getType() != fieldLLVM &&
+                               v->getType()->isPointerTy()) {
+                        v = builder.CreateLoad(fieldLLVM, v, "cap.array");
+                    }
+                    builder.CreateStore(v, fieldPtr);
+                } else {
+                    if (cap.init->isLValue) v = readLValue(ctx, *cap.init, v);
+                    v = ctx.castValue(v, cap.init->type, fieldLLVM);
+                    builder.CreateStore(v, fieldPtr);
+                }
             }
         } else if (cap.byRef) {
             llvm::Value* addr = ctx.lookupVariableAddr(cap.name);

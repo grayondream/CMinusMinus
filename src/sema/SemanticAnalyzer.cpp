@@ -6228,6 +6228,23 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
         }
     }
 
+    // CG-11: a capturing lambda needs an enclosing function body — its
+    // closure is stack-allocated at the creation site. File-scope initializers
+    // have no insertion point; diagnose before codegen can crash.
+    if (!effective.empty() && currentFunction == nullptr) {
+        bool hasInit = false;
+        for (const auto& c : effective) {
+            if (c.init) {
+                hasInit = true;
+                break;
+            }
+        }
+        emitError(hasInit
+                      ? "capture initializer requires an enclosing function scope"
+                      : "lambda with captures cannot be used in a global initializer",
+                  node);
+    }
+
     // 3) 返回类型：显式类型权威；否则在 body 遍历中惰性推断。
     const bool inferReturnType = !node.hasExplicitReturnType;
     Type* retType = node.returnType;
