@@ -304,6 +304,25 @@ private:
     void collectUsedNamesStmt(StmtAST* stmt, std::unordered_set<std::string>& out);
     void collectUsedNamesDecl(DeclAST* decl, std::unordered_set<std::string>& out);
 
+    // PAR-11: active lambda body context (innermost = back). `capturedNames`
+    // is the effective capture list (including `this`); variable references
+    // from a nested lambda must be present in the innermost frame.
+    struct LambdaFrame {
+        Scope* bodyScope = nullptr;
+        std::unordered_set<std::string> capturedNames;
+        bool capturesThis = false;
+        // Filled by sema; return-type inference itself is a later task.
+        bool inferReturn = false;
+        Type* inferredReturn = nullptr;
+        bool firstVoidReturn = false;
+    };
+    std::vector<LambdaFrame> lambdaFrames;
+    // Nearest automatic-storage local named `name`, stopping at file/module
+    // scope. Returns null for globals and static/thread_local/extern locals.
+    Symbol* findCapturableLocal(const std::string& name);
+    // Defining class of `name` along the inheritance chain, or null.
+    ClassType* findFieldOwner(ClassType* classType, const std::string& name);
+
     void visit(ExprAST& expr);
     void visit(StmtAST& stmt);
 

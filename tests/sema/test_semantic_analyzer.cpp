@@ -2711,3 +2711,121 @@ TEST(SemanticAnalyzerAccessTest, PrivateMemberAliasPointerDeniedOutside) {
         if (e.code == DiagnosticCode::SemPrivateMemberAccess) found = true;
     EXPECT_TRUE(found);
 }
+
+// ========== PAR-11 lambda capture semantics (Task 2) ==========
+
+TEST(LambdaSemaGaps, RejectsUncapturedOuterLocal) {
+    auto errs = semaErrorsOf(R"(
+        int32 main() {
+            int32 x = 1;
+            auto outer = [&x]() -> int32 {
+                auto inner = []() -> int32 { return x; };
+                return inner();
+            };
+            return outer();
+        }
+    )");
+    EXPECT_FALSE(errs.empty());
+    EXPECT_TRUE(hasMsg(errs, "not captured"))
+        << "expected an uncaptured-variable diagnostic";
+}
+
+TEST(LambdaSemaGaps, CaptureInitializerInfersType) {
+    EXPECT_TRUE(analyzeOk(R"(
+        int32 main() {
+            auto f = [x = 41]() -> int32 { return x + 1; };
+            return f() == 42 ? 0 : 1;
+        }
+    )"));
+}
+
+TEST(LambdaSemaGaps, CaptureInitializerByRefRequiresLValue) {
+    auto errs = semaErrorsOf(R"(
+        int32 main() {
+            auto f = [&x = 1]() -> int32 { return x; };
+            return 0;
+        }
+    )");
+    EXPECT_FALSE(errs.empty());
+    EXPECT_TRUE(hasMsg(errs, "lvalue") || hasMsg(errs, "左值"))
+        << "expected an lvalue diagnostic for a by-ref init capture";
+}
+
+TEST(LambdaSemaGaps, ThisImplicitMemberResolves) {
+    auto errs = semaErrorsOf(R"(
+        class C {
+        public:
+            int32 v;
+            int32 f() {
+                auto g = [this]() -> int32 { return v; };
+                return g();
+            }
+        };
+    )");
+    EXPECT_TRUE(errs.empty()) << (errs.empty() ? "" : errs.front());
+}
+
+TEST(LambdaSemaGaps, ThisCaptureOutsideMethodRejected) {
+    auto errs = semaErrorsOf(R"(
+        int32 main() {
+            auto f = [this]() -> int32 { return 1; };
+            return 0;
+        }
+    )");
+    EXPECT_FALSE(errs.empty());
+}
+
+TEST(LambdaSemaGaps, CaptureAllDoesNotCaptureGlobals) {
+    EXPECT_TRUE(analyzeOk(R"(
+        int32 g = 5;
+        int32 main() {
+            auto f = [=]() -> int32 { return g; };
+            return f() == 5 ? 0 : 1;
+        }
+    )"));
+}
+
+TEST(LambdaSemaGaps, CaptureAllPreservesExplicitOverrides) {
+    std::string source = R"(
+        int32 main() {
+            int32 a = 1; int32 b = 2;
+            auto byVal = [=, &a, b]() -> int32 { return a + b; };
+            auto byRef = [&, a, &b]() -> int32 { return a + b; };
+            return byVal() + byRef() - 6;
+        }
+    )";
+    Lexer lexer("t.c", source);
+    Parser parser(lexer.tokenize());
+    auto ast = parser.parse();
+    ASSERT_NE(ast, nullptr);
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    EXPECT_TRUE(analyzer.getErrors().empty());
+
+    auto* fn = dynamic_cast<FunctionDeclAST*>(ast->declarations[0].get());
+    ASSERT_NE(fn, nullptr);
+    ASSERT_NE(fn->body, nullptr);
+    auto lambdaAt = [&](size_t stmtIndex) -> LambdaExprAST* {
+        auto* ds = dynamic_cast<DeclStmtAST*>(fn->body->stmts.at(stmtIndex).get());
+        if (!ds) return nullptr;
+        auto* vd = dynamic_cast<VarDeclAST*>(ds->decl.get());
+        if (!vd) return nullptr;
+        return dynamic_cast<LambdaExprAST*>(vd->initExpr.get());
+    };
+
+    auto* byVal = lambdaAt(2);
+    ASSERT_NE(byVal, nullptr);
+    ASSERT_EQ(byVal->captures.size(), 2u);
+    std::unordered_map<std::string, bool> byValRef;
+    for (auto& c : byVal->captures) byValRef[c.name] = c.byRef;
+    EXPECT_TRUE(byValRef["a"]);
+    EXPECT_FALSE(byValRef["b"]);
+
+    auto* byRef = lambdaAt(3);
+    ASSERT_NE(byRef, nullptr);
+    ASSERT_EQ(byRef->captures.size(), 2u);
+    std::unordered_map<std::string, bool> byRefRef;
+    for (auto& c : byRef->captures) byRefRef[c.name] = c.byRef;
+    EXPECT_FALSE(byRefRef["a"]);
+    EXPECT_TRUE(byRefRef["b"]);
+}

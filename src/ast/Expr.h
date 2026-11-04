@@ -179,6 +179,10 @@ public:
     // yields the integer constant instead of a variable address.
     bool isEnumConstant = false;
     int enumValue = 0;
+    // PAR-11: bare member name inside a `this`-capturing lambda. Sema
+    // desugars it to `this->name`, keeps the member-access node here for
+    // codegen, and copies its type/lvalue-ness onto this node.
+    std::unique_ptr<ExprAST> implicitThisAccess;
     explicit VariableExprAST(const std::string& n) : name(n) {}
     llvm::Value* codegen(CodegenContext& ctx) override;
 };

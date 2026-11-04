@@ -20,6 +20,10 @@ public:
     // `checkUnused`; parameters, globals and functions never warn here.
     bool isUsed = false;
     bool checkUnused = false;
+    // PAR-11: file/namespace-scope variables and block-scope `static`/
+    // `thread_local`/`extern` declarations have static storage duration and
+    // are therefore never lambda-captured (C++ [expr.prim.lambda] semantics).
+    bool isStaticStorage = false;
     // CT: this symbol is a constexpr container variable whose materialized
     // storage is read-only. Symbol identity (not just the name) keeps shadowed
     // locals and same-named parameters mutable.
