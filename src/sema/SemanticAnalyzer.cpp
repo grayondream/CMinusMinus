@@ -5877,8 +5877,10 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
         paramTypes.push_back(p->type);
     }
 
-    // 2) 捕获解析：`[=]` 扫描 body 引用的局部/参数名；显式列出则逐个查找。
-    std::vector<LambdaExprAST::Capture> effective;
+    // 2) 捕获解析：`[=]`/`[&]` 扫描 body 引用的局部/参数名；显式列出则逐个查找。
+    // Capture 持有 move-only 的 init，因此 effective 只保存指针；captureAll
+    // 时新捕获先写回 node.captures，避免复制 Capture。
+    std::vector<LambdaExprAST::Capture*> effective;
     if (node.captureAll) {
         // 扫描 body 全部语句/表达式引用的变量名（含 return/if/循环）。
         std::unordered_set<std::string> used;
@@ -5887,15 +5889,15 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
                 collectUsedNamesStmt(stmt.get(), used);
             }
         }
+        std::vector<LambdaExprAST::Capture> discovered;
         for (auto& n : used) {
             LambdaExprAST::Capture c;
             c.name = n;
-            effective.push_back(std::move(c));
+            discovered.push_back(std::move(c));
         }
-        node.captures = effective;  // 写回供 codegen 使用
-    } else {
-        for (auto& c : node.captures) effective.push_back(c);
+        node.captures = std::move(discovered);  // 写回供 codegen 使用
     }
+    for (auto& c : node.captures) effective.push_back(&c);
 
     // 3) 返回类型：显式或从 body 推断（推断在 body 作用域内，参数/捕获已声明）。
     Type* retType = node.returnType;
@@ -5909,14 +5911,14 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
     } else {
         std::string closureKey = "__lambda_" + typeCtx->nextAnonId();
         auto* closure = new StructType(closureKey);
-        for (auto& c : effective) {
-            Symbol* sym = currentScope ? currentScope->lookup(c.name) : nullptr;
+        for (auto* c : effective) {
+            Symbol* sym = currentScope ? currentScope->lookup(c->name) : nullptr;
             if (!sym || !sym->type) {
-                emitError("unknown capture '" + c.name + "' in lambda", node);
+                emitError("unknown capture '" + c->name + "' in lambda", node);
                 continue;
             }
-            Type* capType = c.byRef ? new Type(TypeKind::Pointer, sym->type) : sym->type;
-            closure->addField(c.name, capType);
+            Type* capType = c->byRef ? new Type(TypeKind::Pointer, sym->type) : sym->type;
+            closure->addField(c->name, capType);
         }
         typeCtx->addStruct(closureKey, closure);
         node.closureName = closureKey;
@@ -5941,15 +5943,15 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
             }
         }
         // 捕获按声明为局部（使 body 内引用 name 可解析）。
-        for (auto& c : effective) {
-            if (currentScope->lookup(c.name)) continue;  // 与参数同名冲突
+        for (auto* c : effective) {
+            if (currentScope->lookup(c->name)) continue;  // 与参数同名冲突
             Symbol* sym = nullptr;
             // 从外层作用域解析捕获类型。
             for (Scope* s = currentScope->parent; s; s = s->parent) {
-                if ((sym = s->lookup(c.name))) break;
+                if ((sym = s->lookup(c->name))) break;
             }
             if (sym && sym->type) {
-                declare(c.name, sym->type);
+                declare(c->name, sym->type);
             }
         }
         // 推断返回类型：在 body 作用域内取首个 return 表达式类型。

@@ -601,9 +601,13 @@ public:
     struct Capture {
         std::string name;
         bool byRef = false;  // true = `&name`；false = 按值
+        // 非空 = `[x = expr]` / `[&x = expr]` 捕获初始化器；在 lambda 定义处
+        // 求值一次（sema/codegen 消费，parser 只保存语法树）。
+        std::unique_ptr<ExprAST> init;
     };
     std::vector<Capture> captures;
-    bool captureAll = false;  // `[=]` 全部按值
+    bool captureAll = false;        // `[=]` / `[&]` 默认捕获
+    bool captureAllByRef = false;   // true = `[&]` 默认按引用；false = `[=]`
     std::vector<std::unique_ptr<ParamDeclAST>> params;
     Type* returnType{nullptr};  // 显式或 sema 推断
     bool hasExplicitReturnType = false;

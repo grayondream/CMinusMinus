@@ -2474,6 +2474,56 @@ TEST(ParserLambdaTest, ParsesCaptureAll) {
     EXPECT_TRUE(lam->captureAll);
 }
 
+TEST(ParserLambdaTest, ParsesCaptureAllByRef) {
+    auto expr = parseExpr("[&](int32 x) { return x; }");
+    auto lam = dynamic_cast<LambdaExprAST*>(expr);
+    ASSERT_NE(lam, nullptr);
+    EXPECT_TRUE(lam->captureAll);
+    EXPECT_TRUE(lam->captureAllByRef);
+}
+
+TEST(ParserLambdaTest, ParsesMixedCaptureDefaults) {
+    auto byVal = dynamic_cast<LambdaExprAST*>(
+        parseExpr("[=, &a, b](int32 x) { return x; }"));
+    ASSERT_NE(byVal, nullptr);
+    EXPECT_TRUE(byVal->captureAll);
+    EXPECT_FALSE(byVal->captureAllByRef);
+    ASSERT_EQ(byVal->captures.size(), 2u);
+    EXPECT_TRUE(byVal->captures[0].byRef);
+    EXPECT_FALSE(byVal->captures[1].byRef);
+
+    auto byRef = dynamic_cast<LambdaExprAST*>(
+        parseExpr("[&, a, &b](int32 x) { return x; }"));
+    ASSERT_NE(byRef, nullptr);
+    EXPECT_TRUE(byRef->captureAll);
+    EXPECT_TRUE(byRef->captureAllByRef);
+    ASSERT_EQ(byRef->captures.size(), 2u);
+    EXPECT_FALSE(byRef->captures[0].byRef);
+    EXPECT_TRUE(byRef->captures[1].byRef);
+}
+
+TEST(ParserLambdaTest, ParsesCaptureInitializers) {
+    auto expr = parseExpr("[x = 1 + 2, &y = z](int32 a) { return a; }");
+    auto lam = dynamic_cast<LambdaExprAST*>(expr);
+    ASSERT_NE(lam, nullptr);
+    ASSERT_EQ(lam->captures.size(), 2u);
+    EXPECT_EQ(lam->captures[0].name, "x");
+    EXPECT_FALSE(lam->captures[0].byRef);
+    ASSERT_NE(lam->captures[0].init, nullptr);
+    EXPECT_EQ(lam->captures[1].name, "y");
+    EXPECT_TRUE(lam->captures[1].byRef);
+    ASSERT_NE(lam->captures[1].init, nullptr);
+}
+
+TEST(ParserLambdaTest, ParsesThisCapture) {
+    auto expr = parseExpr("[this](int32 x) { return x; }");
+    auto lam = dynamic_cast<LambdaExprAST*>(expr);
+    ASSERT_NE(lam, nullptr);
+    ASSERT_EQ(lam->captures.size(), 1u);
+    EXPECT_EQ(lam->captures[0].name, "this");
+    EXPECT_FALSE(lam->captures[0].byRef);
+}
+
 TEST(ParserLambdaTest, LambdaVsSubscriptDisambiguated) {
     // 数组下标仍走 ArrayAccessExprAST。
     auto expr = parseExpr("arr[2]");

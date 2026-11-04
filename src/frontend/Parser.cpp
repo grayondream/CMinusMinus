@@ -985,31 +985,77 @@ std::unique_ptr<ExprAST> Parser::parseLambdaExpr() {
     if (!match(TokenType::TOKEN_LBRACKET)) return nullptr;
     auto lambda = std::make_unique<LambdaExprAST>();
 
-    // capture list: `]` | `=]` | `[=]` | `[a, &b, ...]`
+    // 显式捕获项：可选 `&`，identifier，可选 `= expr`。捕获初始化器用
+    // minPrec=2 解析，避免逗号被当作逗号运算符吃掉列表分隔符。
+    auto parseCaptureItem = [this](std::vector<LambdaExprAST::Capture>& out,
+                                   bool leadingRefConsumed = false) -> bool {
+        LambdaExprAST::Capture cap;
+        if (leadingRefConsumed) {
+            cap.byRef = true;
+        } else if (match(TokenType::TOKEN_BIT_AND)) {
+            cap.byRef = true;
+        }
+        auto name = match(TokenType::TOKEN_IDENTIFIER);
+        if (!name) {
+            errorUnexpected("expected capture name or ']' in lambda capture list");
+            return false;
+        }
+        cap.name = name->lexeme;
+        if (match(TokenType::TOKEN_ASSIGN)) {
+            cap.init = parseExpr(2);
+            if (!cap.init) {
+                errorUnexpected("capture initializer expression");
+                return false;
+            }
+        }
+        out.push_back(std::move(cap));
+        return true;
+    };
+
+    auto parseCaptureList = [&]() -> bool {
+        while (true) {
+            if (!parseCaptureItem(lambda->captures)) return false;
+            if (match(TokenType::TOKEN_COMMA)) continue;
+            return expect(TokenType::TOKEN_RBRACKET,
+                          "expected ']' after lambda capture list");
+        }
+    };
+
+    // capture list:
+    //   `]` | `[=]` | `[&]`
+    //   `[=, a, &b]` | `[&, a, &b]`（默认捕获 + override 列表）
+    //   `[a, &b]` | `[x = expr, &y = expr]` | `[this]`
     if (match(TokenType::TOKEN_RBRACKET)) {
         // empty capture
     } else if (match(TokenType::TOKEN_ASSIGN)) {
         lambda->captureAll = true;
-        if (!expect(TokenType::TOKEN_RBRACKET, "expected ']' after '=' in lambda capture list")) {
+        if (match(TokenType::TOKEN_COMMA)) {
+            if (!parseCaptureList()) return nullptr;
+        } else if (!expect(TokenType::TOKEN_RBRACKET,
+                           "expected ']' after '=' in lambda capture list")) {
             return nullptr;
         }
-    } else {
-        while (true) {
-            LambdaExprAST::Capture cap;
-            if (match(TokenType::TOKEN_BIT_AND)) cap.byRef = true;
-            auto name = match(TokenType::TOKEN_IDENTIFIER);
-            if (!name) {
-                errorUnexpected("expected capture name or ']' in lambda capture list");
+    } else if (check(TokenType::TOKEN_BIT_AND)) {
+        advance();  // consume '&'；需区分 `[&]`/`[&, ...]` 和显式 `[&name]`。
+        if (match(TokenType::TOKEN_RBRACKET)) {
+            lambda->captureAll = true;
+            lambda->captureAllByRef = true;
+        } else if (match(TokenType::TOKEN_COMMA)) {
+            lambda->captureAll = true;
+            lambda->captureAllByRef = true;
+            if (!parseCaptureList()) return nullptr;
+        } else {
+            // 显式 `&name` / `&name = expr`（`&` 已消费）。
+            if (!parseCaptureItem(lambda->captures, true)) return nullptr;
+            if (match(TokenType::TOKEN_COMMA)) {
+                if (!parseCaptureList()) return nullptr;
+            } else if (!expect(TokenType::TOKEN_RBRACKET,
+                               "expected ']' after lambda capture list")) {
                 return nullptr;
             }
-            cap.name = name->lexeme;
-            lambda->captures.push_back(std::move(cap));
-            if (match(TokenType::TOKEN_COMMA)) continue;
-            if (!expect(TokenType::TOKEN_RBRACKET, "expected ']' after lambda capture list")) {
-                return nullptr;
-            }
-            break;
         }
+    } else {
+        if (!parseCaptureList()) return nullptr;
     }
 
     // (params) — reuse function parameter parsing.
