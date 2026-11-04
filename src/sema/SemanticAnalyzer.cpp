@@ -2962,56 +2962,22 @@ void SemanticAnalyzer::visit(VariableExprAST& node) {
         sym = lookup(originalName);
     }
     if (sym) {
-        sym->isUsed = true; // SEM-11: any reference counts as a use (W3002).
-        // PAR-11: a reference from a lambda body may only reach an enclosing
-        // automatic local when the innermost lambda captures it. Symbols
-        // declared inside this body (params/captures/locals) and file/static
-        // storage stay reachable.
-        if (!lambdaFrames.empty()) {
-            LambdaFrame& frame = lambdaFrames.back();
-            bool localToLambda = false;
-            for (Scope* s = currentScope;
-                 s && s != frame.bodyScope->parent; s = s->parent) {
-                if (scopeDeclaresSymbol(s, sym)) {
-                    localToLambda = true;
-                    break;
-                }
-            }
-            bool fileOrStatic = sym->isStaticStorage;
-            if (!fileOrStatic) {
-                for (Scope* s = currentScope; s; s = s->parent) {
-                    if (!scopeDeclaresSymbol(s, sym)) continue;
-                    if (s == globalScope.get() || s == activeModuleScope)
-                        fileOrStatic = true;
-                    break;
-                }
-            }
-            if (!localToLambda && !fileOrStatic &&
-                !frame.capturedNames.count(originalName) &&
-                !frame.capturedNames.count(key)) {
-                emitError("variable '" + originalName +
-                              "' is not captured by lambda", node);
-            }
+        // PAR-11: in a `this`-capturing lambda a bare field name beats a
+        // same-named global/static symbol; locals, params, and captures still
+        // win because they are not file/static symbols.
+        if (isFileOrStaticSymbol(sym) &&
+            desugarImplicitThis(node, originalName)) {
+            return;
         }
+        sym->isUsed = true; // SEM-11: any reference counts as a use (W3002).
+        // PAR-11: reject a reference that escapes any enclosing lambda without
+        // being captured by it.
+        validateLambdaCaptureReference(originalName, sym, node);
     }
     if (!sym) {
         // PAR-11: a bare member name inside a `this`-capturing lambda
         // desugars to `this->name` (reusing MemberAccess access control).
-        if (!lambdaFrames.empty() && lambdaFrames.back().capturesThis &&
-            currentClass && findFieldOwner(currentClass, originalName)) {
-            auto thisExpr = std::make_unique<VariableExprAST>("this");
-            thisExpr->setLocation(node.sourceFile, node.sourceLine,
-                                  node.sourceColumn);
-            auto member = std::make_unique<MemberAccessExprAST>(
-                MemberAccessKind::Arrow, std::move(thisExpr), originalName);
-            member->setLocation(node.sourceFile, node.sourceLine,
-                                node.sourceColumn);
-            visit(*member);
-            node.type = member->type;
-            node.isLValue = member->isLValue;
-            node.implicitThisAccess = std::move(member);
-            return;
-        }
+        if (desugarImplicitThis(node, originalName)) return;
         emitError(DiagnosticCode::SemUndeclaredIdentifier, "use of undeclared identifier '" + originalName + "'", node);
         node.type = nullptr;
     } else if (sym->type && sym->type->kind == TypeKind::Function) {
@@ -4331,12 +4297,24 @@ void SemanticAnalyzer::analyzeResultMethod(MethodCallExprAST& node, Type* objTyp
 }
 
 void SemanticAnalyzer::visit(CallExprAST& node) {
+    const std::string calleeRef = node.callee;
+
     // AGG-10/DS5: qualified static-method call — access check against the
     // declaring class (uses the pre-resolution callee spelling).
     checkStaticMemberAccess(node.callee, node);
 
     // Resolve a namespace-qualified or namespace-local callee to its mangled key.
     node.callee = resolveNamespaceName(node.callee);
+
+    // PAR-11: a callee is a variable reference too. Local function pointers and
+    // stored closures must be captured by every enclosing lambda they cross.
+    if (!node.isExprCallee && !calleeRef.empty()) {
+        Symbol* calleeSym = lookup(node.callee);
+        if (!calleeSym && calleeRef != node.callee) {
+            calleeSym = lookup(calleeRef);
+        }
+        validateLambdaCaptureReference(calleeRef, calleeSym, node);
+    }
 
     // Internal atomic builtins used by libs/std/atomic.smc. A user-defined
     // function with the same name wins, mirroring print/assert.
@@ -5818,11 +5796,16 @@ void SemanticAnalyzer::collectUsedNames(ExprAST* expr, std::unordered_set<std::s
         return;
     }
     if (auto* c = dynamic_cast<CallExprAST*>(expr)) {
+        // The callee is a reference too: a local function pointer / closure
+        // variable must be discovered and capture-checked, not just arguments.
+        if (!c->callee.empty()) out.insert(c->callee);
+        if (c->calleeExpr) collectUsedNames(c->calleeExpr.get(), out);
         for (auto& a : c->args) collectUsedNames(a.get(), out);
         return;
     }
     if (auto* m = dynamic_cast<MethodCallExprAST*>(expr)) {
         collectUsedNames(m->object.get(), out);
+        if (m->fieldCallee) collectUsedNames(m->fieldCallee.get(), out);
         for (auto& a : m->args) collectUsedNames(a.get(), out);
         return;
     }
@@ -5845,11 +5828,52 @@ void SemanticAnalyzer::collectUsedNames(ExprAST* expr, std::unordered_set<std::s
         collectUsedNames(s->expr.get(), out);
         return;
     }
+    if (auto* aa = dynamic_cast<ArrayAccessExprAST*>(expr)) {
+        collectUsedNames(aa->array.get(), out);
+        collectUsedNames(aa->index.get(), out);
+        return;
+    }
+    if (auto* r = dynamic_cast<RangeExprAST*>(expr)) {
+        collectUsedNames(r->object.get(), out);
+        collectUsedNames(r->begin.get(), out);
+        collectUsedNames(r->end.get(), out);
+        return;
+    }
+    if (auto* cast = dynamic_cast<CastExprAST*>(expr)) {
+        collectUsedNames(cast->expr.get(), out);
+        return;
+    }
+    if (auto* comma = dynamic_cast<CommaExprAST*>(expr)) {
+        collectUsedNames(comma->left.get(), out);
+        collectUsedNames(comma->right.get(), out);
+        return;
+    }
+    if (auto* post = dynamic_cast<PostfixIncDecExprAST*>(expr)) {
+        collectUsedNames(post->operand.get(), out);
+        return;
+    }
+    if (auto* asmExpr = dynamic_cast<AsmExprAST*>(expr)) {
+        for (auto& op : asmExpr->outputs) collectUsedNames(op.expr.get(), out);
+        for (auto& op : asmExpr->inputs) collectUsedNames(op.expr.get(), out);
+        return;
+    }
+    if (auto* of = dynamic_cast<OffsetOfExprAST*>(expr)) {
+        for (auto& d : of->path) collectUsedNames(d.indexExpr.get(), out);
+        return;
+    }
     if (auto* il = dynamic_cast<InitializerListExprAST*>(expr)) {
         for (auto& e : il->initializers) collectUsedNames(e.get(), out);
+        for (auto& ds : il->designators) {
+            for (auto& d : ds) collectUsedNames(d.indexExpr.get(), out);
+        }
+        return;
+    }
+    if (auto* cl = dynamic_cast<CompoundLiteralExprAST*>(expr)) {
+        collectUsedNames(cl->initList.get(), out);
         return;
     }
     if (auto* lc = dynamic_cast<LambdaCallExprAST*>(expr)) {
+        collectUsedNames(lc->lambda.get(), out);
         for (auto& a : lc->args) collectUsedNames(a.get(), out);
         return;
     }
@@ -5972,6 +5996,87 @@ ClassType* SemanticAnalyzer::findFieldOwner(ClassType* classType,
     return nullptr;
 }
 
+// PAR-11: file/module-scope or static-storage symbols are always reachable
+// from lambda bodies and are neither captured nor shadowed by fields.
+bool SemanticAnalyzer::isFileOrStaticSymbol(Symbol* sym) {
+    if (!sym) return false;
+    if (sym->isStaticStorage) return true;
+    for (Scope* s = currentScope; s; s = s->parent) {
+        if (!scopeDeclaresSymbol(s, sym)) continue;
+        return s == globalScope.get() || s == activeModuleScope;
+    }
+    return false;
+}
+
+// PAR-11: true when `sym` is declared in `frame`'s body scope or a nested
+// block currently in the lookup chain (i.e. it is local to that lambda).
+bool SemanticAnalyzer::symbolIsLocalToFrame(Symbol* sym,
+                                            const LambdaFrame& frame) {
+    if (!sym || !frame.bodyScope) return false;
+    for (Scope* s = currentScope;
+         s && s != frame.bodyScope->parent; s = s->parent) {
+        if (scopeDeclaresSymbol(s, sym)) return true;
+    }
+    return false;
+}
+
+// PAR-11: a body reference outside the innermost body must be captured by
+// every intervening lambda it crosses.
+void SemanticAnalyzer::validateLambdaCaptureReference(const std::string& name,
+                                                      Symbol* sym,
+                                                      const ASTNode& at) {
+    if (!sym || lambdaFrames.empty() || isFileOrStaticSymbol(sym)) return;
+    for (size_t i = lambdaFrames.size(); i-- > 0;) {
+        LambdaFrame& frame = lambdaFrames[i];
+        if (symbolIsLocalToFrame(sym, frame)) return;
+        // Capture resolution already reported an intervening-lambda failure.
+        if (frame.invalidCaptures.count(name)) return;
+        if (!frame.capturedNames.count(name)) {
+            emitError("variable '" + name + "' is not captured by lambda", at);
+            return;
+        }
+    }
+}
+
+// PAR-11: every enclosing lambda between this capture site and the variable's
+// declaration must itself capture it (or own it in its body).
+bool SemanticAnalyzer::checkEnclosingLambdaCapture(const std::string& name,
+                                                   Symbol* sym,
+                                                   const ASTNode& at) {
+    if (!sym || isFileOrStaticSymbol(sym)) return true;
+    for (size_t i = lambdaFrames.size(); i-- > 0;) {
+        LambdaFrame& frame = lambdaFrames[i];
+        if (symbolIsLocalToFrame(sym, frame)) return true;
+        if (!frame.capturedNames.count(name)) {
+            emitError("variable '" + name +
+                          "' is not captured by an enclosing lambda", at);
+            return false;
+        }
+    }
+    return true;
+}
+
+// PAR-11: `this`-capturing lambdas expose bare fields as `this->field`.
+bool SemanticAnalyzer::desugarImplicitThis(VariableExprAST& node,
+                                           const std::string& name) {
+    if (lambdaFrames.empty() || !lambdaFrames.back().capturesThis ||
+        !currentClass) {
+        return false;
+    }
+    if (!findFieldOwner(currentClass, name)) return false;
+
+    auto thisExpr = std::make_unique<VariableExprAST>("this");
+    thisExpr->setLocation(node.sourceFile, node.sourceLine, node.sourceColumn);
+    auto member = std::make_unique<MemberAccessExprAST>(
+        MemberAccessKind::Arrow, std::move(thisExpr), name);
+    member->setLocation(node.sourceFile, node.sourceLine, node.sourceColumn);
+    visit(*member);
+    node.type = member->type;
+    node.isLValue = member->isLValue;
+    node.implicitThisAccess = std::move(member);
+    return true;
+}
+
 // PAR-11: lambda 表达式语义。无捕获 → 函数指针类型；有捕获 → 闭包 struct。
 void SemanticAnalyzer::visit(LambdaExprAST& node) {
     // getExprType may revisit an already-analyzed initializer (e.g. `auto`
@@ -5991,6 +6096,7 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
     std::vector<LambdaExprAST::Capture> effective;
     std::vector<Type*> effectiveTypes;
     std::unordered_set<std::string> effectiveNames;
+    std::unordered_set<std::string> invalidCaptureNames;
     bool capturesThis = false;
 
     auto addCapture = [&](LambdaExprAST::Capture cap, Type* fieldType) {
@@ -5999,7 +6105,15 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
         effective.push_back(std::move(cap));
     };
     auto addThisCapture = [&]() {
-        if (capturesThis || !currentClass) return;
+        if (capturesThis || !currentClass ||
+            invalidCaptureNames.count("this")) {
+            return;
+        }
+        Symbol* thisSym = currentScope ? currentScope->lookup("this") : nullptr;
+        if (!checkEnclosingLambdaCapture("this", thisSym, node)) {
+            invalidCaptureNames.insert("this");
+            return;
+        }
         LambdaExprAST::Capture cap;
         cap.name = "this";
         cap.byRef = false;
@@ -6055,6 +6169,10 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
                           node);
                 continue;
             }
+            if (!checkEnclosingLambdaCapture(c.name, sym, node)) {
+                invalidCaptureNames.insert(c.name);
+                continue;
+            }
             fieldType = c.byRef ? new Type(TypeKind::Pointer, sym->type)
                                 : sym->type;
         }
@@ -6087,6 +6205,10 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
             Symbol* sym = findCapturableLocal(name);
             if (!sym) sym = findCapturableLocal(resolveNamespaceName(name));
             if (sym && sym->type) {
+                if (!checkEnclosingLambdaCapture(name, sym, node)) {
+                    invalidCaptureNames.insert(name);
+                    continue;
+                }
                 LambdaExprAST::Capture cap;
                 cap.name = name;
                 cap.byRef = node.captureAllByRef;
@@ -6096,12 +6218,10 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
                 addCapture(std::move(cap), fieldType);
                 continue;
             }
-            // No capturable local. A bare field name becomes an implicit
-            // by-value `this` capture only when no symbol shadows it at all
-            // (globals/static locals are uses, not captures).
-            bool anySymbol = currentScope &&
-                currentScope->lookup(resolveNamespaceName(name)) != nullptr;
-            if (!anySymbol && currentClass && !m_inStaticMethod &&
+            // No capturable local. A bare field name in a method becomes an
+            // implicit by-value `this` capture; `this->field` then wins over a
+            // same-named global/static symbol (see visit(VariableExprAST)).
+            if (currentClass && !m_inStaticMethod &&
                 findFieldOwner(currentClass, name)) {
                 addThisCapture();
             }
@@ -6169,6 +6289,7 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
         LambdaFrame frame;
         frame.bodyScope = currentScope;
         frame.capturedNames = effectiveNames;
+        frame.invalidCaptures = invalidCaptureNames;
         frame.capturesThis = capturesThis;
         frame.inferReturn = !node.hasExplicitReturnType;
         lambdaFrames.push_back(frame);

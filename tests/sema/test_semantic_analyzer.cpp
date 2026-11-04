@@ -2776,13 +2776,33 @@ TEST(LambdaSemaGaps, ThisCaptureOutsideMethodRejected) {
 }
 
 TEST(LambdaSemaGaps, CaptureAllDoesNotCaptureGlobals) {
-    EXPECT_TRUE(analyzeOk(R"(
+    std::string source = R"(
         int32 g = 5;
         int32 main() {
             auto f = [=]() -> int32 { return g; };
             return f() == 5 ? 0 : 1;
         }
-    )"));
+    )";
+    Lexer lexer("t.c", source);
+    Parser parser(lexer.tokenize());
+    auto ast = parser.parse();
+    ASSERT_NE(ast, nullptr);
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    ASSERT_TRUE(analyzer.getErrors().empty());
+
+    auto* fn = dynamic_cast<FunctionDeclAST*>(ast->declarations[1].get());
+    ASSERT_NE(fn, nullptr);
+    ASSERT_NE(fn->body, nullptr);
+    auto* ds = dynamic_cast<DeclStmtAST*>(fn->body->stmts[0].get());
+    ASSERT_NE(ds, nullptr);
+    auto* vd = dynamic_cast<VarDeclAST*>(ds->decl.get());
+    ASSERT_NE(vd, nullptr);
+    auto* lam = dynamic_cast<LambdaExprAST*>(vd->initExpr.get());
+    ASSERT_NE(lam, nullptr);
+    EXPECT_TRUE(lam->captures.empty());
+    EXPECT_EQ(lam->closureType, nullptr);
+    EXPECT_EQ(lam->type->kind, TypeKind::Pointer);
 }
 
 TEST(LambdaSemaGaps, CaptureAllPreservesExplicitOverrides) {
@@ -2828,4 +2848,187 @@ TEST(LambdaSemaGaps, CaptureAllPreservesExplicitOverrides) {
     for (auto& c : byRef->captures) byRefRef[c.name] = c.byRef;
     EXPECT_FALSE(byRefRef["a"]);
     EXPECT_TRUE(byRefRef["b"]);
+}
+
+TEST(LambdaSemaGaps, CaptureAllDiscoversArrayAccess) {
+    EXPECT_TRUE(analyzeOk(R"(
+        int32 main() {
+            int32 a[2] = { 1, 2 };
+            auto f = [&]() -> int32 { return a[0]; };
+            return f() - 1;
+        }
+    )"));
+}
+
+TEST(LambdaSemaGaps, CaptureAllDiscoversCast) {
+    EXPECT_TRUE(analyzeOk(R"(
+        int32 main() {
+            int32 x = 1;
+            auto f = [=]() -> int32 { return (int32)x + 1; };
+            return f() - 2;
+        }
+    )"));
+}
+
+TEST(LambdaSemaGaps, CaptureAllDiscoversComma) {
+    EXPECT_TRUE(analyzeOk(R"(
+        int32 main() {
+            int32 x = 2;
+            auto f = [=]() -> int32 { return (0, x); };
+            return f() - 2;
+        }
+    )"));
+}
+
+TEST(LambdaSemaGaps, CaptureAllDiscoversPostfixIncDec) {
+    EXPECT_TRUE(analyzeOk(R"(
+        int32 main() {
+            int32 x = 2;
+            auto f = [=]() { x++; };
+            f();
+            return x - 2;
+        }
+    )"));
+}
+
+TEST(LambdaSemaGaps, CaptureAllDiscoversAsmOperand) {
+    EXPECT_TRUE(analyzeOk(R"(
+        int32 main() {
+            int32 x = 1;
+            auto f = [=]() { asm("" : : "r"(x)); };
+            f();
+            return 0;
+        }
+    )"));
+}
+
+TEST(LambdaSemaGaps, CaptureAllCapturesLocalFunctionPointer) {
+    std::string source = R"(
+        int32 inc(int32 x) { return x + 1; }
+        int32 main() {
+            int32 (*fp)(int32) = inc;
+            auto g = [=](int32 x) -> int32 { return fp(x); };
+            return g(1) - 2;
+        }
+    )";
+    Lexer lexer("t.c", source);
+    Parser parser(lexer.tokenize());
+    auto ast = parser.parse();
+    ASSERT_NE(ast, nullptr);
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    ASSERT_TRUE(analyzer.getErrors().empty());
+
+    auto* fn = dynamic_cast<FunctionDeclAST*>(ast->declarations[1].get());
+    ASSERT_NE(fn, nullptr);
+    ASSERT_NE(fn->body, nullptr);
+    auto* ds = dynamic_cast<DeclStmtAST*>(fn->body->stmts[1].get());
+    ASSERT_NE(ds, nullptr);
+    auto* vd = dynamic_cast<VarDeclAST*>(ds->decl.get());
+    ASSERT_NE(vd, nullptr);
+    auto* lam = dynamic_cast<LambdaExprAST*>(vd->initExpr.get());
+    ASSERT_NE(lam, nullptr);
+    bool capturedFp = false;
+    for (auto& c : lam->captures) {
+        if (c.name == "fp") capturedFp = true;
+    }
+    EXPECT_TRUE(capturedFp) << "[=] must capture the local function pointer";
+}
+
+TEST(LambdaSemaGaps, NoCaptureRejectsLocalFunctionPointerCallee) {
+    auto errs = semaErrorsOf(R"(
+        int32 inc(int32 x) { return x + 1; }
+        int32 main() {
+            int32 (*fp)(int32) = inc;
+            auto g = [](int32 x) -> int32 { return fp(x); };
+            return g(1) - 2;
+        }
+    )");
+    EXPECT_FALSE(errs.empty());
+    EXPECT_TRUE(hasMsg(errs, "not captured"))
+        << "expected a not-captured diagnostic for the callee";
+}
+
+TEST(LambdaSemaGaps, RejectsThreeLevelUncapturedThroughEmptyLambdas) {
+    auto errs = semaErrorsOf(R"(
+        int32 main() {
+            int32 x = 1;
+            auto outer = []() -> int32 {
+                auto middle = []() -> int32 {
+                    auto inner = [=]() -> int32 { return x; };
+                    return inner();
+                };
+                return middle();
+            };
+            return outer() - 1;
+        }
+    )");
+    EXPECT_FALSE(errs.empty());
+    EXPECT_TRUE(hasMsg(errs, "not captured"))
+        << "expected the intervening lambda to reject the capture";
+}
+
+TEST(LambdaSemaGaps, RejectsExplicitCaptureThroughNonCapturingLambda) {
+    auto errs = semaErrorsOf(R"(
+        int32 main() {
+            int32 x = 1;
+            auto outer = []() -> int32 {
+                auto middle = []() -> int32 {
+                    auto inner = [&x]() -> int32 { return x; };
+                    return inner();
+                };
+                return middle();
+            };
+            return outer() - 1;
+        }
+    )");
+    EXPECT_FALSE(errs.empty());
+    EXPECT_TRUE(hasMsg(errs, "not captured"))
+        << "expected the intervening lambda to reject the explicit capture";
+}
+
+TEST(LambdaSemaGaps, ThisMemberBeatsGlobalField) {
+    std::string source = R"(
+        int32 v = 7;
+        class GlobalShadowC {
+        public:
+            int32 v;
+            int32 f() {
+                auto g = [this]() -> int32 { return v; };
+                return g();
+            }
+        };
+        int32 main() {
+            GlobalShadowC c;
+            c.v = 3;
+            return c.f() - 3;
+        }
+    )";
+    Lexer lexer("t.c", source);
+    Parser parser(lexer.tokenize());
+    auto ast = parser.parse();
+    ASSERT_NE(ast, nullptr);
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    ASSERT_TRUE(analyzer.getErrors().empty())
+        << (analyzer.getErrors().empty() ? ""
+                                         : analyzer.getErrors().front().message);
+    auto* cls = dynamic_cast<StructDeclAST*>(ast->declarations[1].get());
+    ASSERT_NE(cls, nullptr);
+    ASSERT_FALSE(cls->methods.empty());
+    auto* method = cls->methods[0].get();
+    ASSERT_NE(method, nullptr);
+    ASSERT_NE(method->body, nullptr);
+    auto* ds = dynamic_cast<DeclStmtAST*>(method->body->stmts[0].get());
+    ASSERT_NE(ds, nullptr);
+    auto* vd = dynamic_cast<VarDeclAST*>(ds->decl.get());
+    ASSERT_NE(vd, nullptr);
+    auto* lam = dynamic_cast<LambdaExprAST*>(vd->initExpr.get());
+    ASSERT_NE(lam, nullptr);
+    auto* ret = dynamic_cast<ReturnStmtAST*>(lam->body->stmts[0].get());
+    ASSERT_NE(ret, nullptr);
+    auto* ref = dynamic_cast<VariableExprAST*>(ret->value.get());
+    ASSERT_NE(ref, nullptr);
+    EXPECT_NE(ref->implicitThisAccess, nullptr)
+        << "member must win over the same-named global inside [this]";
 }

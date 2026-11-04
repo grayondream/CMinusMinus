@@ -310,6 +310,10 @@ private:
     struct LambdaFrame {
         Scope* bodyScope = nullptr;
         std::unordered_set<std::string> capturedNames;
+        // Names whose capture already failed validation (e.g. an intervening
+        // lambda does not capture them); suppress duplicate body-reference
+        // diagnostics for those names.
+        std::unordered_set<std::string> invalidCaptures;
         bool capturesThis = false;
         // Filled by sema; return-type inference itself is a later task.
         bool inferReturn = false;
@@ -322,6 +326,22 @@ private:
     Symbol* findCapturableLocal(const std::string& name);
     // Defining class of `name` along the inheritance chain, or null.
     ClassType* findFieldOwner(ClassType* classType, const std::string& name);
+    // True when `sym` is declared at file/module scope or has static storage.
+    bool isFileOrStaticSymbol(Symbol* sym);
+    // True when `sym` is declared inside `frame`'s body (inclusive of nested
+    // blocks but not the enclosing scopes).
+    bool symbolIsLocalToFrame(Symbol* sym, const LambdaFrame& frame);
+    // Reject a body reference that escapes a lambda without being captured.
+    // Walks every enclosing frame from innermost outward.
+    void validateLambdaCaptureReference(const std::string& name, Symbol* sym,
+                                        const ASTNode& at);
+    // During capture resolution: every intervening lambda must be able to reach
+    // `sym` (local to its own body or capturing it).
+    bool checkEnclosingLambdaCapture(const std::string& name, Symbol* sym,
+                                     const ASTNode& at);
+    // Rewrite a bare field name to `this->name` when the innermost lambda
+    // captures `this`. Returns true when the rewrite happened.
+    bool desugarImplicitThis(VariableExprAST& node, const std::string& name);
 
     void visit(ExprAST& expr);
     void visit(StmtAST& stmt);
