@@ -6294,7 +6294,6 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
         frame.invalidCaptures = invalidCaptureNames;
         frame.capturesThis = capturesThis;
         frame.inferReturn = inferReturnType;
-        frame.inferredReturn = node.returnType;
         lambdaFrames.push_back(frame);
         // 惰性推断：visit(ReturnStmtAST) 在遍历 body 时用首个带值 return
         // 的类型更新 frame 与伪函数返回类型；无带值 return → void。
@@ -6710,27 +6709,56 @@ void SemanticAnalyzer::visit(ExprStmtAST& node) {
 
 void SemanticAnalyzer::visit(ReturnStmtAST& node) {
     // PAR-11 Task 3: the innermost lambda may infer its return type from the
-    // first value return seen during body traversal. Analyze the expression
-    // exactly once here (the old pre-scan analyzed it a second time).
+    // first genuinely non-void value return seen during body traversal.
+    // Analyze the expression exactly once here (the old pre-scan analyzed it a
+    // second time).
     Type* retValType = node.value ? getExprType(*node.value) : nullptr;
+    Type* strippedVal = retValType ? stripTypedef(retValType) : nullptr;
+
+    bool voidLikeHandled = false;
     if (!lambdaFrames.empty() && lambdaFrames.back().inferReturn) {
         LambdaFrame& frame = lambdaFrames.back();
-        if (node.value) {
-            if (!frame.inferredReturn && retValType) {
-                frame.inferredReturn = retValType;
-                if (currentFunction) currentFunction->returnType = retValType;
+        // `return;` and `return voidExpr;` both contribute no usable type to
+        // inference and are treated as value-less returns.
+        const bool bareReturn = !node.value;
+        const bool voidExprReturn = strippedVal &&
+                                    strippedVal->kind == TypeKind::Void;
+        auto nonVoidMessage = [&]() {
+            return "non-void function '" +
+                   std::string(currentFunction ? currentFunction->name
+                                               : "<lambda>") +
+                   "' must return a value";
+        };
+        Type* inferred = frame.inferredReturn
+                             ? stripTypedef(frame.inferredReturn) : nullptr;
+        if (bareReturn || voidExprReturn) {
+            voidLikeHandled = true;
+            if (inferred && inferred->kind != TypeKind::Void) {
+                // The type is already known to be non-void; diagnose now.
+                emitError(nonVoidMessage(), node);
+            } else {
+                // Defer: a later value return may make the lambda non-void.
+                frame.pendingVoidReturns.push_back(&node);
             }
-            // A value-less return seen earlier becomes an error now that the
-            // lambda is known to be non-void; diagnose it at that earlier site.
-            if (frame.inferredReturn && frame.firstVoidReturn) {
-                emitError("non-void lambda cannot return without a value",
-                          *frame.firstVoidReturn);
-                frame.firstVoidReturn = nullptr;
+        } else if (retValType && !frame.inferredReturn) {
+            // First value return determines the inferred type.
+            frame.inferredReturn = retValType;
+            if (currentFunction) currentFunction->returnType = retValType;
+            // Retroactively diagnose every value-less return seen before the
+            // type became known (only when the deduced type is genuinely
+            // non-void).
+            Type* deduced = stripTypedef(frame.inferredReturn);
+            if (deduced && deduced->kind != TypeKind::Void) {
+                for (ReturnStmtAST* pending : frame.pendingVoidReturns) {
+                    emitError(nonVoidMessage(), *pending);
+                }
             }
-        } else if (!frame.inferredReturn) {
-            if (!frame.firstVoidReturn) frame.firstVoidReturn = &node;
+            frame.pendingVoidReturns.clear();
         }
     }
+    // Value-less returns were fully handled by inference; skip the generic
+    // checks so they do not emit a second diagnostic.
+    if (voidLikeHandled) return;
 
     if (node.value) {
         if (currentFunction && retValType) {

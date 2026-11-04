@@ -316,11 +316,12 @@ private:
         std::unordered_set<std::string> invalidCaptures;
         bool capturesThis = false;
         // PAR-11 Task 3: return type is inferred lazily while the body is
-        // traversed. `firstVoidReturn` remembers the first value-less return so
-        // that a later value return can be diagnosed at that earlier site.
+        // traversed. Value-less returns (including `return voidExpr;`) are
+        // queued until a non-void return determines the type; they are then
+        // diagnosed retroactively at every recorded site.
         bool inferReturn = false;
         Type* inferredReturn = nullptr;
-        ReturnStmtAST* firstVoidReturn = nullptr;
+        std::vector<ReturnStmtAST*> pendingVoidReturns;
     };
     std::vector<LambdaFrame> lambdaFrames;
     // Nearest automatic-storage local named `name`, stopping at file/module

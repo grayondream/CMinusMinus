@@ -3176,17 +3176,151 @@ TEST(LambdaSemaGaps, VoidReturnBeforeValueReturnDiagnosedAtEarlierReturn) {
 }
 
 TEST(LambdaSemaGaps, NestedLambdaInferenceIndependent) {
-    auto errs = semaErrorsOf(R"(
+    std::string source = R"(
         int32 main() {
             auto outer = []() {
                 auto inner = []() { return 7; };
                 int64 big = 9;
-                return big;
+                if (big > 0) { return big; }
+                return 1;
             };
             return outer() == 9 ? 0 : 1;
         }
-    )");
-    EXPECT_TRUE(errs.empty()) << (errs.empty() ? "" : errs.front());
+    )";
+    Lexer lexer("t.c", source);
+    Parser parser(lexer.tokenize());
+    auto ast = parser.parse();
+    ASSERT_NE(ast, nullptr);
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    ASSERT_TRUE(analyzer.getErrors().empty())
+        << (analyzer.getErrors().empty() ? ""
+                                         : analyzer.getErrors().front().message);
+
+    auto* fn = dynamic_cast<FunctionDeclAST*>(ast->declarations[0].get());
+    ASSERT_NE(fn, nullptr);
+    ASSERT_NE(fn->body, nullptr);
+    auto* outerDecl = dynamic_cast<DeclStmtAST*>(fn->body->stmts[0].get());
+    ASSERT_NE(outerDecl, nullptr);
+    auto* outerVar = dynamic_cast<VarDeclAST*>(outerDecl->decl.get());
+    ASSERT_NE(outerVar, nullptr);
+    auto* outer = dynamic_cast<LambdaExprAST*>(outerVar->initExpr.get());
+    ASSERT_NE(outer, nullptr);
+    ASSERT_NE(outer->body, nullptr);
+    auto* innerDecl = dynamic_cast<DeclStmtAST*>(outer->body->stmts[0].get());
+    ASSERT_NE(innerDecl, nullptr);
+    auto* innerVar = dynamic_cast<VarDeclAST*>(innerDecl->decl.get());
+    ASSERT_NE(innerVar, nullptr);
+    auto* inner = dynamic_cast<LambdaExprAST*>(innerVar->initExpr.get());
+    ASSERT_NE(inner, nullptr);
+
+    // Inner infers int32; outer infers int64 from its first value return and
+    // must not be contaminated by the inner lambda's int32 return.
+    ASSERT_NE(inner->returnType, nullptr);
+    EXPECT_EQ(inner->returnType->kind, TypeKind::Int32);
+    ASSERT_NE(outer->returnType, nullptr);
+    EXPECT_EQ(outer->returnType->kind, TypeKind::Int64);
+}
+
+TEST(LambdaSemaGaps, FirstValueReturnDeterminesInferredType) {
+    std::string source = R"(
+        int32 main() {
+            auto f = []() {
+                if (true) { return (int64)1; }
+                return 2;
+            };
+            return f() == 1 ? 0 : 1;
+        }
+    )";
+    Lexer lexer("t.c", source);
+    Parser parser(lexer.tokenize());
+    auto ast = parser.parse();
+    ASSERT_NE(ast, nullptr);
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    ASSERT_TRUE(analyzer.getErrors().empty())
+        << (analyzer.getErrors().empty() ? ""
+                                         : analyzer.getErrors().front().message);
+    auto* fn = dynamic_cast<FunctionDeclAST*>(ast->declarations[0].get());
+    ASSERT_NE(fn, nullptr);
+    auto* ds = dynamic_cast<DeclStmtAST*>(fn->body->stmts[0].get());
+    ASSERT_NE(ds, nullptr);
+    auto* vd = dynamic_cast<VarDeclAST*>(ds->decl.get());
+    ASSERT_NE(vd, nullptr);
+    auto* lam = dynamic_cast<LambdaExprAST*>(vd->initExpr.get());
+    ASSERT_NE(lam, nullptr);
+    ASSERT_NE(lam->returnType, nullptr);
+    EXPECT_EQ(lam->returnType->kind, TypeKind::Int64)
+        << "the first value return must determine the inferred type";
+}
+
+TEST(LambdaSemaGaps, VoidExpressionReturnStaysVoid) {
+    std::string source = R"(
+        void g() {}
+        int32 main() {
+            auto a = [](int32 x) {
+                if (x > 0) { return; }
+                return g();
+            };
+            auto b = [](int32 x) {
+                if (x > 0) { return g(); }
+                return;
+            };
+            a(1);
+            b(1);
+            return 0;
+        }
+    )";
+    Lexer lexer("t.c", source);
+    Parser parser(lexer.tokenize());
+    auto ast = parser.parse();
+    ASSERT_NE(ast, nullptr);
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    ASSERT_TRUE(analyzer.getErrors().empty())
+        << (analyzer.getErrors().empty() ? ""
+                                         : analyzer.getErrors().front().message);
+
+    auto* fn = dynamic_cast<FunctionDeclAST*>(ast->declarations[1].get());
+    ASSERT_NE(fn, nullptr);
+    ASSERT_NE(fn->body, nullptr);
+    for (size_t i = 0; i < 2; ++i) {
+        auto* ds = dynamic_cast<DeclStmtAST*>(fn->body->stmts[i].get());
+        ASSERT_NE(ds, nullptr) << "statement " << i;
+        auto* vd = dynamic_cast<VarDeclAST*>(ds->decl.get());
+        ASSERT_NE(vd, nullptr) << "statement " << i;
+        auto* lam = dynamic_cast<LambdaExprAST*>(vd->initExpr.get());
+        ASSERT_NE(lam, nullptr) << "statement " << i;
+        ASSERT_NE(lam->returnType, nullptr) << "lambda " << i;
+        EXPECT_EQ(lam->returnType->kind, TypeKind::Void)
+            << "`return voidExpr;` must not make lambda " << i << " non-void";
+    }
+}
+
+TEST(LambdaSemaGaps, AllVoidReturnsDiagnosedWhenValueReturnAppears) {
+    std::string source =
+        "int32 main() {\n"                       // 1
+        "    auto f = [](int32 x) {\n"           // 2
+        "        if (x > 0) { return; }\n"       // 3
+        "        if (x < 0) { return; }\n"       // 4
+        "        if (x == 0) { return 5; }\n"    // 5
+        "        return;\n"                      // 6
+        "    };\n"                               // 7
+        "    return f(1);\n"                     // 8
+        "}\n";                                   // 9
+    Lexer lexer("t.c", source);
+    Parser parser(lexer.tokenize());
+    auto ast = parser.parse();
+    ASSERT_NE(ast, nullptr);
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    std::vector<int> lines;
+    for (const auto& d : analyzer.getErrors()) {
+        if (d.message.find("must return a value") != std::string::npos)
+            lines.push_back(d.line);
+    }
+    EXPECT_EQ(lines, (std::vector<int>{3, 4, 6}))
+        << "every value-less return must be diagnosed once, including later ones";
 }
 
 TEST(LambdaSemaGaps, ExplicitReturnTypeStillAuthoritative) {
