@@ -410,6 +410,10 @@ llvm::Value* VariableExprAST::codegen(CodegenContext& ctx) {
         return nullptr;
     }
 
+    // PAR-11: bare member name inside a `this`-capturing lambda — sema
+    // desugared it to `this->name`; emit that member access.
+    if (implicitThisAccess) return implicitThisAccess->codegen(ctx);
+
     Symbol* sym = ctx.currentScope()->lookup(name);
     if (!sym) {
         LOGE("unknown variable: {}", name);
@@ -3047,6 +3051,50 @@ llvm::Value* CompoundLiteralExprAST::codegen(CodegenContext& ctx) {
 // （立即调用由 LambdaCallExprAST 组装：栈上构造闭包 → 调用）。
 LambdaExprAST::~LambdaExprAST() = default;
 
+// CG-11: fill the closure's capture fields at lambda-creation time.
+// `init` capture initializers are evaluated here exactly once; ordinary
+// captures load/copy the enclosing variable or take its address.
+static bool emitClosureCaptures(LambdaExprAST& lambda, CodegenContext& ctx,
+                                llvm::Value* closureAlloca) {
+    auto& builder = ctx.getBuilder();
+    auto* st = static_cast<StructType*>(lambda.closureType);
+    llvm::Type* closureLLVM = ctx.getLLVMType(lambda.closureType);
+    for (size_t i = 0; i < lambda.captures.size(); ++i) {
+        auto& cap = lambda.captures[i];
+        Type* fieldType = st->fields[i].type;
+        llvm::Type* fieldLLVM = ctx.getLLVMType(fieldType);
+        llvm::Value* fieldPtr = builder.CreateStructGEP(
+            closureLLVM, closureAlloca, (unsigned)i, "capset." + cap.name);
+        if (cap.init) {
+            llvm::Value* v = cap.init->codegen(ctx);
+            if (!v) return false;
+            if (cap.byRef) {
+                if (!cap.init->isLValue) {
+                    LOGE("by-reference capture initializer for '{}' is not an lvalue",
+                         cap.name);
+                    return false;
+                }
+                builder.CreateStore(v, fieldPtr);
+            } else {
+                if (cap.init->isLValue) v = readLValue(ctx, *cap.init, v);
+                v = ctx.castValue(v, cap.init->type, fieldLLVM);
+                builder.CreateStore(v, fieldPtr);
+            }
+        } else if (cap.byRef) {
+            llvm::Value* addr = ctx.lookupVariableAddr(cap.name);
+            if (!addr) return false;
+            builder.CreateStore(addr, fieldPtr);
+        } else {
+            // By-value captures (including `this`) copy the enclosing value.
+            llvm::Value* addr = ctx.lookupVariableAddr(cap.name);
+            if (!addr) return false;
+            llvm::Value* val = builder.CreateLoad(fieldLLVM, addr);
+            builder.CreateStore(val, fieldPtr);
+        }
+    }
+    return true;
+}
+
 llvm::Value* LambdaExprAST::codegen(CodegenContext& ctx) {
     auto& builder = ctx.getBuilder();
     llvm::LLVMContext& c = ctx.getContext();
@@ -3141,26 +3189,11 @@ llvm::Value* LambdaExprAST::codegen(CodegenContext& ctx) {
             fn, llvm::PointerType::get(c, 0));
     }
 
-    // 有捕获：表达式求值——栈上构造闭包并返回其值。
+    // 有捕获：表达式求值——栈上构造闭包并返回其值。捕获初始化器只在此处
+    // 求值一次（立即调用的 codegen 直接复用该闭包值，不再重建）。
     llvm::AllocaInst* closureAlloca = builder.CreateAlloca(
         ctx.getLLVMType(closureType), nullptr, "lambda.closure");
-    auto* st = static_cast<StructType*>(closureType);
-    for (size_t i = 0; i < captures.size(); ++i) {
-        auto& cap = captures[i];
-        llvm::Value* fieldPtr = builder.CreateStructGEP(
-            ctx.getLLVMType(closureType), closureAlloca, (unsigned)i, "capset." + cap.name);
-        if (cap.byRef) {
-            llvm::Value* addr = ctx.lookupVariableAddr(cap.name);
-            if (!addr) return nullptr;
-            builder.CreateStore(addr, fieldPtr);
-        } else {
-            llvm::Value* addr = ctx.lookupVariableAddr(cap.name);
-            if (!addr) return nullptr;
-            llvm::Value* val = builder.CreateLoad(
-                ctx.getLLVMType(st->fields[i].type), addr);
-            builder.CreateStore(val, fieldPtr);
-        }
-    }
+    if (!emitClosureCaptures(*this, ctx, closureAlloca)) return nullptr;
     return builder.CreateLoad(ctx.getLLVMType(closureType), closureAlloca,
                               "lambda.closure.val");
 }
@@ -3171,36 +3204,19 @@ llvm::Value* LambdaCallExprAST::codegen(CodegenContext& ctx) {
     llvm::LLVMContext& c = ctx.getContext();
 
     // 先生成 lambda（无捕获→函数指针；有捕获→闭包值 + 记录调用符号）。
+    // 捕获初始化已在 lambda->codegen 中求值且仅求值一次。
     llvm::Value* lambdaVal = lambda->codegen(ctx);
-    (void)lambdaVal;
+    if (!lambdaVal) return nullptr;
 
     llvm::Function* callFn = ctx.getModule().getFunction(lambda->lambdaFnName);
     if (!callFn) return nullptr;
 
     std::vector<llvm::Value*> argsV;
-    // 有捕获：闭包地址作首参（重新构造闭包——lambda 表达式刚构造的值已含捕获，
-    // 但立即调用路径直接传地址更稳；捕获拷贝在 lambda codegen 里已完成）。
+    // 有捕获：把已构造好的闭包值落到栈槽，地址作首参（不重新求值捕获）。
     if (lambda->closureType) {
         llvm::AllocaInst* closureAlloca = builder.CreateAlloca(
             ctx.getLLVMType(lambda->closureType), nullptr, "lambda.closure");
-        auto* st = static_cast<StructType*>(lambda->closureType);
-        for (size_t i = 0; i < lambda->captures.size(); ++i) {
-            auto& cap = lambda->captures[i];
-            llvm::Value* fieldPtr = builder.CreateStructGEP(
-                ctx.getLLVMType(lambda->closureType), closureAlloca, (unsigned)i,
-                "capset." + cap.name);
-            if (cap.byRef) {
-                llvm::Value* addr = ctx.lookupVariableAddr(cap.name);
-                if (!addr) return nullptr;
-                builder.CreateStore(addr, fieldPtr);
-            } else {
-                llvm::Value* addr = ctx.lookupVariableAddr(cap.name);
-                if (!addr) return nullptr;
-                llvm::Value* val = builder.CreateLoad(
-                    ctx.getLLVMType(st->fields[i].type), addr);
-                builder.CreateStore(val, fieldPtr);
-            }
-        }
+        builder.CreateStore(lambdaVal, closureAlloca);
         argsV.push_back(closureAlloca);
     }
 

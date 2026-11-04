@@ -181,3 +181,101 @@ TEST_F(LambdaE2E, ReturnTypeInference) {
         }
     )", "lam_infer.c"), 0);
 }
+
+TEST_F(LambdaE2E, CaptureAllByReferenceWrites) {
+    EXPECT_EQ(runSource(R"(
+        int32 main() {
+            int32 a = 1; int32 b = 2;
+            auto f = [&]() { a = 10; b = 20; };
+            f();
+            return (a == 10 && b == 20) ? 0 : 1;
+        }
+    )", "lam_refall.c"), 0);
+}
+
+TEST_F(LambdaE2E, MixedCaptureDefaultValueAndRefOverride) {
+    EXPECT_EQ(runSource(R"(
+        int32 main() {
+            int32 a = 1; int32 b = 2;
+            auto f = [=, &b]() -> int32 { b = 20; return a + b; };
+            int32 r = f();
+            return (r == 21 && a == 1 && b == 20) ? 0 : 1;
+        }
+    )", "lam_mixed1.c"), 0);
+}
+
+TEST_F(LambdaE2E, MixedCaptureDefaultRefAndValueOverride) {
+    EXPECT_EQ(runSource(R"(
+        int32 main() {
+            int32 a = 1; int32 b = 2;
+            auto f = [&, a]() -> int32 { b = 20; return a + b; };
+            int32 r = f();
+            return (r == 21 && a == 1 && b == 20) ? 0 : 1;
+        }
+    )", "lam_mixed2.c"), 0);
+}
+
+TEST_F(LambdaE2E, CaptureInitializerEvaluatedOnce) {
+    EXPECT_EQ(runSource(R"(
+        int32 calls = 0;
+        int32 next() { calls = calls + 1; return calls; }
+        int32 main() {
+            int32 r = [x = next()]() -> int32 { return x; }();
+            return (r == 1 && calls == 1) ? 0 : 1;
+        }
+    )", "lam_init_once.c"), 0);
+}
+
+TEST_F(LambdaE2E, CaptureInitializerByReference) {
+    EXPECT_EQ(runSource(R"(
+        int32 main() {
+            int32 n = 1;
+            auto f = [&x = n]() -> int32 { x = x + 1; return x; };
+            int32 r = f();
+            return (r == 2 && n == 2) ? 0 : 1;
+        }
+    )", "lam_init_ref.c"), 0);
+}
+
+TEST_F(LambdaE2E, ThisImplicitMember) {
+    EXPECT_EQ(runSource(R"(
+        class LambdaThisC {
+        public:
+            int32 v;
+            int32 f() {
+                auto g = [this]() -> int32 { return v; };
+                return g();
+            }
+            int32 h() {
+                auto g = [=]() -> int32 { return v + 1; };
+                return g();
+            }
+        };
+        int32 main() { LambdaThisC c; c.v = 7; return (c.f() == 7 && c.h() == 8) ? 0 : 1; }
+    )", "lam_this.c"), 0);
+}
+
+TEST_F(LambdaE2E, NestedLambdaCapturesOuter) {
+    EXPECT_EQ(runSource(R"(
+        int32 main() {
+            int32 x = 1;
+            auto outer = [&x]() -> int32 {
+                auto inner = [=]() -> int32 { return x + 1; };
+                return inner();
+            };
+            return outer() == 2 ? 0 : 1;
+        }
+    )", "lam_nested.c"), 0);
+}
+
+TEST_F(LambdaE2E, ReturnInferenceSeesBodyLocal) {
+    EXPECT_EQ(runSource(R"(
+        int32 main() {
+            auto f = []() {
+                int32 y = 1;
+                return y;
+            };
+            return f() == 1 ? 0 : 1;
+        }
+    )", "lam_retlocal.c"), 0);
+}
