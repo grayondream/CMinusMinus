@@ -315,10 +315,12 @@ private:
         // diagnostics for those names.
         std::unordered_set<std::string> invalidCaptures;
         bool capturesThis = false;
-        // Filled by sema; return-type inference itself is a later task.
+        // PAR-11 Task 3: return type is inferred lazily while the body is
+        // traversed. `firstVoidReturn` remembers the first value-less return so
+        // that a later value return can be diagnosed at that earlier site.
         bool inferReturn = false;
         Type* inferredReturn = nullptr;
-        bool firstVoidReturn = false;
+        ReturnStmtAST* firstVoidReturn = nullptr;
     };
     std::vector<LambdaFrame> lambdaFrames;
     // Nearest automatic-storage local named `name`, stopping at file/module

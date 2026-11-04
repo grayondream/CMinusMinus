@@ -6228,7 +6228,8 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
         }
     }
 
-    // 3) 返回类型：显式或从 body 推断（推断在 body 作用域内，参数/捕获已声明）。
+    // 3) 返回类型：显式类型权威；否则在 body 遍历中惰性推断。
+    const bool inferReturnType = !node.hasExplicitReturnType;
     Type* retType = node.returnType;
 
     // 4) 闭包类型：无捕获 → 函数指针；有捕获 → 闭包 struct。
@@ -6248,11 +6249,12 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
         node.closureType = closure;
     }
 
-    // 5) 分析 body：入作用域，声明参数与捕获，再推断返回类型、访问 body。
+    // 5) 分析 body：入作用域，声明参数与捕获，再遍历 body（返回类型惰性推断）。
     if (node.body) {
         // visit(ReturnStmtAST) 读 currentFunction->returnType——临时挂一个
-        // 伪函数承载返回类型检查（lambda 返回类型已推断）。注意 FunctionDeclAST
-        // 构造会 move 掉 params/body，故传局部空容器，body 仍由 node 持有。
+        // 伪函数承载返回类型检查（无显式类型时初始为 void，首个带值 return
+        // 在遍历中就地把返回类型写回这里）。注意 FunctionDeclAST 构造会 move
+        // 掉 params/body，故传局部空容器，body 仍由 node 持有。
         FunctionDeclAST* prev = currentFunction;
         std::vector<std::unique_ptr<ParamDeclAST>> emptyParams;
         std::unique_ptr<CompoundStmtAST> emptyBody;
@@ -6291,25 +6293,16 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
         frame.capturedNames = effectiveNames;
         frame.invalidCaptures = invalidCaptureNames;
         frame.capturesThis = capturesThis;
-        frame.inferReturn = !node.hasExplicitReturnType;
+        frame.inferReturn = inferReturnType;
+        frame.inferredReturn = node.returnType;
         lambdaFrames.push_back(frame);
-        // 推断返回类型：在 body 作用域内取首个 return 表达式类型。
-        if (!retType && node.body) {
-            for (auto& stmt : node.body->stmts) {
-                if (auto* rs = dynamic_cast<ReturnStmtAST*>(stmt.get())) {
-                    if (rs->value) {
-                        retType = getExprType(*rs->value);
-                        break;
-                    }
-                }
-            }
-            if (!retType) retType = typeCtx->getVoid();
-            node.returnType = retType;
-            tmpFn.returnType = retType;  // 同步伪函数的返回类型供 return 检查
-        }
+        // 惰性推断：visit(ReturnStmtAST) 在遍历 body 时用首个带值 return
+        // 的类型更新 frame 与伪函数返回类型；无带值 return → void。
         visit(*node.body);
-        lambdaFrames.back().inferredReturn = retType;
+        const bool inferHere = lambdaFrames.back().inferReturn;
+        Type* inferredType = lambdaFrames.back().inferredReturn;
         lambdaFrames.pop_back();
+        if (inferHere) retType = inferredType;
         exitScope();
         currentFunction = prev;
     }
@@ -6716,8 +6709,30 @@ void SemanticAnalyzer::visit(ExprStmtAST& node) {
 }
 
 void SemanticAnalyzer::visit(ReturnStmtAST& node) {
+    // PAR-11 Task 3: the innermost lambda may infer its return type from the
+    // first value return seen during body traversal. Analyze the expression
+    // exactly once here (the old pre-scan analyzed it a second time).
+    Type* retValType = node.value ? getExprType(*node.value) : nullptr;
+    if (!lambdaFrames.empty() && lambdaFrames.back().inferReturn) {
+        LambdaFrame& frame = lambdaFrames.back();
+        if (node.value) {
+            if (!frame.inferredReturn && retValType) {
+                frame.inferredReturn = retValType;
+                if (currentFunction) currentFunction->returnType = retValType;
+            }
+            // A value-less return seen earlier becomes an error now that the
+            // lambda is known to be non-void; diagnose it at that earlier site.
+            if (frame.inferredReturn && frame.firstVoidReturn) {
+                emitError("non-void lambda cannot return without a value",
+                          *frame.firstVoidReturn);
+                frame.firstVoidReturn = nullptr;
+            }
+        } else if (!frame.inferredReturn) {
+            if (!frame.firstVoidReturn) frame.firstVoidReturn = &node;
+        }
+    }
+
     if (node.value) {
-        Type* retValType = getExprType(*node.value);
         if (currentFunction && retValType) {
             // PAR-08: returning an array/slice compound literal escapes the
             // temporary — dangling view/pointer. Reject (design §2.4).

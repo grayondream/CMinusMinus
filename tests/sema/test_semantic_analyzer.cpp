@@ -3032,3 +3032,174 @@ TEST(LambdaSemaGaps, ThisMemberBeatsGlobalField) {
     EXPECT_NE(ref->implicitThisAccess, nullptr)
         << "member must win over the same-named global inside [this]";
 }
+
+// ========== PAR-11 lambda return-type inference (Task 3) ==========
+
+TEST(LambdaSemaGaps, ReturnInferenceSeesBodyLocal) {
+    auto errs = semaErrorsOf(R"(
+        int32 main() {
+            auto f = []() {
+                int32 y = 1;
+                return y;
+            };
+            return f() == 1 ? 0 : 1;
+        }
+    )");
+    EXPECT_TRUE(errs.empty()) << (errs.empty() ? "" : errs.front());
+}
+
+TEST(LambdaSemaGaps, ReturnInferenceCoversIfBranch) {
+    auto errs = semaErrorsOf(R"(
+        int32 main() {
+            int32 c = 1;
+            auto f = [c](int32 x) {
+                if (x > 0) { return c + x; }
+                return c;
+            };
+            return f(1) == 2 ? 0 : 1;
+        }
+    )");
+    EXPECT_TRUE(errs.empty()) << (errs.empty() ? "" : errs.front());
+}
+
+TEST(LambdaSemaGaps, ReturnInferenceCoversOnlyBranch) {
+    auto errs = semaErrorsOf(R"(
+        int32 main() {
+            auto f = [](int32 x) {
+                if (x > 0) { return 1; }
+            };
+            return f(1) == 1 ? 0 : 1;
+        }
+    )");
+    EXPECT_TRUE(errs.empty()) << (errs.empty() ? "" : errs.front());
+}
+
+TEST(LambdaSemaGaps, ReturnInferenceCoversSwitchCase) {
+    auto errs = semaErrorsOf(R"(
+        int32 main() {
+            auto f = [](int32 x) {
+                switch (x) {
+                    case 1: return 10;
+                    default: return 20;
+                }
+            };
+            return f(1) == 10 ? 0 : 1;
+        }
+    )");
+    EXPECT_TRUE(errs.empty()) << (errs.empty() ? "" : errs.front());
+}
+
+TEST(LambdaSemaGaps, ReturnInferenceVoidWithoutValueReturn) {
+    auto errs = semaErrorsOf(R"(
+        int32 main() {
+            auto f = []() { int32 x = 1; };
+            f();
+            return 0;
+        }
+    )");
+    EXPECT_TRUE(errs.empty()) << (errs.empty() ? "" : errs.front());
+}
+
+TEST(LambdaSemaGaps, ReturnInferenceVoidReturnType) {
+    std::string source = R"(
+        int32 main() {
+            auto f = []() { int32 x = 1; };
+            f();
+            return 0;
+        }
+    )";
+    Lexer lexer("t.c", source);
+    Parser parser(lexer.tokenize());
+    auto ast = parser.parse();
+    ASSERT_NE(ast, nullptr);
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    ASSERT_TRUE(analyzer.getErrors().empty())
+        << (analyzer.getErrors().empty() ? ""
+                                         : analyzer.getErrors().front().message);
+    auto* fn = dynamic_cast<FunctionDeclAST*>(ast->declarations[0].get());
+    ASSERT_NE(fn, nullptr);
+    auto* ds = dynamic_cast<DeclStmtAST*>(fn->body->stmts[0].get());
+    ASSERT_NE(ds, nullptr);
+    auto* vd = dynamic_cast<VarDeclAST*>(ds->decl.get());
+    ASSERT_NE(vd, nullptr);
+    auto* lam = dynamic_cast<LambdaExprAST*>(vd->initExpr.get());
+    ASSERT_NE(lam, nullptr);
+    ASSERT_NE(lam->returnType, nullptr);
+    EXPECT_EQ(lam->returnType->kind, TypeKind::Void);
+}
+
+TEST(LambdaSemaGaps, UnexplicitReturnIsNotAnalyzedTwice) {
+    // Task 2 ruling: an uncaptured outer variable referenced from a return must
+    // produce exactly one diagnostic. The removed pre-scan used to analyze the
+    // return expression a second time.
+    auto errs = semaErrorsOf(R"(
+        int32 main() {
+            int32 x = 1;
+            auto f = []() { return x; };
+            return f() == 1 ? 0 : 1;
+        }
+    )");
+    int count = 0;
+    for (const auto& m : errs) {
+        if (m.find("not captured") != std::string::npos) ++count;
+    }
+    EXPECT_EQ(count, 1) << "expected exactly one uncaptured diagnostic";
+}
+
+TEST(LambdaSemaGaps, VoidReturnBeforeValueReturnDiagnosedAtEarlierReturn) {
+    std::string source =
+        "int32 main() {\n"                   // 1
+        "    auto f = [](int32 x) {\n"       // 2
+        "        if (x > 0) { return; }\n"   // 3
+        "        return 5;\n"                // 4
+        "    };\n"                           // 5
+        "    return f(1);\n"                 // 6
+        "}\n";                               // 7
+    Lexer lexer("t.c", source);
+    Parser parser(lexer.tokenize());
+    auto ast = parser.parse();
+    ASSERT_NE(ast, nullptr);
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    int count = 0;
+    int line = -1;
+    for (const auto& d : analyzer.getErrors()) {
+        if (d.message.find("without a value") != std::string::npos ||
+            d.message.find("non-void") != std::string::npos) {
+            ++count;
+            line = d.line;
+        }
+    }
+    ASSERT_EQ(count, 1) << "expected a single diagnostic for the earlier void return";
+    EXPECT_EQ(line, 3) << "diagnostic must point at the earlier value-less return";
+}
+
+TEST(LambdaSemaGaps, NestedLambdaInferenceIndependent) {
+    auto errs = semaErrorsOf(R"(
+        int32 main() {
+            auto outer = []() {
+                auto inner = []() { return 7; };
+                int64 big = 9;
+                return big;
+            };
+            return outer() == 9 ? 0 : 1;
+        }
+    )");
+    EXPECT_TRUE(errs.empty()) << (errs.empty() ? "" : errs.front());
+}
+
+TEST(LambdaSemaGaps, ExplicitReturnTypeStillAuthoritative) {
+    auto errs = semaErrorsOf(R"(
+        int32 main() {
+            auto f = []() -> void { return 1; };
+            f();
+            return 0;
+        }
+    )");
+    EXPECT_FALSE(errs.empty());
+    EXPECT_TRUE(hasMsg(errs, "return type mismatch") ||
+                hasMsg(errs, "类型不匹配") ||
+                hasMsg(errs, "non-void"))
+        << "expected explicit void return type to reject a value return";
+}
