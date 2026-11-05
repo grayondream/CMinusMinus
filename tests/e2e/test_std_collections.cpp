@@ -1,4 +1,4 @@
-// STD-06..08: std.collections end-to-end (JIT), plus namespace-template
+// STD-06..08: std container modules end-to-end (JIT), plus namespace-template
 // export from a real stdlib module.
 #include <gtest/gtest.h>
 
@@ -106,7 +106,7 @@ static int runWithImports(const std::string& source, const std::string& filename
 
 TEST_F(StdCollectionsTest, VecGrowPushInsertRemove) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections;
+        import std.vec;
         import std.hash;
         int32 main() {
             std::Vec<int32> v;
@@ -136,7 +136,7 @@ TEST_F(StdCollectionsTest, VecGrowPushInsertRemove) {
 
 TEST_F(StdCollectionsTest, DequeRingWrap) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections;
+        import std.deque;
         int32 main() {
             std::Deque<int64> d;
             d.init();
@@ -160,7 +160,7 @@ TEST_F(StdCollectionsTest, DequeRingWrap) {
 
 TEST_F(StdCollectionsTest, HashMapPutGetRemoveTombstone) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections;
+        import std.hashmap;
         import std.hash;
         int32 main() {
             std::HashMap<uint32,int32> m;
@@ -188,7 +188,7 @@ TEST_F(StdCollectionsTest, HashMapPutGetRemoveTombstone) {
 
 TEST_F(StdCollectionsTest, HashSetInsertRemove) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections;
+        import std.hashset;
         import std.hash;
         int32 main() {
             std::HashSet<uint64> s;
@@ -211,14 +211,13 @@ TEST_F(StdCollectionsTest, HashSetInsertRemove) {
     )", "coll_set.c"), 0);
 }
 
-// Each container lives in its own module and must be usable without the
-// `std.collections` umbrella.
+// Each container lives in its own module and must be usable on its own.
 TEST_F(StdCollectionsTest, DirectContainerModuleImports) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections.vec;
-        import std.collections.deque;
-        import std.collections.hashmap;
-        import std.collections.hashset;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         import std.hash;
         int32 main() {
             std::Vec<int32> v;

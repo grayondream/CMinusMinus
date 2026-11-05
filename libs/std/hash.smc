@@ -1,7 +1,7 @@
 // ===== std.hash — deterministic hashing primitives =====
 // Import with `import std.hash;` and use `std::hash_string(...)` etc.
 // Hashes are stable across runs/platforms (FNV-1a / splitmix64), suitable for
-// std.collections::HashMap keys. They are not cryptographic.
+// std.hashmap::HashMap keys. They are not cryptographic.
 module std.hash;
 
 export namespace std {

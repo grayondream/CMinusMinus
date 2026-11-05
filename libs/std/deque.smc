@@ -1,5 +1,5 @@
-// ===== std.collections.deque — Deque<T> (ring buffer) =====
-module std.collections.deque;
+// ===== std.deque — Deque<T> (ring buffer) =====
+module std.deque;
 
 import std.mem;
 

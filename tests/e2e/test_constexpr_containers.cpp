@@ -159,7 +159,10 @@ static bool hasErrorContaining(const std::vector<std::string>& errors,
 
 TEST_F(ConstexprContainersTest, VecSumInConstexpr) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         constexpr int32 sum8() {
             std::Vec<int32> v;
             v.init();
@@ -175,7 +178,10 @@ TEST_F(ConstexprContainersTest, VecSumInConstexpr) {
 
 TEST_F(ConstexprContainersTest, HashMapInConstexpr) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         import std.hash;
         constexpr int32 mapWork() {
             std::HashMap<uint32,int32> m;
@@ -204,7 +210,10 @@ TEST_F(ConstexprContainersTest, HashMapInConstexpr) {
 
 TEST_F(ConstexprContainersTest, HashSetInConstexpr) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         import std.hash;
         constexpr int32 setWork() {
             std::HashSet<uint64> s;
@@ -230,7 +239,10 @@ TEST_F(ConstexprContainersTest, HashSetInConstexpr) {
 
 TEST_F(ConstexprContainersTest, StringViewElementsInConstexpr) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         import std.hash;
         constexpr int32 strWork() {
             std::Vec<string_view> v;
@@ -251,7 +263,10 @@ TEST_F(ConstexprContainersTest, StringViewElementsInConstexpr) {
 
 TEST_F(ConstexprContainersTest, OutParametersInConstexpr) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         constexpr int32 outWork() {
             std::Vec<int32> v;
             v.init();
@@ -268,7 +283,10 @@ TEST_F(ConstexprContainersTest, OutParametersInConstexpr) {
 
 TEST_F(ConstexprContainersTest, ConstexprLoopStepLimit) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         constexpr int32 spin() {
             while (true) { }
             return 0;
@@ -279,7 +297,10 @@ TEST_F(ConstexprContainersTest, ConstexprLoopStepLimit) {
 
 TEST_F(ConstexprContainersTest, DequeRingInConstexpr) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         constexpr int64 dequeSum() {
             std::Deque<int64> d;
             d.init();
@@ -302,7 +323,10 @@ TEST_F(ConstexprContainersTest, DequeRingInConstexpr) {
 
 TEST_F(ConstexprContainersTest, AcceptsContainerConstexprFunction) {
     auto errors = analyzeWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         constexpr std::Vec<int32> make() {
             std::Vec<int32> v;
             v.init();
@@ -319,7 +343,10 @@ TEST_F(ConstexprContainersTest, AcceptsContainerConstexprFunction) {
 
 TEST_F(ConstexprContainersTest, RejectsMutationOfConstexprContainer) {
     auto errors = analyzeWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         constexpr std::Vec<int32> make() {
             std::Vec<int32> v;
             v.init();
@@ -333,7 +360,10 @@ TEST_F(ConstexprContainersTest, RejectsMutationOfConstexprContainer) {
 
 TEST_F(ConstexprContainersTest, RejectsFieldWriteOnConstexprContainer) {
     auto errors = analyzeWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         constexpr std::Vec<int32> make() {
             std::Vec<int32> v;
             v.init();
@@ -347,7 +377,10 @@ TEST_F(ConstexprContainersTest, RejectsFieldWriteOnConstexprContainer) {
 
 TEST_F(ConstexprContainersTest, RejectsMutableCopyOfConstexprContainer) {
     auto errors = analyzeWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         constexpr std::Vec<int32> make() {
             std::Vec<int32> v;
             v.init();
@@ -369,7 +402,10 @@ TEST_F(ConstexprContainersTest, StillRejectsStringConstexprFunction) {
 
 TEST_F(ConstexprContainersTest, VecTableIsReadableAtRuntime) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         constexpr std::Vec<int32> make() {
             std::Vec<int32> v;
             v.init();
@@ -388,7 +424,10 @@ TEST_F(ConstexprContainersTest, VecTableIsReadableAtRuntime) {
 
 TEST_F(ConstexprContainersTest, DequeTableIsReadableAtRuntime) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         constexpr std::Deque<int32> make() {
             std::Deque<int32> d;
             d.init();
@@ -408,7 +447,10 @@ TEST_F(ConstexprContainersTest, DequeTableIsReadableAtRuntime) {
 
 TEST_F(ConstexprContainersTest, EmptyVecTableIsReadableAtRuntime) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         constexpr std::Vec<int32> make() {
             std::Vec<int32> v;
             v.init();
@@ -425,7 +467,10 @@ TEST_F(ConstexprContainersTest, EmptyVecTableIsReadableAtRuntime) {
 
 TEST_F(ConstexprContainersTest, StringViewTableIsReadableAtRuntime) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         constexpr std::Vec<string_view> make() {
             std::Vec<string_view> v;
             v.init();
@@ -446,7 +491,10 @@ TEST_F(ConstexprContainersTest, StringViewTableIsReadableAtRuntime) {
 
 TEST_F(ConstexprContainersTest, HashMapTableIsReadableAtRuntime) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         import std.hash;
         constexpr std::HashMap<uint32,int32> make() {
             std::HashMap<uint32,int32> m;
@@ -467,7 +515,10 @@ TEST_F(ConstexprContainersTest, HashMapTableIsReadableAtRuntime) {
 
 TEST_F(ConstexprContainersTest, HashSetTableIsReadableAtRuntime) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         import std.hash;
         constexpr std::HashSet<uint64> make() {
             std::HashSet<uint64> s;
@@ -487,7 +538,10 @@ TEST_F(ConstexprContainersTest, HashSetTableIsReadableAtRuntime) {
 
 TEST_F(ConstexprContainersTest, StringViewMapTableIsReadableAtRuntime) {
     EXPECT_EQ(runWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         import std.hash;
         constexpr std::HashMap<string_view,int32> make() {
             std::HashMap<string_view,int32> m;
@@ -510,7 +564,10 @@ TEST_F(ConstexprContainersTest, StringViewMapTableIsReadableAtRuntime) {
 
 TEST_F(ConstexprContainersTest, RejectsMutableAssignmentFromConstexprContainer) {
     auto errors = analyzeWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         constexpr std::Vec<int32> make() {
             std::Vec<int32> v;
             v.init();
@@ -529,7 +586,10 @@ TEST_F(ConstexprContainersTest, RejectsMutableAssignmentFromConstexprContainer) 
 
 TEST_F(ConstexprContainersTest, RejectsGetPtrOnConstexprContainer) {
     auto errors = analyzeWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         constexpr std::Vec<int32> make() { std::Vec<int32> v; v.init(); v.push(1); return v; }
         constexpr std::Vec<int32> T = make();
         int32 main() { int32* p = T.get_ptr(0); return *p; }
@@ -539,7 +599,10 @@ TEST_F(ConstexprContainersTest, RejectsGetPtrOnConstexprContainer) {
 
 TEST_F(ConstexprContainersTest, RejectsMutablePointerIntoConstexprData) {
     auto errors = analyzeWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         constexpr std::Vec<int32> make() { std::Vec<int32> v; v.init(); v.push(1); return v; }
         constexpr std::Vec<int32> T = make();
         int32 main() {
@@ -555,7 +618,10 @@ TEST_F(ConstexprContainersTest, RejectsMutablePointerIntoConstexprData) {
 
 TEST_F(ConstexprContainersTest, RejectsPassingConstexprTableByValue) {
     auto errors = analyzeWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         constexpr std::Vec<int32> make() { std::Vec<int32> v; v.init(); v.push(1); return v; }
         constexpr std::Vec<int32> T = make();
         int32 mutate(std::Vec<int32> w) { w.push(2); return w.len; }
@@ -566,7 +632,10 @@ TEST_F(ConstexprContainersTest, RejectsPassingConstexprTableByValue) {
 
 TEST_F(ConstexprContainersTest, AllowsScalarReadFromConstexprTable) {
     auto errors = analyzeWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         constexpr std::Vec<int32> make() { std::Vec<int32> v; v.init(); v.push(1); return v; }
         constexpr std::Vec<int32> T = make();
         int32 main() {
@@ -582,7 +651,10 @@ TEST_F(ConstexprContainersTest, AllowsScalarReadFromConstexprTable) {
 
 TEST_F(ConstexprContainersTest, AllowsShadowingConstexprContainerName) {
     auto errors = analyzeWithImports(R"(
-        import std.collections;
+        import std.vec;
+        import std.deque;
+        import std.hashmap;
+        import std.hashset;
         constexpr std::Vec<int32> make() { std::Vec<int32> v; v.init(); return v; }
         constexpr std::Vec<int32> T = make();
         int32 main() {

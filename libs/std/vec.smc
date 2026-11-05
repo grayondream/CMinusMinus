@@ -1,5 +1,5 @@
-// ===== std.collections.vec — Vec<T> (growable array) =====
-module std.collections.vec;
+// ===== std.vec — Vec<T> (growable array) =====
+module std.vec;
 
 import std.mem;
 
