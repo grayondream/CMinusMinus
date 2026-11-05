@@ -119,11 +119,22 @@
 
 ## 7.5 Lambda（PAR-11/CG-11/DEC-10）`[impl]`
 
-- 语法 `[captures](params) -> Ret { body }`；捕获 `[]`/`[=]`/`[a,&b]`；返回类型显式或推断（body 首个 return 表达式类型，多 return 不兼容未处理）。
+- 语法 `[captures](params) -> Ret { body }`；捕获列表：
+  - `[]`：不捕获；`[=]`：body 实际引用的外层自动局部/参数按值捕获；
+  - `[&]`：同样集合按引用捕获；
+  - `[a, &b]`：显式按值/按引用；
+  - `[=, &x]` / `[&, x]`：默认模式 + 显式覆盖，显式项优先（允许 `[=, x]` 这类冗余写法，不额外诊断）；
+  - `[x = expr]`：按值捕获初始化；`[&x = expr]`：按引用捕获初始化（`expr` 必须是左值）；
+  - `[this]`：显式捕获当前对象（按值存指针）。
+- **捕获初始化**：`expr` 在外层作用域求值，于 lambda 创建点只求值一次，结果存入闭包字段；`[x = x]` 的 RHS 是外层 `x`，LHS 是新捕获名。按值初始化支持标量/聚合/定长数组的整值拷贝。
+- **`this` 与隐式成员**：方法内 `[this]` 后，body 中裸字段名脱糖为 `this->field`（访问控制沿用方法上下文）；`[=]`/`[&]` 在 body 使用 `this` 或裸字段时自动按值捕获 `this`。`[]` 内不解糖，引用 `this`/字段按未捕获诊断。非方法或静态方法中的 `[this]`、`[&this]`、`[this = expr]` 均诊断。
+- **未捕获诊断**：body 引用的外层自动局部必须已被本层 lambda 捕获；嵌套 lambda 还须被每个中间 lambda 捕获。违反时报 `variable 'x' is not captured by lambda`（跨越中间 lambda 时为 `... not captured by an enclosing lambda`），绝不进入 codegen。
+- **全局/静态存储不捕获**：全局/模块作用域变量、函数、枚举，以及函数内 `static`/`thread_local`/块级 `extern` 直接访问，不进入闭包字段；`[=]` 不会为它们生成副本（有意修正旧行为）。
+- **返回类型推断**：显式 `-> Ret` 权威；省略时在 body 分析中惰性推断——首个带值 `return` 决定类型（`if`/`switch`/循环内均覆盖），可引用 body 内先声明的局部或 `auto` 闭包；无带值 `return` 为 `void`。若后续带值 `return` 使 lambda 非 `void`，此前所有无值 `return` 逐个诊断。嵌套 lambda 独立推断。
 - **无捕获 → 函数指针**（零开销）：可赋给 `int32 (*)(int32)`、作回调实参（qsort）、直接调用。
-- **有捕获 → 匿名闭包 struct + 调用函数**：按值捕获拷贝、按引用捕获存指针（body 内写穿原对象）。
-- **DEC-10 裁决**：语言无 `auto`，有捕获闭包类型不可命名——实际可用形态为**立即调用** `[&a](){ ... }();`；捕获闭包不可存于变量。
-- 设计：`docs/superpowers/specs/2026-10-17-lambda-design.md`。
+- **有捕获 → 匿名闭包 struct + 调用函数**：按值捕获拷贝、按引用捕获存指针（body 内写穿原对象）；`auto` 可保存闭包并反复调用，也支持立即调用 `[...](...){...}(args)`。按值捕获的写入写的是闭包副本；本语言无 `mutable`，也没有只读诊断。
+- **非目标**：有捕获闭包逃逸（函数返回、struct 字段、数组元素、普通函数参数）仍不支持；文件作用域初始化器中的有捕获 lambda 会被 sema 拒绝（`lambda with captures cannot be used in a global initializer` / `capture initializer requires an enclosing function scope`）。
+- 设计：`docs/superpowers/specs/2026-10-17-lambda-design.md`、`docs/superpowers/specs/2026-11-04-lambda-gaps-design.md`。
 
 ## 7.6 字面量与模板值的存储语义（PAR-08 / GEN-02）`[impl]`
 

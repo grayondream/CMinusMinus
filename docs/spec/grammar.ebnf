@@ -380,12 +380,23 @@ initializer          = expr
    底层为栈上匿名数组 + {ptr,len} 视图；返回该 slice 属悬垂转义，sema 拒绝。 *)
 designated-initializer = '.' , identifier , '=' , initializer ;
 
-lambda-expr         = '[' , [ lambda-capture ] , ']'
+lambda-expr         = lambda-capture
                       '(' , [ parameter-list ] , ')'
                       [ '->' , type ] , block ;                     (* [impl] PAR-11 / DEC-10, 2026-10-17 *)
-lambda-capture      = '='                                            (* [impl] 全部按值 *)
-                    | capture-item , { ',' , capture-item } ;
-capture-item        = '&' , identifier | identifier ;
+lambda-capture      = '[' [ capture-spec ] ']' ;
+capture-spec        = '=' [ ',' override-list ]                      (* [impl] 默认按值 + 显式覆盖 *)
+                    | '&' [ ',' override-list ]                      (* [impl] 默认按引用 + 显式覆盖 *)
+                    | capture-list ;
+capture-list        = capture-item , { ',' , capture-item } ;
+override-list       = capture-item , { ',' , capture-item } ;
+capture-item        = [ '&' ] identifier [ '=' assignment-expr ] ;
+(* [impl] PAR-11 / DEC-10, 2026-11-04:
+   - `[]` 无捕获；`[=]` / `[&]` 按 body 实际引用自动捕获；
+   - `[=, &x]` / `[&, x]` 默认模式 + 显式覆盖（显式项优先）；
+   - `[x = expr]` 按值捕获初始化，`[&x = expr]` 按引用捕获初始化；
+   - `[this]` 显式捕获当前对象；`[=]` / `[&]` 在方法内使用 `this` 或裸字段时
+     自动按值捕获 `this`；
+   - 捕获初始化表达式用 assignment-expr，逗号只作列表分隔符。 *)
 
 
 (* =========================================================================
