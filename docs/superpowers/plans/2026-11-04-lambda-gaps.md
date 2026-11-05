@@ -159,7 +159,7 @@ git commit -m "feat(PAR-11): parse lambda capture defaults, overrides, and initi
 - Produces:
   - `Symbol::isStaticStorage`
   - `VariableExprAST::implicitThisAccess`
-  - `SemanticAnalyzer::LambdaFrame` 栈（bodyScope、capturedNames、capturesThis、inferReturn、inferredReturn、firstVoidReturn）
+  - `SemanticAnalyzer::LambdaFrame` 栈（bodyScope、capturedNames、capturesThis、inferReturn、inferredReturn、pendingVoidReturns）
   - `Symbol* findCapturableLocal(const std::string&)`
   - `ClassType* findFieldOwner(ClassType*, const std::string&)`
 
@@ -315,7 +315,7 @@ git commit -m "feat(PAR-11): lambda capture semantics, this capture, and uncaptu
 - Test: `tests/sema/test_semantic_analyzer.cpp`
 
 **Interfaces:**
-- Consumes: Task 2 的 `LambdaFrame.inferReturn/inferredReturn/firstVoidReturn`。
+- Consumes: Task 2 的 `LambdaFrame.inferReturn/inferredReturn/pendingVoidReturns`。
 - Produces: 省略返回类型的 lambda 在 body 遍历中推断；`return` 可引用先声明的局部/`auto` 闭包。
 
 - [x] **Step 1: 写失败 sema 测试**
@@ -382,12 +382,12 @@ Expected: 至少 `ReturnInferenceSeesBodyLocal` / `OnlyBranch` 失败。
 - `visit(LambdaExprAST&)`：
   - 不再预先扫描 return；`retType = node.returnType`（显式）或 `nullptr`。
   - 创建 `tmpFn` 时若无显式返回类型，先给 `void`。
-  - 进入 body scope、声明参数/捕获后，推入/更新 frame：`inferReturn = !hasExplicitReturnType`、`inferredReturn = node.returnType`、`firstVoidReturn = nullptr`。
+  - 进入 body scope、声明参数/捕获后，推入/更新 frame：`inferReturn = !hasExplicitReturnType`、`inferredReturn = node.returnType`、`pendingVoidReturns.clear()`。
   - `visit(*body)` 后：若 `inferReturn`，`retType = frame.inferredReturn ? frame.inferredReturn : void`；写回 `node.returnType`。
 - `visit(ReturnStmtAST&)`：
   - 若最内层 frame `inferReturn`：
-    - 带值 return：`retValType = getExprType(*node.value)`；若 `inferredReturn == nullptr`，设为 `retValType`，更新 `currentFunction->returnType`；若 `firstVoidReturn` 非空，在该节点报“非 void lambda 不能无值 return”。
-    - 无值 return：若 `inferredReturn == nullptr`，记录 `firstVoidReturn`；否则沿用现有非 void 检查报错。
+    - 带值 return：`retValType = getExprType(*node.value)`；若 `inferredReturn == nullptr`，设为 `retValType`，更新 `currentFunction->returnType`；若 `pendingVoidReturns` 非空且推导类型非 void，对这些先前的无值 return 逐个报“非 void lambda 不能无值 return”，然后清空列表。
+    - 无值 return：若 `inferredReturn == nullptr`，把该节点加入 `pendingVoidReturns`；否则沿用现有非 void 检查报错。
   - 之后继续现有 dangling/兼容性检查；`currentFunction->returnType` 已更新，所以检查使用最终类型。
 - 嵌套 lambda 各自 frame；外层 return 不受内层影响。
 
@@ -616,7 +616,7 @@ ctest --test-dir build -j8
 build/bin/my_llvm_c examples/all_features.c -o /tmp/all_features && /tmp/all_features
 ```
 
-Expected: 全量测试 0 失败（既有 2 个 `GTEST_SKIP` 不变）；示例输出 `ALL FEATURES OK`。
+Expected: 全量测试 0 失败（当前仓库无 `GTEST_SKIP`；历史计划中的 2 个已在 2026-11-01 constexpr 容器收口时移除）；示例输出 `ALL FEATURES OK`。
 
 - [x] **Step 5: 提交文档**
 
