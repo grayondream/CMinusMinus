@@ -119,6 +119,24 @@ TEST_F(WarningAnalysisTest, AddressTakenCountsAsUse) {
     EXPECT_EQ(r.count(DiagnosticCode::WarnUnusedVariable), 0);
 }
 
+TEST_F(WarningAnalysisTest, ExplicitCaptureCountsAsUse) {
+    auto r = analyze(
+        "int32 main() { int32 x = 1; "
+        "auto f = [x]() -> int32 { return x; }; return f() - 1; }");
+    ASSERT_TRUE(r.errors.empty());
+    EXPECT_EQ(r.count(DiagnosticCode::WarnUnusedVariable), 0)
+        << "resolving [x] is a use of the outer local";
+}
+
+TEST_F(WarningAnalysisTest, CaptureAllCountsAsUse) {
+    auto r = analyze(
+        "int32 main() { int32 x = 1; "
+        "auto f = [=]() -> int32 { return x; }; return f() - 1; }");
+    ASSERT_TRUE(r.errors.empty());
+    EXPECT_EQ(r.count(DiagnosticCode::WarnUnusedVariable), 0)
+        << "an implicit capture is a use of the outer local";
+}
+
 // ---------------------------------------------------------------------------
 // W3003: unreachable code
 // ---------------------------------------------------------------------------

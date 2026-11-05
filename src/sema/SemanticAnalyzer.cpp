@@ -27,6 +27,18 @@ static Type* stripTypedef(Type* type) {
     return type;
 }
 
+// PAR-11 review C2: an inferred lambda return type must follow the ordinary
+// array-to-pointer return rule. Recording the array verbatim makes codegen
+// decay the operand and then cast it to an array return type (invalid IR).
+static Type* decayInferredReturnType(Type* type) {
+    Type* stripped = stripTypedef(type);
+    if (stripped && stripped->kind == TypeKind::Array) {
+        return new Type(TypeKind::Pointer,
+                        static_cast<ArrayType*>(stripped)->elementType);
+    }
+    return type;
+}
+
 // Review 2.5: a view/literal may implicitly become a read-only C string,
 // never a mutable char*. Explicit casts remain the interop escape hatch.
 static bool isConstCharPointer(Type* t) {
@@ -2942,30 +2954,40 @@ void SemanticAnalyzer::visit(VariableExprAST& node) {
         }
     }
 
-    // Enumerator (possibly namespace-qualified, e.g. `A::Red`)?
-    for (const auto& candidate : namespaceCandidates(node.name)) {
+    // Enumerator (possibly namespace-qualified, e.g. `A::Red`)? Resolution is
+    // deferred until after symbol lookup: PAR-11 review I6 gives locals (all
+    // storage classes) priority, and lets a same-named field beat a namespace
+    // enumerator inside a `this`-capturing lambda.
+    const std::string originalName = node.name;
+    std::string enumName;
+    Type* enumType = nullptr;
+    int enumValue = 0;
+    bool hasEnum = false;
+    for (const auto& candidate : namespaceCandidates(originalName)) {
         auto it = enumConstants.find(candidate);
         if (it != enumConstants.end()) {
-            node.name = candidate;
-            node.isEnumConstant = true;
-            node.enumValue = it->second.second;
-            node.type = it->second.first;
-            node.isLValue = false;
-            return;
+            enumName = candidate;
+            enumType = it->second.first;
+            enumValue = it->second.second;
+            hasEnum = true;
+            break;
         }
     }
 
-    const std::string originalName = node.name;
-    const std::string key = resolveNamespaceName(node.name);
+    const std::string key = resolveNamespaceName(originalName);
     Symbol* sym = currentScope->lookup(key);
     if (!sym && key != originalName) {
         sym = lookup(originalName);
     }
     if (sym) {
         // PAR-11: in a `this`-capturing lambda a bare field name beats a
-        // same-named global/static symbol; locals, params, and captures still
-        // win because they are not file/static symbols.
-        if (isFileOrStaticSymbol(sym) &&
+        // same-named file/module-scope symbol; block-scope locals (including
+        // static/thread_local/extern) still win because isFileOrModuleSymbol
+        // ignores static storage.
+        const bool fieldPriority = !lambdaFrames.empty() &&
+                                   lambdaFrames.back().capturesThis &&
+                                   currentClass != nullptr;
+        if (fieldPriority && isFileOrModuleSymbol(sym) &&
             desugarImplicitThis(node, originalName)) {
             return;
         }
@@ -2978,6 +3000,14 @@ void SemanticAnalyzer::visit(VariableExprAST& node) {
         // PAR-11: a bare member name inside a `this`-capturing lambda
         // desugars to `this->name` (reusing MemberAccess access control).
         if (desugarImplicitThis(node, originalName)) return;
+        if (hasEnum) {
+            node.name = enumName;
+            node.isEnumConstant = true;
+            node.enumValue = enumValue;
+            node.type = enumType;
+            node.isLValue = false;
+            return;
+        }
         emitError(DiagnosticCode::SemUndeclaredIdentifier, "use of undeclared identifier '" + originalName + "'", node);
         node.type = nullptr;
     } else if (sym->type && sym->type->kind == TypeKind::Function) {
@@ -5880,12 +5910,27 @@ void SemanticAnalyzer::collectUsedNames(ExprAST* expr, std::unordered_set<std::s
     if (auto* lam = dynamic_cast<LambdaExprAST*>(expr)) {
         // A nested lambda's capture list and initializers are references from
         // the enclosing scope; an outer `[=]`/`[&]` must account for them too.
+        // PAR-11 review I5: an init-capture's LHS is a *new* variable, so only
+        // a plain capture name is a reference. The initializer is always an
+        // enclosing-scope expression.
         for (auto& cap : lam->captures) {
-            if (!cap.name.empty()) out.insert(cap.name);
+            if (!cap.init && !cap.name.empty()) out.insert(cap.name);
             if (cap.init) collectUsedNames(cap.init.get(), out);
         }
         if (lam->body) {
-            for (auto& stmt : lam->body->stmts) collectUsedNamesStmt(stmt.get(), out);
+            // Names introduced by this nested lambda shadow the enclosing
+            // scope inside its body: an init-capture name is a new local, and
+            // parameters are locals too. Collect separately so we do not
+            // mistake those body references for outer uses.
+            std::unordered_set<std::string> nested;
+            for (auto& stmt : lam->body->stmts) {
+                collectUsedNamesStmt(stmt.get(), nested);
+            }
+            for (auto& cap : lam->captures) {
+                if (cap.init) nested.erase(cap.name);
+            }
+            for (auto& p : lam->params) nested.erase(p->name);
+            out.insert(nested.begin(), nested.end());
         }
         return;
     }
@@ -5932,6 +5977,28 @@ void SemanticAnalyzer::collectUsedNamesStmt(StmtAST* stmt, std::unordered_set<st
         if (ds->decl) collectUsedNamesDecl(ds->decl.get(), out);
         return;
     }
+    // PAR-11 review I4: switch condition, case labels and case bodies.
+    if (auto* sw = dynamic_cast<SwitchStmtAST*>(stmt)) {
+        collectUsedNames(sw->cond.get(), out);
+        for (auto& label : sw->caseLabels) collectUsedNames(label.get(), out);
+        for (auto& c : sw->cases) collectUsedNamesStmt(c.get(), out);
+        return;
+    }
+    if (auto* df = dynamic_cast<DeferStmtAST*>(stmt)) {
+        collectUsedNames(df->callExpr.get(), out);
+        return;
+    }
+    if (auto* ctif = dynamic_cast<CompileTimeIfStmtAST*>(stmt)) {
+        collectUsedNames(ctif->cond.get(), out);
+        collectUsedNamesStmt(ctif->thenStmt.get(), out);
+        collectUsedNamesStmt(ctif->elseStmt.get(), out);
+        return;
+    }
+    if (auto* ctr = dynamic_cast<CompileTimeRepeatStmtAST*>(stmt)) {
+        collectUsedNames(ctr->count.get(), out);
+        collectUsedNamesStmt(ctr->body.get(), out);
+        return;
+    }
 }
 
 void SemanticAnalyzer::collectUsedNamesDecl(DeclAST* decl, std::unordered_set<std::string>& out) {
@@ -5943,6 +6010,31 @@ void SemanticAnalyzer::collectUsedNamesDecl(DeclAST* decl, std::unordered_set<st
     if (auto* a = dynamic_cast<ArrayDeclAST*>(decl)) {
         collectUsedNames(a->initExpr.get(), out);
         return;
+    }
+    // PAR-11 review I4: `int32 a = f(), b = g();` — each sub-declaration can
+    // reference outer locals.
+    if (auto* m = dynamic_cast<MultiVarDeclAST*>(decl)) {
+        for (auto& d : m->decls) collectUsedNamesDecl(d.get(), out);
+        return;
+    }
+}
+
+// PAR-11 review C3: names declared by a declaration statement (recursing into
+// `int32 a, b;`). Used to reject an explicit capture redeclared in the lambda
+// body's outermost block.
+static void collectDeclaredNames(DeclAST* decl,
+                                 std::unordered_set<std::string>& out) {
+    if (!decl) return;
+    if (auto* v = dynamic_cast<VarDeclAST*>(decl)) {
+        out.insert(v->name);
+        return;
+    }
+    if (auto* a = dynamic_cast<ArrayDeclAST*>(decl)) {
+        out.insert(a->name);
+        return;
+    }
+    if (auto* m = dynamic_cast<MultiVarDeclAST*>(decl)) {
+        for (auto& d : m->decls) collectDeclaredNames(d.get(), out);
     }
 }
 
@@ -5996,16 +6088,24 @@ ClassType* SemanticAnalyzer::findFieldOwner(ClassType* classType,
     return nullptr;
 }
 
-// PAR-11: file/module-scope or static-storage symbols are always reachable
-// from lambda bodies and are neither captured nor shadowed by fields.
-bool SemanticAnalyzer::isFileOrStaticSymbol(Symbol* sym) {
+// PAR-11: file/module-scope symbols are neither captured nor shadowed by
+// fields. Used for member-vs-global priority (a block-scope static/extern local
+// still wins over a field).
+bool SemanticAnalyzer::isFileOrModuleSymbol(Symbol* sym) {
     if (!sym) return false;
-    if (sym->isStaticStorage) return true;
     for (Scope* s = currentScope; s; s = s->parent) {
         if (!scopeDeclaresSymbol(s, sym)) continue;
         return s == globalScope.get() || s == activeModuleScope;
     }
     return false;
+}
+
+// PAR-11: file/module-scope or static-storage symbols are always reachable
+// from lambda bodies and are neither captured nor shadowed by fields.
+bool SemanticAnalyzer::isFileOrStaticSymbol(Symbol* sym) {
+    if (!sym) return false;
+    if (sym->isStaticStorage) return true;
+    return isFileOrModuleSymbol(sym);
 }
 
 // PAR-11: true when `sym` is declared in `frame`'s body scope or a nested
@@ -6096,6 +6196,7 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
     std::vector<LambdaExprAST::Capture> effective;
     std::vector<Type*> effectiveTypes;
     std::unordered_set<std::string> effectiveNames;
+    std::unordered_set<std::string> explicitCaptureNames;
     std::unordered_set<std::string> invalidCaptureNames;
     bool capturesThis = false;
 
@@ -6114,6 +6215,8 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
             invalidCaptureNames.insert("this");
             return;
         }
+        // PAR-11 review I7: a resolved capture is a use (W3002).
+        if (thisSym) thisSym->isUsed = true;
         LambdaExprAST::Capture cap;
         cap.name = "this";
         cap.byRef = false;
@@ -6150,6 +6253,14 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
             // lambda body's own parameters/captures are not in scope yet).
             Type* initType = getExprType(*c.init);
             if (!initType) continue;
+            // PAR-11 review C1: a void expression has no value to store in a
+            // closure field; reject before codegen can build a void field.
+            Type* initStripped = stripTypedef(initType);
+            if (initStripped && initStripped->kind == TypeKind::Void) {
+                emitError("capture initializer for '" + c.name +
+                              "' must have a value type", node);
+                continue;
+            }
             if (c.byRef) {
                 if (!c.init->isLValue) {
                     emitError("by-reference capture initializer for '" +
@@ -6173,9 +6284,13 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
                 invalidCaptureNames.insert(c.name);
                 continue;
             }
+            // PAR-11 review I7: resolving the capture is a use of the outer
+            // symbol; otherwise a captured-but-shadowed name warns W3002.
+            sym->isUsed = true;
             fieldType = c.byRef ? new Type(TypeKind::Pointer, sym->type)
                                 : sym->type;
         }
+        explicitCaptureNames.insert(c.name);
         addCapture(std::move(c), fieldType);
     }
 
@@ -6209,6 +6324,8 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
                     invalidCaptureNames.insert(name);
                     continue;
                 }
+                // PAR-11 review I7: the implicit capture is a use.
+                sym->isUsed = true;
                 LambdaExprAST::Capture cap;
                 cap.name = name;
                 cap.byRef = node.captureAllByRef;
@@ -6312,6 +6429,23 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
         frame.capturesThis = capturesThis;
         frame.inferReturn = inferReturnType;
         lambdaFrames.push_back(frame);
+        // PAR-11 review C3: an explicit capture is a variable in the lambda's
+        // outermost body block; a same-named local there is a redeclaration
+        // (nested blocks may still shadow it).
+        if (!explicitCaptureNames.empty() && !node.body->stmts.empty()) {
+            std::unordered_set<std::string> bodyDecls;
+            for (auto& s : node.body->stmts) {
+                if (auto* ds = dynamic_cast<DeclStmtAST*>(s.get())) {
+                    collectDeclaredNames(ds->decl.get(), bodyDecls);
+                }
+            }
+            for (const auto& capName : explicitCaptureNames) {
+                if (bodyDecls.count(capName)) {
+                    emitError("redeclaration of lambda capture '" + capName + "'",
+                              node);
+                }
+            }
+        }
         // 惰性推断：visit(ReturnStmtAST) 在遍历 body 时用首个带值 return
         // 的类型更新 frame 与伪函数返回类型；无带值 return → void。
         visit(*node.body);
@@ -6758,9 +6892,11 @@ void SemanticAnalyzer::visit(ReturnStmtAST& node) {
                 frame.pendingVoidReturns.push_back(&node);
             }
         } else if (retValType && !frame.inferredReturn) {
-            // First value return determines the inferred type.
-            frame.inferredReturn = retValType;
-            if (currentFunction) currentFunction->returnType = retValType;
+            // First value return determines the inferred type. Arrays decay to
+            // a pointer, matching an ordinary declared array return.
+            Type* inferredType = decayInferredReturnType(retValType);
+            frame.inferredReturn = inferredType;
+            if (currentFunction) currentFunction->returnType = inferredType;
             // Retroactively diagnose every value-less return seen before the
             // type became known (only when the deduced type is genuinely
             // non-void).

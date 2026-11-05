@@ -126,14 +126,15 @@
   - `[=, &x]` / `[&, x]`：默认模式 + 显式覆盖，显式项优先（允许 `[=, x]` 这类冗余写法，不额外诊断）；
   - `[x = expr]`：按值捕获初始化；`[&x = expr]`：按引用捕获初始化（`expr` 必须是左值）；
   - `[this]`：显式捕获当前对象（按值存指针）。
-- **捕获初始化**：`expr` 在外层作用域求值，于 lambda 创建点只求值一次，结果存入闭包字段；`[x = x]` 的 RHS 是外层 `x`，LHS 是新捕获名。按值初始化支持标量/聚合/定长数组的整值拷贝。
-- **`this` 与隐式成员**：方法内 `[this]` 后，body 中裸字段名脱糖为 `this->field`（访问控制沿用方法上下文）；`[=]`/`[&]` 在 body 使用 `this` 或裸字段时自动按值捕获 `this`。`[]` 内不解糖，两种情况诊断不同：写 `this->field` 时报告 `variable 'this' is not captured by lambda`；直接写裸字段名时因未找到该符号报告 E2001 `use of undeclared identifier 'field'`。非方法或静态方法中的 `[this]`、`[&this]`、`[this = expr]` 均诊断。
-- **未捕获诊断**：body 引用的外层自动局部必须已被本层 lambda 捕获；嵌套 lambda 还须被每个中间 lambda 捕获。违反时报 `variable 'x' is not captured by lambda`（跨越中间 lambda 时为 `... not captured by an enclosing lambda`），绝不进入 codegen。
-- **全局/静态存储不捕获**：全局/模块作用域变量、函数、枚举，以及函数内 `static`/`thread_local`/块级 `extern` 直接访问，不进入闭包字段；`[=]` 不会为它们生成副本（有意修正旧行为）。
-- **返回类型推断**：显式 `-> Ret` 权威；省略时在 body 分析中惰性推断——首个带值 `return` 决定类型（`if`/`switch`/循环内均覆盖），可引用 body 内先声明的局部或 `auto` 闭包；无带值 `return` 为 `void`。若后续带值 `return` 使 lambda 非 `void`，此前所有无值 `return` 逐个诊断。嵌套 lambda 独立推断。
+- **捕获初始化**：`expr` 在外层作用域求值，于 lambda 创建点只求值一次，结果存入闭包字段；`[x = x]` 的 RHS 是外层 `x`，LHS 是新捕获名。按值初始化支持标量/聚合/定长数组的整值拷贝。`void` 表达式的初始化器（`[x = g()]` 且 `g` 返回 `void`）诊断为 `capture initializer for 'x' must have a value type`，不生成 `void` 闭包字段。
+- **捕获发现范围**：`[=]`/`[&]` 的隐式捕获扫描覆盖 body 中的语句/声明形式，包括 `switch`（条件、case 标签、case 体）、`defer`、`compile_time.if`、`compile_time.repeat`，以及 `int32 a = x, b = y;` 这类多变量声明中的每个初始化器；嵌套 lambda 的捕获名与初始化器也计入外层发现。显式 init-capture 的 LHS 是新变量，不作为外层引用。
+- **`this` 与隐式成员**：方法内 `[this]` 后，body 中裸字段名脱糖为 `this->field`（访问控制沿用方法上下文）；`[=]`/`[&]` 在 body 使用 `this` 或裸字段时自动按值捕获 `this`。`[]` 内不解糖，两种情况诊断不同：写 `this->field` 时报告 `variable 'this' is not captured by lambda`；直接写裸字段名时因未找到该符号报告 E2001 `use of undeclared identifier 'field'`。非方法或静态方法中的 `[this]`、`[&this]`、`[this = expr]` 均诊断。显式捕获名在 lambda body 最外层块被同名声明的局部重定义时报 `redeclaration of lambda capture 'x'`（嵌套块仍可正常遮蔽）。
+- **未捕获诊断**：body 引用的外层自动局部必须已被本层 lambda 捕获；嵌套 lambda 还须被每个中间 lambda 捕获。违反时报 `variable 'x' is not captured by lambda`（跨越中间 lambda 时为 `... not captured by an enclosing lambda`），绝不进入 codegen。body 内块级局部遮蔽捕获名时，该局部按普通词法作用域解析，不读写闭包字段。
+- **全局/静态存储不捕获**：全局/模块作用域变量、函数、枚举，以及函数内 `static`/`thread_local`/块级 `extern` 直接访问，不进入闭包字段；`[=]` 不会为它们生成副本（有意修正旧行为）。名字优先级：块级 `static`/`thread_local`/`extern` 局部与普通局部一样优先于同名字段；在捕获 `this` 的 lambda 中，裸名命中当前类字段且没有局部符号时，字段优先于命名空间作用域枚举（`enum { Red }; ... return Red;` 取字段）。块级 `static` 数组的存储类仍沿用既有存储类缺口（本轮未扩展 `ArrayDeclAST`）。
+- **返回类型推断**：显式 `-> Ret` 权威；省略时在 body 分析中惰性推断——首个带值 `return` 决定类型（`if`/`switch`/循环内均覆盖），可引用 body 内先声明的局部或 `auto` 闭包；无带值 `return` 为 `void`。推断到的数组返回类型按普通数组返回规则 decay 为指向首元素的指针。若后续带值 `return` 使 lambda 非 `void`，此前所有无值 `return` 逐个诊断。嵌套 lambda 独立推断。
 - **无捕获 → 函数指针**（零开销）：可赋给 `int32 (*)(int32)`、作回调实参（qsort）、直接调用。
 - **有捕获 → 匿名闭包 struct + 调用函数**：按值捕获拷贝、按引用捕获存指针（body 内写穿原对象）；`auto` 可保存闭包并反复调用，也支持立即调用 `[...](...){...}(args)`。按值捕获的字段保存创建点拷贝；每次调用把字段加载进本次调用的局部 alloca，写入只影响该次调用的副本，既不回写原对象也不跨调用保留。本语言无 `mutable`，也没有只读诊断。
-- **非目标**：有捕获闭包逃逸（函数返回、struct 字段、数组元素、普通函数参数）仍不支持；文件作用域初始化器中的有捕获 lambda 会被 sema 拒绝（`lambda with captures cannot be used in a global initializer` / `capture initializer requires an enclosing function scope`）。
+- **有捕获闭包逃逸不保证**：有捕获闭包作为函数返回、struct 字段、数组元素或普通函数参数传递时，其生命周期不在语言保证范围内——闭包按引用捕获的存储以及 `this` 指向的对象，其存活由调用方负责（与 DEC-10 的引用悬垂规则一致）。文件作用域初始化器中的有捕获 lambda 仍被 sema 拒绝（`lambda with captures cannot be used in a global initializer` / `capture initializer requires an enclosing function scope`）。
 - 设计：`docs/superpowers/specs/2026-10-17-lambda-design.md`、`docs/superpowers/specs/2026-11-04-lambda-gaps-design.md`。
 
 ## 7.6 字面量与模板值的存储语义（PAR-08 / GEN-02）`[impl]`

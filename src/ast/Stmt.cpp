@@ -40,6 +40,10 @@ llvm::Value* ExprStmtAST::codegen(CodegenContext& ctx) {
 
 llvm::Value* CompoundStmtAST::codegen(CodegenContext& ctx) {
     llvm::Value* last = nullptr;
+    // PAR-11 review C3: give each block its own variable scope (mirroring
+    // sema). Without this a body-local that shadows a capture would register
+    // into the lambda/function scope and read/write the captured storage.
+    ctx.pushScope();
     ctx.pushDeferScope();
     for (auto& stmt : stmts) {
         // Stop generating the (unreachable) rest of the block once a
@@ -58,6 +62,7 @@ llvm::Value* CompoundStmtAST::codegen(CodegenContext& ctx) {
     } else {
         ctx.popDeferScope();
     }
+    ctx.popScope();
     return last;
 }
 

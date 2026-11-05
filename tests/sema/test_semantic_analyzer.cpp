@@ -3349,3 +3349,298 @@ TEST(LambdaSemaGaps, FileScopeCaptureInitializerDiagnosed) {
                 hasMsg(errs, "global initializer"))
         << "expected the global-scope capture diagnostic";
 }
+
+// ========== PAR-11 final review regressions ==========
+
+TEST(LambdaSemaGaps, VoidCaptureInitializerRejected) {
+    auto errs = semaErrorsOf(R"(
+        void g() {}
+        int32 main() {
+            auto f = [x = g()]() -> int32 { return 1; };
+            return f();
+        }
+    )");
+    EXPECT_FALSE(errs.empty());
+    EXPECT_TRUE(hasMsg(errs, "must have a value type"))
+        << "expected a value-type diagnostic for a void capture initializer";
+}
+
+TEST(LambdaSemaGaps, InferredArrayReturnDecaysToPointer) {
+    std::string source = R"(
+        int32 main() {
+            auto f = [](int32 c) {
+                if (c) { int32 a[3] = {1, 2, 3}; return a; }
+                return 0;
+            };
+            return f(1)[0] - 1;
+        }
+    )";
+    Lexer lexer("t.c", source);
+    Parser parser(lexer.tokenize());
+    auto ast = parser.parse();
+    ASSERT_NE(ast, nullptr);
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    ASSERT_TRUE(analyzer.getErrors().empty())
+        << (analyzer.getErrors().empty() ? ""
+                                         : analyzer.getErrors().front().message);
+    auto* fn = dynamic_cast<FunctionDeclAST*>(ast->declarations[0].get());
+    ASSERT_NE(fn, nullptr);
+    auto* ds = dynamic_cast<DeclStmtAST*>(fn->body->stmts[0].get());
+    ASSERT_NE(ds, nullptr);
+    auto* vd = dynamic_cast<VarDeclAST*>(ds->decl.get());
+    ASSERT_NE(vd, nullptr);
+    auto* lam = dynamic_cast<LambdaExprAST*>(vd->initExpr.get());
+    ASSERT_NE(lam, nullptr);
+    ASSERT_NE(lam->returnType, nullptr);
+    EXPECT_EQ(lam->returnType->kind, TypeKind::Pointer)
+        << "an inferred array return must decay to a pointer";
+    ASSERT_NE(lam->returnType->base, nullptr);
+    EXPECT_EQ(lam->returnType->base->kind, TypeKind::Int32);
+}
+
+TEST(LambdaSemaGaps, ExplicitCaptureRedeclaredByBodyLocalRejected) {
+    auto errs = semaErrorsOf(R"(
+        int32 main() {
+            int32 x = 1;
+            auto f = [x]() -> int32 { int32 x = 5; return x; };
+            return f();
+        }
+    )");
+    EXPECT_FALSE(errs.empty());
+    EXPECT_TRUE(hasMsg(errs, "redeclaration of lambda capture"))
+        << "expected the body-local to be rejected as a capture redeclaration";
+}
+
+TEST(LambdaSemaGaps, CaptureAllDiscoversSwitch) {
+    EXPECT_TRUE(analyzeOk(R"(
+        int32 main() {
+            int32 x = 2;
+            auto f = [=]() -> int32 {
+                switch (x) {
+                    case 1: return 1;
+                    default: return x;
+                }
+            };
+            return f() - 2;
+        }
+    )"));
+}
+
+TEST(LambdaSemaGaps, CaptureAllDiscoversDefer) {
+    EXPECT_TRUE(analyzeOk(R"(
+        void cleanup(int32 v) {}
+        int32 main() {
+            int32 x = 1;
+            auto f = [=]() { defer cleanup(x); };
+            f();
+            return 0;
+        }
+    )"));
+}
+
+TEST(LambdaSemaGaps, CaptureAllDiscoversCompileTimeIf) {
+    EXPECT_TRUE(analyzeOk(R"(
+        int32 main() {
+            int32 x = 1;
+            auto f = [=]() -> int32 {
+                compile_time.if (true) { return x; } else { return 0; }
+            };
+            return f() - 1;
+        }
+    )"));
+}
+
+TEST(LambdaSemaGaps, CaptureAllDiscoversCompileTimeRepeat) {
+    EXPECT_TRUE(analyzeOk(R"(
+        int32 main() {
+            int32 x = 1;
+            int32 total = 0;
+            auto f = [&]() { compile_time.repeat(2) { total = total + x; } };
+            f();
+            return total - 4;
+        }
+    )"));
+}
+
+TEST(LambdaSemaGaps, CaptureAllDiscoversMultiVarInitializer) {
+    EXPECT_TRUE(analyzeOk(R"(
+        int32 main() {
+            int32 x = 1;
+            int32 y = 2;
+            auto f = [=]() -> int32 {
+                int32 a = x, b = y;
+                return a + b;
+            };
+            return f() - 3;
+        }
+    )"));
+}
+
+TEST(LambdaSemaGaps, CaptureAllDiscoversFieldUseInsideSwitch) {
+    EXPECT_TRUE(analyzeOk(R"(
+        class SwitchThisC {
+        public:
+            int32 v;
+            int32 f() {
+                auto g = [=]() -> int32 {
+                    switch (v) {
+                        case 0: return 10;
+                        default: return v + 1;
+                    }
+                };
+                return g();
+            }
+        };
+    )"));
+}
+
+TEST(LambdaSemaGaps, NestedInitCaptureDoesNotCaptureOuterName) {
+    std::string source = R"(
+        int32 main() {
+            int32 z = 3;
+            int32 (*fp)(int32) = [=](int32 x) -> int32 {
+                auto inner = [z = 5]() -> int32 { return z; };
+                return inner() + x;
+            };
+            return fp(1) + z - 9;
+        }
+    )";
+    Lexer lexer("t.c", source);
+    Parser parser(lexer.tokenize());
+    auto ast = parser.parse();
+    ASSERT_NE(ast, nullptr);
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    ASSERT_TRUE(analyzer.getErrors().empty())
+        << (analyzer.getErrors().empty() ? ""
+                                         : analyzer.getErrors().front().message);
+    auto* fn = dynamic_cast<FunctionDeclAST*>(ast->declarations[0].get());
+    ASSERT_NE(fn, nullptr);
+    auto* ds = dynamic_cast<DeclStmtAST*>(fn->body->stmts[1].get());
+    ASSERT_NE(ds, nullptr);
+    auto* vd = dynamic_cast<VarDeclAST*>(ds->decl.get());
+    ASSERT_NE(vd, nullptr);
+    auto* lam = dynamic_cast<LambdaExprAST*>(vd->initExpr.get());
+    ASSERT_NE(lam, nullptr);
+    EXPECT_TRUE(lam->captures.empty())
+        << "an inner init-capture LHS is not an outer reference";
+    ASSERT_NE(lam->type, nullptr);
+    EXPECT_EQ(lam->type->kind, TypeKind::Pointer)
+        << "the outer lambda must stay convertible to a function pointer";
+}
+
+TEST(LambdaSemaGaps, StaticLocalBeatsSameNamedField) {
+    std::string source = R"(
+        class StaticShadowC {
+        public:
+            int32 x;
+            int32 f() {
+                static int32 x = 5;
+                auto g = [=]() -> int32 { return x; };
+                return g();
+            }
+        };
+    )";
+    Lexer lexer("t.c", source);
+    Parser parser(lexer.tokenize());
+    auto ast = parser.parse();
+    ASSERT_NE(ast, nullptr);
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    ASSERT_TRUE(analyzer.getErrors().empty())
+        << (analyzer.getErrors().empty() ? ""
+                                         : analyzer.getErrors().front().message);
+    auto* cls = dynamic_cast<StructDeclAST*>(ast->declarations[0].get());
+    ASSERT_NE(cls, nullptr);
+    ASSERT_FALSE(cls->methods.empty());
+    auto* method = cls->methods[0].get();
+    ASSERT_NE(method, nullptr);
+    auto* ds = dynamic_cast<DeclStmtAST*>(method->body->stmts[1].get());
+    ASSERT_NE(ds, nullptr);
+    auto* vd = dynamic_cast<VarDeclAST*>(ds->decl.get());
+    ASSERT_NE(vd, nullptr);
+    auto* lam = dynamic_cast<LambdaExprAST*>(vd->initExpr.get());
+    ASSERT_NE(lam, nullptr);
+    auto* ret = dynamic_cast<ReturnStmtAST*>(lam->body->stmts[0].get());
+    ASSERT_NE(ret, nullptr);
+    auto* ref = dynamic_cast<VariableExprAST*>(ret->value.get());
+    ASSERT_NE(ref, nullptr);
+    EXPECT_EQ(ref->implicitThisAccess, nullptr)
+        << "a block-scope static local must win over the same-named field";
+}
+
+TEST(LambdaSemaGaps, EnumeratorLosesToSameNamedField) {
+    std::string source = R"(
+        enum Color { Red = 1, Green = 2 };
+        class EnumShadowC {
+        public:
+            int32 Red;
+            int32 f() {
+                auto g = [this]() -> int32 { return Red; };
+                return g();
+            }
+        };
+    )";
+    Lexer lexer("t.c", source);
+    Parser parser(lexer.tokenize());
+    auto ast = parser.parse();
+    ASSERT_NE(ast, nullptr);
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    ASSERT_TRUE(analyzer.getErrors().empty())
+        << (analyzer.getErrors().empty() ? ""
+                                         : analyzer.getErrors().front().message);
+    StructDeclAST* cls = nullptr;
+    for (auto& d : ast->declarations) {
+        if (auto* candidate = dynamic_cast<StructDeclAST*>(d.get())) {
+            cls = candidate;
+            break;
+        }
+    }
+    ASSERT_NE(cls, nullptr);
+    ASSERT_FALSE(cls->methods.empty());
+    auto* method = cls->methods[0].get();
+    ASSERT_NE(method, nullptr);
+    auto* ds = dynamic_cast<DeclStmtAST*>(method->body->stmts[0].get());
+    ASSERT_NE(ds, nullptr);
+    auto* vd = dynamic_cast<VarDeclAST*>(ds->decl.get());
+    ASSERT_NE(vd, nullptr);
+    auto* lam = dynamic_cast<LambdaExprAST*>(vd->initExpr.get());
+    ASSERT_NE(lam, nullptr);
+    auto* ret = dynamic_cast<ReturnStmtAST*>(lam->body->stmts[0].get());
+    ASSERT_NE(ret, nullptr);
+    auto* ref = dynamic_cast<VariableExprAST*>(ret->value.get());
+    ASSERT_NE(ref, nullptr);
+    EXPECT_FALSE(ref->isEnumConstant)
+        << "a namespace-scope enumerator must lose to the same-named field";
+    EXPECT_NE(ref->implicitThisAccess, nullptr);
+}
+
+TEST(LambdaSemaGaps, ThisByReferenceRejected) {
+    auto errs = semaErrorsOf(R"(
+        class C { public: int32 v; int32 f() { auto g = [&this]() { return v; }; return g(); } };
+    )");
+    EXPECT_FALSE(errs.empty());
+    EXPECT_TRUE(hasMsg(errs, "cannot be captured by reference"));
+}
+
+TEST(LambdaSemaGaps, ThisCaptureInitializerRejected) {
+    auto errs = semaErrorsOf(R"(
+        class C { public: int32 v; int32 f() { auto g = [this = 1]() { return v; }; return g(); } };
+    )");
+    EXPECT_FALSE(errs.empty());
+    EXPECT_TRUE(hasMsg(errs, "cannot have a capture initializer"));
+}
+
+TEST(LambdaSemaGaps, DuplicateCaptureRejected) {
+    auto errs = semaErrorsOf(R"(
+        int32 main() {
+            int32 x = 1;
+            auto f = [x, x]() -> int32 { return x; };
+            return f() - 1;
+        }
+    )");
+    EXPECT_FALSE(errs.empty());
+    EXPECT_TRUE(hasMsg(errs, "duplicate capture"));
+}

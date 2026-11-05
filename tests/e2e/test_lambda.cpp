@@ -316,3 +316,113 @@ TEST_F(LambdaE2E, CaptureInitializerMemberArrayByValue) {
         }
     )", "lam_init_member_array.c"), 0);
 }
+
+// PAR-11 final review regressions.
+
+TEST_F(LambdaE2E, InferredArrayReturnDecaysToPointer) {
+    EXPECT_EQ(runSource(R"(
+        int32 g_lambda_arr[3] = { 10, 20, 30 };
+        int32 main() {
+            auto f = [](int32 c) {
+                if (c) { return g_lambda_arr; }
+                return g_lambda_arr;
+            };
+            return f(1)[0] - 10;
+        }
+    )", "lam_ret_array.c"), 0);
+}
+
+TEST_F(LambdaE2E, CaptureAllBodyLocalShadowsByRef) {
+    EXPECT_EQ(runSource(R"(
+        int32 main() {
+            int32 x = 1;
+            auto f = [&]() { int32 x = 5; x = 9; };
+            f();
+            return x - 1;
+        }
+    )", "lam_shadow_ref.c"), 0);
+}
+
+TEST_F(LambdaE2E, CaptureAllBodyLocalShadowsByValue) {
+    EXPECT_EQ(runSource(R"(
+        int32 main() {
+            int32 x = 1;
+            auto f = [=]() -> int32 { int32 x = 5; return x; };
+            return f() - 5;
+        }
+    )", "lam_shadow_val.c"), 0);
+}
+
+TEST_F(LambdaE2E, NestedInitCaptureDoesNotCaptureOuterName) {
+    EXPECT_EQ(runSource(R"(
+        int32 main() {
+            int32 z = 3;
+            int32 (*fp)(int32) = [=](int32 x) -> int32 {
+                auto inner = [z = 5]() -> int32 { return z; };
+                return inner() + x;
+            };
+            return fp(1) + z - 9;
+        }
+    )", "lam_nested_init.c"), 0);
+}
+
+TEST_F(LambdaE2E, ImplicitThisInsideSwitch) {
+    EXPECT_EQ(runSource(R"(
+        class LambdaSwitchC {
+        public:
+            int32 v;
+            int32 f() {
+                auto g = [=]() -> int32 {
+                    switch (v) {
+                        case 7: return 70;
+                        default: return v;
+                    }
+                };
+                return g();
+            }
+        };
+        int32 main() {
+            LambdaSwitchC c;
+            c.v = 7;
+            return c.f() == 70 ? 0 : 1;
+        }
+    )", "lam_this_switch.c"), 0);
+}
+
+TEST_F(LambdaE2E, StaticLocalBeatsSameNamedField) {
+    EXPECT_EQ(runSource(R"(
+        class LambdaStaticShadowC {
+        public:
+            int32 x;
+            int32 f() {
+                static int32 x = 5;
+                auto g = [=]() -> int32 { return x; };
+                return g();
+            }
+        };
+        int32 main() {
+            LambdaStaticShadowC c;
+            c.x = 99;
+            return c.f() - 5;
+        }
+    )", "lam_static_shadow.c"), 0);
+}
+
+TEST_F(LambdaE2E, EnumeratorLosesToSameNamedField) {
+    EXPECT_EQ(runSource(R"(
+        enum LambdaColor { Red = 1, Green = 2 };
+        class LambdaEnumShadowC {
+        public:
+            int32 Red;
+            int32 f() {
+                auto g = [this]() -> int32 { return Red; };
+                return g();
+            }
+        };
+        int32 main() {
+            LambdaEnumShadowC c;
+            c.Red = 7;
+            return c.f() - 7;
+        }
+    )", "lam_enum_shadow.c"), 0);
+}

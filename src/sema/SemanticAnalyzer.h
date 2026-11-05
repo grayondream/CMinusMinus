@@ -329,8 +329,13 @@ private:
     Symbol* findCapturableLocal(const std::string& name);
     // Defining class of `name` along the inheritance chain, or null.
     ClassType* findFieldOwner(ClassType* classType, const std::string& name);
-    // True when `sym` is declared at file/module scope or has static storage.
+    // True when `sym` is declared at file/module scope or has static storage
+    // (capture validation treats both as directly reachable).
     bool isFileOrStaticSymbol(Symbol* sym);
+    // True only when `sym` is declared at file/module scope. Member-vs-global
+    // priority uses this so a block-scope static/extern local still shadows a
+    // same-named field.
+    bool isFileOrModuleSymbol(Symbol* sym);
     // True when `sym` is declared inside `frame`'s body (inclusive of nested
     // blocks but not the enclosing scopes).
     bool symbolIsLocalToFrame(Symbol* sym, const LambdaFrame& frame);
