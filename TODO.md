@@ -50,8 +50,9 @@
 > **进度快照（2026-11-01，标准库补全 + mimalloc）**：**std.mem 切换 mimalloc**（静态链接、`MI_OVERRIDE=ON`、JIT/生成程序同后端），新增 Allocator/Arena/Pool 与字节操作；**新增 std.collections**（Vec/Deque/HashMap/HashSet，显式 init/destroy + 回调哈希/相等）及 std.hash/std.sort/std.parse/std.ascii/std.path/std.fs/std.time/std.os/std.testing；`std.c` 不再内嵌，缺失标准库显式报错；驱动补齐 `-l/-L/-lm` 与 mimalloc 链接；`std.io::read_line` 增加 `cap<=0` 守卫。顺带修复模板 `true/false` 克隆丢失、命名空间模板限定名查找、`string` 非 NUL 终止三个阻塞缺陷。全量 **1679/1679** 通过（2 个既有 `GTEST_SKIP`）。
 > **进度快照（2026-11-01，示例收敛）**：删除重复的 `examples/full_feature.c`，仅保留 `examples/all_features.c` 作为唯一验收示例；两者内容高度重叠，维护成本大于收益。全量测试仍 **1679/1679**（2 个既有 `GTEST_SKIP`）。
 > **进度快照（2026-11-01，移除 libsafec）**：删除 `src/libsafec/` 与 `tests/libsafec/`，移除 CMake 的 `safec` 目标及其测试链接。该实现只被自身测试引用，编译器/JIT/`libs/std` 均不依赖，且与 mimalloc + `std.mem` 重复。全量 **1657/1657** 通过（2 个既有 `GTEST_SKIP`）。
-> **进度快照（2026-11-01，容器文件拆分）**：`std.collections` 按容器拆为 `libs/std/collections/{vec,deque,hashmap,hashset}.smc` 独立模块（`std.collections.vec` 等可直接导入）；`libs/std/collections.smc` 保留为汇总入口，既有 `import std.collections;` 用法不变。新增直接导入测试。全量 **1658/1658** 通过（2 个既有 `GTEST_SKIP`）。
+> **进度快照（2026-11-01，容器文件拆分）**：`std.collections` 按容器拆为 `libs/std/collections/{vec,deque,hashmap,hashset}.smc` 独立模块（`std.collections.vec` 等可直接导入）；`libs/std/collections.smc` 保留为汇总入口，既有 `import std.collections;` 用法不变。新增直接导入测试。全量 **1658/1658** 通过（2 个既有 `GTEST_SKIP`）。**后续拍平**：文件移至 `libs/std/{vec,deque,hashmap,hashset}.smc`，模块名改为 `std.vec` 等，汇总模块移除。
 > **进度快照（2026-11-01，constexpr 容器）**：`constexpr` 求值器可执行 `Vec`/`Deque`/`HashMap`/`HashSet`（循环/赋值/`&out`/标量与 `string_view` 元素），`constexpr` 容器变量物化为只读常量数组 + 常量结构体（含 HashMap/HashSet 的开放寻址表与回调函数指针）；物化表禁止修改/可变拷贝。顺带修复 `typeToMangled` 缺失 `Str`/`String` 与模板函数类型内 `TypeVar` 未替换两个阻塞缺陷。全量 **1699/1699** 通过（2 个既有 `GTEST_SKIP`）。
+> **进度快照（2026-11-01，容器模块拍平）**：容器实现从 `libs/std/collections/` 移至 `libs/std/{vec,deque,hashmap,hashset}.smc`，模块名改为 `std.vec` / `std.deque` / `std.hashmap` / `std.hashset`；移除 `libs/std/collections.smc` 汇总入口，`import std.collections;` 不再提供。测试与 `docs/spec/{stdlib,compile_time}.md` 同步为扁平导入。全量 **1699/1699** 通过（2 个既有 `GTEST_SKIP`），`examples/all_features.c` 输出 `ALL FEATURES OK`。
 > **进度快照（2026-11-01，std.atomic / std.thread）**：新增 `libs/std/atomic.smc`（`Atomic<T>`、`MemoryOrder*`、per-order 自由函数、显式 CAS、fence）与 `libs/std/thread.smc`（pthread `Thread` 生命周期、`hardware_concurrency`、`this_thread_*`、`thread_equal`）。编译器新增内部 `__smc_atomic_*` 内建（LLVM 整数 carrier：bool i8、float/pointer/enum bitcast，自然对齐）并修复模板 `atomic T`、i64 字段对齐、bool `atomic i1`；支持关键字模块路径分量 `std.atomic`。v1 限制：1/2/4/8 字节标量/指针/float16/32/64/enum，无 16 字节/聚合；线程仅 Linux x86-64 pthread，无 mutex/condvar。新增 27 个测试；全量 **1726/1726** 通过（2 个既有 `GTEST_SKIP`），`examples/all_features.c` 输出 `ALL FEATURES OK`。评审收口：relaxed fence 合法化、Consume 分派、模板/union/typedef/16 字节 atomic 编译期拒绝。
 >
 > **进度快照（2026-10-27，语法缺口补充审计）**：在 §24 基础上继续补漏，新增 **§25**（SG-12 ~ SG-23、SG-B07 ~ SG-B09），覆盖数组/位域常量表达式、声明符递归与函数类型形参、静态成员类外定义、C 字面量、asm、模块/控制流/类模板扩展。新补项中 P1 为 SG-12、SG-14；SG-12、SG-13、SG-14、SG-15、SG-16、SG-17 与 SG-B07、SG-B09 已修复（SG-15 于 2026-10-28）；SG-18、SG-19 已全部修复；SG-20 ~ SG-23 仍挂账（SG-B07 ~ SG-B09 已全部修复）。
@@ -413,10 +414,10 @@
 ### std.mem
 - `[x]` **STD-05** `malloc/calloc/realloc/free` 包装；Allocator 接口；Arena/Pool；placement 分配；对齐工具。**完成**（2026-11-01）：后端切换 mimalloc（`mi_*`，静态链接 + override）；`libs/std/mem.smc` 提供 `alloc/alloc_zeroed/resize/dealloc/bytes_*/align_*/aligned_*` + `Allocator`/`Arena`/`Pool`（模块导出类型已可用）。placement 分配仍属后续。
 
-### std.collections 〔新〕
-- `[x]` **STD-06** `Vec`/`ArrayList`（增长、容量、索引、迭代）。**完成**：`std.collections::Vec<T>`（reserve/push/pop/get/get_ptr/insert/remove/contains/index_of）；可在 `constexpr` 求值器中执行并物化为只读常量表。
+### 容器库 `std.vec` / `std.deque` / `std.hashmap` / `std.hashset` 〔新〕
+- `[x]` **STD-06** `Vec`/`ArrayList`（增长、容量、索引、迭代）。**完成**：`std::Vec<T>`（`import std.vec;`；reserve/push/pop/get/get_ptr/insert/remove/contains/index_of）；可在 `constexpr` 求值器中执行并物化为只读常量表。
 - `[x]` **STD-07** `HashMap`/`HashSet`（依赖 `to_hash`/`equals`）。**完成**：开放寻址 + 墓碑 + 0.7 负载；哈希/相等通过函数指针注入，`std.hash` 提供适配器；`constexpr` 求值与常量表物化已支持。
-- `[~]` **STD-08** `Deque`、`List`、`BTree`（可选）。`Deque<T>` 环形缓冲完成；容器已拆分为 `libs/std/collections/{vec,deque,hashmap,hashset}.smc` 独立模块（`std.collections.*` 可直接导入），汇总模块 `std.collections` 保留；`List`/`BTree` 暂未实现。
+- `[~]` **STD-08** `Deque`、`List`、`BTree`（可选）。`Deque<T>` 环形缓冲完成；容器已拍平为 `libs/std/{vec,deque,hashmap,hashset}.smc` 独立模块（`std.vec` 等直接导入），不再保留汇总模块；`List`/`BTree` 暂未实现。
 - `[x]` **STD-09** 扩展点约定文档：`to_string`/`to_hash`/`equals`。`to_string` 为 print/format 降级路径；`std.hash::hash_key_*`/`equal_*` 提供 HashMap/HashSet 回调约定。
 
 ### std.string

@@ -165,8 +165,9 @@ compile_time.repeat(3) {
 
 ### 7.5 编译期容器与常量表
 
-`constexpr` 函数内可以使用 `std.collections` 的四类容器；求值器按运行时 API
-语义执行，不解释 `malloc`/`memcpy`/容器方法 AST，也不生成运行时分配。
+`constexpr` 函数内可以使用 `std.vec` / `std.deque` / `std.hashmap` / `std.hashset`
+的四类容器；求值器按运行时 API 语义执行，不解释 `malloc`/`memcpy`/容器方法 AST，
+也不生成运行时分配。
 
 | 能力 | 说明 |
 |---|---|

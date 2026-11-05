@@ -1202,6 +1202,16 @@
 - **验证**：全量 `ctest --test-dir build -j8` **1699/1699** 通过（2 个既有 `GTEST_SKIP`）；`examples/all_features.c` → `ALL FEATURES OK`。
 - 文档：`docs/spec/compile_time.md` §7.5、`docs/spec/stdlib.md` §14。
 
+## 2026-11-01 — 容器模块拍平
+
+- 用户将容器文件从 `libs/std/collections/` 移至 `libs/std/`，并删除汇总入口 `libs/std/collections.smc`。
+- 模块声明同步改为 `std.vec`、`std.deque`、`std.hashmap`、`std.hashset`（点号导入映射到 `libs/std/<name>.smc`）。
+- 更新测试导入：
+  - `tests/e2e/test_std_collections.cpp` 各容器测试改为按需导入对应模块；直接导入测试改用扁平模块名。
+  - `tests/e2e/test_constexpr_containers.cpp` 全部改为四个扁平模块导入。
+- 更新文档：`docs/spec/stdlib.md` §14 与 `docs/spec/compile_time.md` §7.5；`libs/std/hash.smc` 注释同步。
+- 验证：`ctest --test-dir build -R 'StdCollectionsTest|ConstexprContainersTest' -j8` **30/30** 通过；全量 `ctest --test-dir build -j8` **1699/1699** 通过（2 个既有 `GTEST_SKIP`）；`examples/all_features.c` 输出 `ALL FEATURES OK`。
+
 ## 2026-11-01 — std.atomic / std.thread v1
 
 - 背景：在**不改语言语法**的前提下补齐 C++ atomics/thread 能力。高层 API 全部放 `libs/std/`，编译器只新增内部 `__smc_atomic_*` 内建；v1 目标 Linux x86-64 + pthread，支持 1/2/4/8 字节标量/指针/float16/32/64/enum，不做 16 字节/聚合/mutex/condvar。

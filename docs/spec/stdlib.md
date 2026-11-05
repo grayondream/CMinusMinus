@@ -294,13 +294,15 @@ JIT 经进程符号解析）+ `constexpr` 常量 + 位级浮点分类。
 **C 符号名说明**：namespace 内 extern C 函数保持 C 裸符号名（`std::sqrt` 链接
 到 libm 的 `sqrt`，非 `std_sqrt_float64`）——namespace 前缀仅作访问语法。
 
-## 14. `std.collections`（STD-06~08）`[impl]`
+## 14. 容器库 `std.vec` / `std.deque` / `std.hashmap` / `std.hashset`（STD-06~08）`[impl]`
 
-容器全部实现在 `libs/std/collections/`，**不在编译器内**；每个容器是独立模块，
-可单独导入，也可通过汇总模块一次导入：
+容器全部实现在 `libs/std/{vec,deque,hashmap,hashset}.smc`，**不在编译器内**；
+每个容器是独立模块，按需导入：
 
-- `import std.collections;` → `Vec`/`Deque`/`HashMap`/`HashSet` 全部可见。
-- `import std.collections.vec;`（`deque`/`hashmap`/`hashset` 同理）→ 仅该容器。
+- `import std.vec;` → `std::Vec<T>`
+- `import std.deque;` → `std::Deque<T>`
+- `import std.hashmap;` → `std::HashMap<K,V>`
+- `import std.hashset;` → `std::HashSet<K>`
 
 使用 C 语义：显式 `init()`/`destroy()`，容器不自动析构元素。元素存储按字节搬迁，
 因此元素类型须可重定位（无内部自指针）；拥有型元素（如 `string`）的清理由调用方负责。
@@ -316,8 +318,7 @@ JIT 经进程符号解析）+ `constexpr` 常量 + 位级浮点分类。
 - `HashMap` 使用开放寻址（0 空/1 活/2 墓碑），负载因子 0.7；扩容重新插入。
 - 键/值/元素不自动销毁：`string` 等拥有型元素须在 `destroy()` 前自行清理。
 - 哈希/相等通过函数指针参数注入（无 trait）；`std.hash` 提供整数与 `string_view` 适配器。
-- 汇总模块在模块级使用 `compile_time.static_assert` 校验 `uint8` 状态数组的字节宽度；
-  各容器模块只依赖 `std.mem`。
+- 各容器模块只依赖 `std.mem`；`uint8` 状态数组的字节宽度由类型本身保证。
 - 四种容器可在 `constexpr` 求值器中执行；`constexpr` 容器变量由 codegen 物化为
   只读常量数组 + 常量结构体，运行时可经正常 `get`/`contains`/`size` 读取。详见
   [`compile_time.md`](./compile_time.md) §7.5。
@@ -455,7 +456,7 @@ detach 后 `join` 均返回 `false` 并写 `last_error`。`Thread` 无析构函�
 ## 21. 待办 `[plan]`
 
 - `std.mem`：placement 分配、`AlignedAllocator`/可失败分配策略细化。
-- `std.collections`：`List`/`BTree`、`Vec::shrink_to_fit`、元素析构/清理辅助。
+- `std.vec` / `std.deque` / `std.hashmap` / `std.hashset`：`List`/`BTree`、`Vec::shrink_to_fit`、元素析构/清理辅助。
 - `std.unicode`、完整 `std.string` 字典序/`replace`、`std.path::normalize`。
 - `std.fs`：目录遍历、`stat` 元数据、原子写入；`std.os`：argv/进程控制。
 - `std.testing` + `smc test` runner（TOOL-01）。
