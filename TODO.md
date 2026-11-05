@@ -129,7 +129,7 @@
 - `[x]` **PAR-08** 表达式：字面量/标识符/调用/成员访问/下标/一元/二元/三元/强转。**切片/复合字面量完成**（2026-10-20）：C99 复合字面量 `(T[N]){...}` / `(T[]){...}`（块内栈对象、文件级静态常量，直接转义拒绝）；slice 字面量初始化 `T[] s = {1,2,3}`（栈匿名数组 + 视图，返回即悬垂拒绝）。
 - `[x]` **PAR-09** `(改)` 语句：块、if/else、while、do-while、for、switch/case、return、break、continue、声明。（**不含 goto/label**，见 Non-goals；已移除 goto/标签解析）
 - `[x]` **PAR-10** `(新)` 位域声明：`T name : N;`（struct/union 成员），含零宽位域。**完成**（2026-10-15，P1-07）：struct/class/union/匿名内联成员四处循环解析 `: N`（parseBitFieldWidth，常量表达式求值）；命名零宽位域 parse 期拒绝（FieldInfo 编码无法区分，Ruling）；超 int32 范围位宽 parse 期拒绝（防回绕绕过 E2026）。
-- `[x]` **PAR-11** `(新)` 简单 lambda：语法（建议 C++ 风格 `[capture](params) -> T { ... }` 或最简 `[](p){...}`）、捕获列表。**完成**（2026-10-17，随 P1-07）：`[captures](params) -> Ret { body }`；`[]`/`[=]`/`[a,&b]` 捕获列表；返回类型显式或推断；表达式起始 `[` 识别（下标是后缀无歧义）；立即调用 `[...](...)(args)`。plan `docs/superpowers/plans/2026-10-17-lambda.md`。
+- `[x]` **PAR-11** `(新)` 简单 lambda：语法（建议 C++ 风格 `[capture](params) -> T { ... }` 或最简 `[](p){...}`）、捕获列表。**完成**（2026-10-17，随 P1-07）：`[captures](params) -> Ret { body }`；`[]`/`[=]`/`[a,&b]` 捕获列表；返回类型显式或推断；表达式起始 `[` 识别（下标是后缀无歧义）；立即调用 `[...](...)(args)`。plan `docs/superpowers/plans/2026-10-17-lambda.md`。**2026-11-04 扩展**：`[&]`、`[=, &x]`/`[&, x]` 混排、`[x = expr]`/`[&x = expr]` 捕获初始化、`[this]` 隐式成员、未捕获外层局部诊断、全局/static 不捕获、返回类型惰性推断；plan `docs/superpowers/plans/2026-11-04-lambda-gaps.md`。
 - `[x]` **PAR-12** `(新)` 匿名 class/struct/union：匿名类型定义、匿名成员提升。**完成**（2026-10-17）：每个匿名定义获得唯一合成名 `__anon_N`（`TypeContext::nextAnonId`，C 语义独立类型）；`struct/union/class { ... } v, v2;` 全局/局部/嵌套（字段类型）/数组/指针全通路；匿名 class 字段/方法/访问段正确注册（`attachedVars` 挂载聚合 AST）；**名义身份强制**——两次独立匿名定义赋值/初始化/实参/返回/比较互斥（`checkAssignmentTypes`/`typesCompatible` 同 kind 收紧，保留派生→基 INH-04 切片）；匿名成员提升 AGG-03 不回退（`__anon_` 前缀判定）。plan `docs/superpowers/plans/2026-10-17-anonymous-types.md`。
 - `[x]` **PAR-13** `(新)` 指定初始化器 `{.field = v}`、柔性数组 `T a[]`。**完成**（2026-10-16）：`.name`/`.a.b`/`[i]` 设计符链（AST `Designator`/`designators`，parser 解析）；sema `resolveDesignators` 展开语义目标链（`resolvedTargets`，继承链 + E2009、union 槽 0、位域、Optional/Result 伪字段拒绝）、数组大小推断 = C99 `max(位置式, 最大下标+1)`（含多链 `[1][2]=5` 外层维）；局部 codegen 整块补零 + 按链写槽（含 typedef 数组）；全局常量递归累积（后写覆盖/位域掩码 OR/基类下降）；乱序/重复/混排均 C99 语义。plan `docs/superpowers/plans/2026-10-16-designated-init-flexarray.md`。
 - `[x]` **PAR-14** `(已实现)` `sizeof`；`(新)` `alignof`、`offsetof`。**完成**（2026-10-19）：独立关键字形式 `alignof(T)`/`offsetof(T, member)` 已实现（SizeofExprAST::isAlignOf + OffsetOfExprAST，LayoutBuilder 偏移），与 `compile_time.align_of/offset_of` 一致。
@@ -736,10 +736,12 @@ namespace B = A;
 []() noexcept { ... }
 ```
 
-- 当前：均解析失败。
+- 当前：`noexcept` 仍解析失败；`[&]`/`[=, &x]`/`[y = x]` 已于 2026-11-04 实现（见下）。
 - 已支持：`[]`、`[=]`、`[a]`、`[&a]`；文法只承诺这四种。
 - 目标：若扩展 DEC-10，需同时定义隐式捕获集合、初始化捕获生命周期、`noexcept` 语义（当前无异常）。
 - 关联：PAR-11、DEC-10。
+- **2026-11-04 完成项（语言层）**：`[&]` 全按引用、`[=, &x]`/`[&, x]` 混排覆盖、`[x = expr]`/`[&x = expr]` 捕获初始化（创建点求值一次）、`[this]` 与 `[=]`/`[&]` 隐式 `this` + 裸字段脱糖、未捕获外层局部（含嵌套 lambda）sema 诊断、全局/`static`/`thread_local`/块级 `extern` 不捕获、返回类型惰性推断。`noexcept` 仍为 `[plan]`。
+- **2026-11-05 终审收口**：void 捕获初始化/数组返回推断的 codegen 崩溃、body 局部遮蔽的静默误编译、Switch/Defer/compile_time/multi-var 捕获发现、嵌套 init-capture 过捕获、块级 static/enum 与字段优先级、捕获变量 W3002 全部修复；全量 **1796/1796** 通过。
 
 #### SG-10 注解的扩展形式 `[ext][P2]`
 

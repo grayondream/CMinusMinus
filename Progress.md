@@ -1219,3 +1219,14 @@
 - 验收：全量 `ctest --test-dir build -j8` **1726/1726** 通过（2 个既有 `GTEST_SKIP`）；`examples/all_features.c` 第 28 节运行输出 `ALL FEATURES OK`；生成程序自动链接 pthread 实测退出 0。
 - 评审收口（2026-11-02）：relaxed fence 不再发出非法 `fence monotonic`；`_order` 的 exchange/fetch 把 `Consume` 分派到 acquire；``atomic int128` 与模板 `atomic T` 的指针/enum/聚合/float/int128 以及 union/typedef 字段解析改为编译期拒绝（不再静默丢原子性或退化为普通访问）；新增失败 CAS 回写、1/2 字节原子、Consume、relaxed fence、未 start 的 join/detach、驱动 pthread 链接测试。
 - 已知限制：显式 CAS 的跨模块 enum 常量模板实参 v1 用数值 0..5；bool/enum/float RMW 是运行时 panic；`Thread` 无析构/所有权转移；无 mutex/condvar、跨平台线程后端、16 字节原子。
+
+## 2026-11-04 — lambda 语言缺口（PAR-11 扩展）
+
+- 背景：补齐常见 C++ 风格 lambda 写法，修复嵌套 lambda 未捕获变量导致 codegen 崩溃、`[=]` 误拷贝全局变量等缺口；不扩大到有捕获闭包逃逸。
+- 语法：`[&]` 全按引用；`[=, &x]` / `[&, x]` 默认模式 + 显式覆盖；`[x = expr]` / `[&x = expr]` 捕获初始化；`[this]` 显式捕获。文法见 `docs/spec/grammar.ebnf`。
+- sema：捕获初始化在外层作用域分析、创建点求值一次；`byRef` 初始化要求左值；`[this]` 在非静态方法内捕获 `Class*`，body 裸字段脱糖为 `this->field`，`[=]`/`[&]` 自动按值捕获 `this`；未捕获外层自动局部（含嵌套 lambda、调用被调者）报 `variable 'x' is not captured by lambda`；全局/模块作用域与 `static`/`thread_local`/块级 `extern` 不进入闭包字段；返回类型在 body 遍历中惰性推断（覆盖 `if`/`switch`、可见 body 局部/`auto` 闭包，先无值后有值时逐个补报）。
+- codegen：闭包构造抽成单一 helper，`LambdaExprAST` 与立即调用共用，捕获初始化只求值一次；按值数组捕获初始化走整聚合拷贝；文件作用域有捕获 lambda 由 sema 直接诊断，不再进入 codegen。
+- 非目标：有捕获闭包作为函数返回、struct 字段、数组元素、普通函数参数仍不支持；无 `mutable`，按值捕获写入写闭包副本且不新增只读诊断。
+- 文档：`docs/spec/grammar.ebnf`、`docs/spec/semantics.md` §7.5、`docs/superpowers/specs/2026-11-04-lambda-gaps-design.md`、`docs/superpowers/plans/2026-11-04-lambda-gaps.md`、`TODO.md`。
+- 评审收口（2026-11-05）：终审发现的 void 捕获初始化崩溃、数组返回类型推断非法 IR、body 局部遮蔽静默误编译、Switch/Defer/compile_time/multi-var 捕获发现遗漏、嵌套 init-capture 过捕获、块级 static/enum 与字段优先级、捕获变量未标记 used（W3002）全部修复；`CompoundStmt` codegen 增加作用域压栈；文档同步。
+- 验证：`cmake --build build -j$(nproc)` 成功；`ctest --test-dir build -j8` **1796/1796** 通过（当前仓库无 `GTEST_SKIP`；旧计划提到的 2 个 skip 已在 constexpr 容器收口时移除）；`examples/all_features.c` 输出 `ALL FEATURES OK`。
