@@ -101,7 +101,7 @@ TEST_F(FlexArrayE2E, SizeofAndOffsetMatchGcc) {
             if (compile_time.offset_of(struct S32, "d") != 4) { return 3; }
             return 0;
         }
-    )", "fam_sizeof.c"), 0);
+    )", "fam_sizeof.cmm"), 0);
 }
 
 TEST_F(FlexArrayE2E, MallocIdiomReadWrite) {
@@ -115,7 +115,7 @@ TEST_F(FlexArrayE2E, MallocIdiomReadWrite) {
             free(s);
             return 0;
         }
-    )", "fam_malloc.c"), 0);
+    )", "fam_malloc.cmm"), 0);
 }
 
 TEST_F(FlexArrayE2E, ValueCopyCopiesFixedPartOnly) {
@@ -129,7 +129,7 @@ TEST_F(FlexArrayE2E, ValueCopyCopiesFixedPartOnly) {
             free(a);
             return 0;
         }
-    )", "fam_copy.c"), 0);
+    )", "fam_copy.cmm"), 0);
 }
 
 TEST_F(FlexArrayE2E, MaterializedLayoutsMatchGcc) {
@@ -150,5 +150,5 @@ TEST_F(FlexArrayE2E, MaterializedLayoutsMatchGcc) {
             free(sp);
             return 0;
         }
-    )", "fam_materialized.c"), 0);
+    )", "fam_materialized.cmm"), 0);
 }

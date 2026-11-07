@@ -88,7 +88,7 @@ TEST_F(StdMathTest, SqrtAndSqrtf) {
             if (std::sqrt(2.0) < 1.41 || std::sqrt(2.0) > 1.42) return 3;
             return 0;
         }
-    )", "math_sqrt.c"), 0);
+    )", "math_sqrt.cmm"), 0);
 }
 
 TEST_F(StdMathTest, AbsFloorCeilRoundTrunc) {
@@ -102,7 +102,7 @@ TEST_F(StdMathTest, AbsFloorCeilRoundTrunc) {
             if (std::trunc(-2.7) != -2.0) return 5;
             return 0;
         }
-    )", "math_floor.c"), 0);
+    )", "math_floor.cmm"), 0);
 }
 
 TEST_F(StdMathTest, PowCosSin) {
@@ -114,7 +114,7 @@ TEST_F(StdMathTest, PowCosSin) {
             if (std::sin(0.0) != 0.0) return 3;
             return 0;
         }
-    )", "math_pow.c"), 0);
+    )", "math_pow.cmm"), 0);
 }
 
 TEST_F(StdMathTest, ConstantsPIAndE) {
@@ -125,7 +125,7 @@ TEST_F(StdMathTest, ConstantsPIAndE) {
             if (std::E < 2.7182 || std::E > 2.7183) return 2;
             return 0;
         }
-    )", "math_const.c"), 0);
+    )", "math_const.cmm"), 0);
 }
 
 TEST_F(StdMathTest, IsNanIsInfIsFinite) {
@@ -142,7 +142,7 @@ TEST_F(StdMathTest, IsNanIsInfIsFinite) {
             if (std::is_finite(inf)) return 6;
             return 0;
         }
-    )", "math_class.c"), 0);
+    )", "math_class.cmm"), 0);
 }
 
 // F1 (review): a non-extern user function whose name coincides with a libc
@@ -161,7 +161,7 @@ TEST_F(StdMathTest, SameNamedUserFunctionKeepsNamespaceSymbol) {
             if (std::cos(0.0) != 1.0) return 2;
             return 0;
         }
-    )", "math_f1.c"), 0);
+    )", "math_f1.cmm"), 0);
 }
 
 // F2 (review): a global-scope extern (prelude `malloc`) is NOT reachable as
@@ -173,7 +173,7 @@ TEST_F(StdMathTest, GlobalExternNotReachableViaNamespace) {
             void* p = std::malloc(100);
             return p != null ? 0 : 1;
         }
-    )", "math_f2.c");
+    )", "math_f2.cmm");
     ASSERT_NE(ast, nullptr);
 
     smc::ModuleSearchPaths paths{{STD_DIR}};
@@ -210,7 +210,7 @@ TEST_F(StdMathTest, Float32FamilyAndF32Bitcast) {
             if (back != 1.5f) return 9;
             return 0;
         }
-    )", "math_f32.c"), 0);
+    )", "math_f32.cmm"), 0);
 }
 
 }  // namespace

@@ -31,7 +31,7 @@ protected:
 };
 
 static int runSource(const std::string& source) {
-    Lexer lexer("union.c", source);
+    Lexer lexer("union.cmm", source);
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
     auto ast = parser.parse();
@@ -42,7 +42,7 @@ static int runSource(const std::string& source) {
     if (!analyzer.getErrors().empty()) return -1;
 
     CodegenContext ctx;
-    ctx.setSourceFile("union.c");
+    ctx.setSourceFile("union.cmm");
     ast->codegen(ctx);
     ctx.finalizeDebugInfo();
 

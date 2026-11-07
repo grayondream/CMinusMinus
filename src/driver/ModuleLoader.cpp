@@ -56,30 +56,30 @@ bool readFile(const std::string& path, std::string& out) {
     return true;
 }
 
-// Candidate relative paths for a specifier (`std.c` -> `std/c.smc`).
+// Candidate relative paths for a specifier (`std.c` -> `std/c.cmm`).
 std::vector<std::string> importCandidates(const std::string& specifier) {
     std::vector<std::string> candidates;
     // Explicit path (has a separator or the module extension): use as-is.
-    if (specifier.find('/') != std::string::npos || endsWith(specifier, ".smc")) {
+    if (specifier.find('/') != std::string::npos || endsWith(specifier, ".cmm")) {
         candidates.push_back(specifier);
         return candidates;
     }
-    // Dotted module path: `std.c` -> `std/c.smc`.
+    // Dotted module path: `std.c` -> `std/c.cmm`.
     std::string dotted = specifier;
     for (char& c : dotted) {
         if (c == '.') c = '/';
     }
-    candidates.push_back(dotted + ".smc");
+    candidates.push_back(dotted + ".cmm");
     candidates.push_back(dotted);
-    candidates.push_back(specifier + ".smc");
+    candidates.push_back(specifier + ".cmm");
     candidates.push_back(specifier);
     return candidates;
 }
 
-// `std.c` / `std/c.smc` / `std/c` -> `std.c` (MOD-13 file <-> module mapping).
+// `std.c` / `std/c.cmm` / `std/c` -> `std.c` (MOD-13 file <-> module mapping).
 std::string specifierToModuleName(const std::string& specifier) {
     std::string name = specifier;
-    if (endsWith(name, ".smc")) name = name.substr(0, name.size() - 4);
+    if (endsWith(name, ".cmm")) name = name.substr(0, name.size() - 4);
     for (char& c : name) {
         if (c == '/' || c == '\\') c = '.';
     }
@@ -87,11 +87,11 @@ std::string specifierToModuleName(const std::string& specifier) {
 }
 
 // Only dotted module specifiers carry an implicit module name; explicit file
-// paths (`import "dir/f.smc";`) are not name-checked.
+// paths (`import "dir/f.cmm";`) are not name-checked.
 bool isDottedSpecifier(const std::string& specifier) {
     return specifier.find('/') == std::string::npos &&
            specifier.find('\\') == std::string::npos &&
-           !endsWith(specifier, ".smc");
+           !endsWith(specifier, ".cmm");
 }
 
 void tagModuleDecls(std::vector<std::unique_ptr<DeclAST>>& decls,
@@ -101,10 +101,18 @@ void tagModuleDecls(std::vector<std::unique_ptr<DeclAST>>& decls,
     }
 }
 
+constexpr const char* kLegacySmcMessage =
+    "legacy .smc source is not supported; rename it to .cmm";
+
+bool isLegacySmcSpecifier(const std::string& specifier) {
+    return endsWith(specifier, ".smc");
+}
+
 } // namespace
 
 std::string resolveImport(const std::string& specifier, const ModuleSearchPaths& paths) {
     if (specifier.empty()) return "";
+    if (isLegacySmcSpecifier(specifier)) return "";
     for (const std::string& dir : paths.dirs) {
         for (const std::string& candidate : importCandidates(specifier)) {
             fs::path full = fs::path(dir) / candidate;
@@ -155,6 +163,10 @@ void preloadImports(const std::vector<std::string>& specifiers,
     }
     std::vector<std::string> active;
     for (const std::string& spec : specifiers) {
+        if (isLegacySmcSpecifier(spec)) {
+            errors.push_back(kLegacySmcMessage);
+            continue;
+        }
         std::string resolved = resolveImport(spec, localPaths);
         if (resolved.empty()) {
             errors.push_back("cannot resolve import '" + spec + "'");
@@ -247,6 +259,10 @@ void loadModuleFile(const std::string& path,
     childPaths.dirs.insert(childPaths.dirs.begin(),
                            canonicalPath(fs::path(canonical).parent_path().string()));
     for (const std::string& spec : ast->imports) {
+        if (isLegacySmcSpecifier(spec)) {
+            errors.push_back(kLegacySmcMessage);
+            continue;
+        }
         std::string resolved = resolveImport(spec, childPaths);
         if (resolved.empty()) {
             errors.push_back(canonical + ": cannot resolve import '" + spec + "'");
@@ -276,6 +292,10 @@ void processImports(TranslationUnitAST& tu,
     std::vector<std::unique_ptr<DeclAST>> imported;
     std::vector<std::string> active;
     for (const std::string& spec : tu.imports) {
+        if (isLegacySmcSpecifier(spec)) {
+            errors.push_back(kLegacySmcMessage);
+            continue;
+        }
         std::string resolved = resolveImport(spec, localPaths);
         if (resolved.empty()) {
             errors.push_back("cannot resolve import '" + spec + "'");

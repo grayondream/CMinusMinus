@@ -77,7 +77,7 @@ TEST_F(SliceE2ETest, SlicePassingVerifierClean) {
             int32[] b = a;
             return probe(a) + probe(b);
         }
-    )", "test_slice_canonical.c"), 0);
+    )", "test_slice_canonical.cmm"), 0);
 }
 
 // TYP-12 Task 4: writes through a decayed slice are visible to the caller
@@ -90,7 +90,7 @@ TEST_F(SliceE2ETest, DecayedSliceIsZeroCopy) {
             bump(arr);
             return arr[0] == 101 ? 0 : 1;
         }
-    )", "test_slice_decay.c"), 0);
+    )", "test_slice_decay.cmm"), 0);
 }
 
 // TYP-12 Task 5: subscript read + write through a decayed slice.
@@ -101,7 +101,7 @@ TEST_F(SliceE2ETest, SubscriptReadWrite) {
             int32[] s = arr;
             return s[1] == 8 ? 0 : 1;
         }
-    )", "test_slice_subscript.c"), 0);
+    )", "test_slice_subscript.cmm"), 0);
 }
 
 // TYP-12 Task 5: decay through plain assignment too.
@@ -113,7 +113,7 @@ TEST_F(SliceE2ETest, DecayThroughAssignment) {
             s[2] = 42;
             return arr[2] == 42 && s[0] == 7 ? 0 : 1;
         }
-    )", "test_slice_assign.c"), 0);
+    )", "test_slice_assign.cmm"), 0);
 }
 
 // TYP-12 D3: an uninitialized slice variable is the empty slice {null, 0}.
@@ -125,5 +125,5 @@ TEST_F(SliceE2ETest, UninitializedSliceIsEmpty) {
             if (s.len != 0) return 1;
             return probe(s) == 0 ? 0 : 2;
         }
-    )", "test_slice_zero.c"), 0);
+    )", "test_slice_zero.cmm"), 0);
 }

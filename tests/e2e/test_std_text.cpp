@@ -116,7 +116,7 @@ TEST_F(StdTextTest, SortAndBinarySearch) {
             if (std::binary_search<int32>(a, 7, 9, cmp) != -1) return 4;
             return 0;
         }
-    )", "text_sort.c"), 0);
+    )", "text_sort.cmm"), 0);
 }
 
 TEST_F(StdTextTest, ParseAndRenderIntegers) {
@@ -142,7 +142,7 @@ TEST_F(StdTextTest, ParseAndRenderIntegers) {
             if (!std::parse_float64("1.5e2", &f) || f != 150.0) return 7;
             return 0;
         }
-    )", "text_parse.c"), 0);
+    )", "text_parse.cmm"), 0);
 }
 
 TEST_F(StdTextTest, AsciiAndPath) {
@@ -165,7 +165,7 @@ TEST_F(StdTextTest, AsciiAndPath) {
             j.destroy();
             return 0;
         }
-    )", "text_path.c"), 0);
+    )", "text_path.cmm"), 0);
 }
 
 TEST_F(StdTextTest, HashStability) {
@@ -182,5 +182,5 @@ TEST_F(StdTextTest, HashStability) {
             if (c == d) return 4;
             return 0;
         }
-    )", "text_hash.c"), 0);
+    )", "text_hash.cmm"), 0);
 }

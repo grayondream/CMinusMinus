@@ -3503,7 +3503,7 @@ bool SemanticAnalyzer::lowerToString(CallExprAST& node, size_t argIndex, Type* a
 
 // Internal atomic builtins are recognized only when the user has not declared
 // a function of the same name. They are deliberately unspellable in normal
-// source (double-underscore `__smc_` prefix) and exist for libs/std/atomic.smc.
+// source (double-underscore `__smc_` prefix) and exist for libs/std/atomic.cmm.
 bool SemanticAnalyzer::tryAnalyzeAtomicBuiltin(CallExprAST& node) {
     AtomicBuiltin kind = atomicBuiltinForName(node.callee);
     if (kind == AtomicBuiltin::None) return false;
@@ -3875,7 +3875,7 @@ bool SemanticAnalyzer::tryAnalyzeFormatCall(CallExprAST& node) {
 
 // P1-09 (STD-10): builtin `split(s, sep) -> []str` — zero-copy views over a
 // malloc'd str array (spec deviation 1: slice values are not constructible
-// from .smc, so split mirrors string.new/destroy as a codegen builtin). A
+// from .cmm, so split mirrors string.new/destroy as a codegen builtin). A
 // literal empty separator is rejected at compile time (spec deviation 2);
 // a dynamic one panics at runtime. split_destroy frees the array.
 bool SemanticAnalyzer::tryAnalyzeSplitCall(CallExprAST& node) {
@@ -4346,7 +4346,7 @@ void SemanticAnalyzer::visit(CallExprAST& node) {
         validateLambdaCaptureReference(calleeRef, calleeSym, node);
     }
 
-    // Internal atomic builtins used by libs/std/atomic.smc. A user-defined
+    // Internal atomic builtins used by libs/std/atomic.cmm. A user-defined
     // function with the same name wins, mirroring print/assert.
     if (atomicBuiltinForName(node.callee) != AtomicBuiltin::None) {
         OverloadSet* userDefined = currentScope->lookupOverload(node.callee);

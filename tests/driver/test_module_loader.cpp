@@ -48,7 +48,7 @@ protected:
 
 int jitRun(TranslationUnitAST& ast) {
     CodegenContext ctx;
-    ctx.setSourceFile("module_test.c");
+    ctx.setSourceFile("module_test.cmm");
     ast.codegen(ctx);
     ctx.finalizeDebugInfo();
 
@@ -75,7 +75,7 @@ TEST_F(ModuleLoaderTest, ResolvesStdCFromLibsDir) {
     smc::ModuleSearchPaths paths{{STD_DIR}};
     std::string resolved = smc::resolveImport("std.c", paths);
     ASSERT_FALSE(resolved.empty());
-    EXPECT_NE(resolved.find("c.smc"), std::string::npos);
+    EXPECT_NE(resolved.find("c.cmm"), std::string::npos);
 }
 
 TEST_F(ModuleLoaderTest, StdPreludeLoadsFromFile) {
@@ -92,10 +92,10 @@ TEST_F(ModuleLoaderTest, UnresolvedImportReturnsEmpty) {
 
 TEST_F(ModuleLoaderTest, DottedSpecifierMapsToPath) {
     smc::ModuleSearchPaths paths{{STD_DIR}};
-    // `std.c` resolves through the dotted-name rule to `<dir>/std/c.smc`.
+    // `std.c` resolves through the dotted-name rule to `<dir>/std/c.cmm`.
     EXPECT_FALSE(smc::resolveImport("std.c", paths).empty());
     // A specifier with a slash is treated as a relative path.
-    EXPECT_FALSE(smc::resolveImport("std/c.smc", paths).empty());
+    EXPECT_FALSE(smc::resolveImport("std/c.cmm", paths).empty());
 }
 
 TEST_F(ModuleLoaderTest, ProcessImportsSplicesDeclarations) {
@@ -103,13 +103,13 @@ TEST_F(ModuleLoaderTest, ProcessImportsSplicesDeclarations) {
     fs::remove_all(dir);
     fs::create_directories(dir);
     {
-        std::ofstream out(dir / "util.smc");
+        std::ofstream out(dir / "util.cmm");
         out << "int32 helper() { return 5; }\n";
     }
 
     auto ast = smc::parseStdCPrelude(
         "import util;\nint32 main() { return helper() - 5; }\n",
-        (dir / "main.smc").string());
+        (dir / "main.cmm").string());
     ASSERT_NE(ast, nullptr);
 
     std::set<std::string> loaded;
@@ -137,16 +137,16 @@ TEST_F(ModuleLoaderTest, CyclicImportsReported) {
     fs::remove_all(dir);
     fs::create_directories(dir);
     {
-        std::ofstream out(dir / "a.smc");
+        std::ofstream out(dir / "a.cmm");
         out << "import b;\nint32 fa() { return 1; }\n";
     }
     {
-        std::ofstream out(dir / "b.smc");
+        std::ofstream out(dir / "b.cmm");
         out << "import a;\nint32 fb() { return 2; }\n";
     }
 
     auto ast = smc::parseStdCPrelude("import a;\nint32 main() { return fa() + fb() - 3; }\n",
-                                     (dir / "main.smc").string());
+                                     (dir / "main.cmm").string());
     ASSERT_NE(ast, nullptr);
 
     std::set<std::string> loaded;
@@ -170,7 +170,7 @@ TEST_F(ModuleLoaderTest, ExportedTypesVisibleBeforeParsingImporter) {
     fs::remove_all(dir);
     fs::create_directories(dir);
     {
-        std::ofstream out(dir / "types.smc");
+        std::ofstream out(dir / "types.cmm");
         out << "module types;\n"
                "export struct Point { int32 x; int32 y; };\n"
                "export using Handle = int32;\n"
@@ -190,7 +190,7 @@ TEST_F(ModuleLoaderTest, ExportedTypesVisibleBeforeParsingImporter) {
             return add(p.x + p.y, h + b.v + w.v) - 15;
         }
     )";
-    const std::string mainPath = (dir / "main.smc").string();
+    const std::string mainPath = (dir / "main.cmm").string();
     Lexer lexer(mainPath, mainSource);
     auto tokens = lexer.tokenize();
     ASSERT_TRUE(lexer.getDiagnostics().empty());
@@ -221,5 +221,21 @@ TEST_F(ModuleLoaderTest, ExportedTypesVisibleBeforeParsingImporter) {
     for (const auto& e : analyzer.getErrors()) ADD_FAILURE() << e.formatWithSeverity();
     ASSERT_TRUE(analyzer.getErrors().empty());
     EXPECT_EQ(jitRun(*ast), 0);
+    fs::remove_all(dir);
+}
+
+TEST_F(ModuleLoaderTest, RejectsLegacySmcImport) {
+    const fs::path dir = fs::temp_directory_path() / "cmm_legacy_import_test";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    auto ast = smc::parseStdCPrelude(
+        "import \"old.smc\";\nint32 main() { return 0; }\n",
+        (dir / "main.cmm").string());
+    ASSERT_NE(ast, nullptr);
+    std::set<std::string> loaded;
+    std::vector<std::string> errors;
+    smc::processImports(*ast, dir.string(), {}, loaded, errors);
+    ASSERT_FALSE(errors.empty());
+    EXPECT_NE(errors[0].find("legacy .smc source is not supported"), std::string::npos);
     fs::remove_all(dir);
 }

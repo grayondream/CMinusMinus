@@ -103,7 +103,7 @@ world""";
             if (s[5] != '\n') return 2;
             return 0;
         }
-    )", "ml_e2e.c"), 0);
+    )", "ml_e2e.cmm"), 0);
 }
 
 TEST_F(MultilineE2E, EscapesStillDecoded) {
@@ -115,7 +115,7 @@ TEST_F(MultilineE2E, EscapesStillDecoded) {
             if (s[2] != 'b') return 3;
             return 0;
         }
-    )", "ml_esc.c"), 0);
+    )", "ml_esc.cmm"), 0);
 }
 
 TEST_F(MultilineE2E, UnicodeIdentifierRuns) {
@@ -124,5 +124,5 @@ TEST_F(MultilineE2E, UnicodeIdentifierRuns) {
         int32 main() {
             return 数据 - 7;
         }
-    )", "ml_uni.c"), 0);
+    )", "ml_uni.cmm"), 0);
 }

@@ -16,7 +16,7 @@ namespace smc {
 // (prepended, so its declarations are visible to user code) unless disabled
 // with `--no-prelude`.
 //
-// Source text of the std.c binding layer: the first readable `<dir>/std/c.smc`
+// Source text of the std.c binding layer: the first readable `<dir>/std/c.cmm`
 // found in `dirs`. The standard library is data, not compiler code: there is
 // intentionally no embedded fallback. An empty result means the caller must
 // report a missing/incomplete standard-library installation.

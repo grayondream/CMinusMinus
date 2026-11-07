@@ -47,7 +47,7 @@ protected:
         }
         // CTest runs each gtest case in its own process; a fixed directory
         // makes concurrent ModuleVisibility tests overwrite each other's
-        // util.smc. Isolate by pid so -j8 is deterministic.
+        // util.cmm. Isolate by pid so -j8 is deterministic.
         dir = fs::temp_directory_path() /
               ("smc_module_visibility_test_" + std::to_string(::getpid()));
         fs::remove_all(dir);
@@ -66,7 +66,7 @@ protected:
     // the spliced translation unit plus any loader errors.
     std::unique_ptr<TranslationUnitAST> loadMain(const std::string& mainSource,
                                                  std::vector<std::string>& errors) {
-        auto ast = smc::parseStdCPrelude(mainSource, (dir / "main.smc").string());
+        auto ast = smc::parseStdCPrelude(mainSource, (dir / "main.cmm").string());
         std::set<std::string> loaded;
         smc::processImports(*ast, dir.string(), {}, loaded, errors);
         return ast;
@@ -75,7 +75,7 @@ protected:
     // Runs sema + codegen + JIT for a unit whose `main` returns an int.
     int jitRun(TranslationUnitAST& ast) {
         CodegenContext ctx;
-        ctx.setSourceFile("module_visibility_test.c");
+        ctx.setSourceFile("module_visibility_test.cmm");
         ast.codegen(ctx);
         ctx.finalizeDebugInfo();
 
@@ -116,7 +116,7 @@ bool hasStringContaining(const std::vector<std::string>& errors, const std::stri
 } // namespace
 
 TEST_F(ModuleVisibilityTest, ExportedFunctionIsVisible) {
-    write(dir / "util.smc", "module util;\nexport int32 helper() { return 5; }\n");
+    write(dir / "util.cmm", "module util;\nexport int32 helper() { return 5; }\n");
 
     std::vector<std::string> errors;
     auto ast = loadMain("import util;\nint32 main() { return helper() - 5; }\n", errors);
@@ -129,7 +129,7 @@ TEST_F(ModuleVisibilityTest, ExportedFunctionIsVisible) {
 }
 
 TEST_F(ModuleVisibilityTest, NonExportedFunctionIsHidden) {
-    write(dir / "util.smc", "module util;\nint32 helper() { return 5; }\n");
+    write(dir / "util.cmm", "module util;\nint32 helper() { return 5; }\n");
 
     std::vector<std::string> errors;
     auto ast = loadMain("import util;\nint32 main() { return helper(); }\n", errors);
@@ -143,7 +143,7 @@ TEST_F(ModuleVisibilityTest, NonExportedFunctionIsHidden) {
 }
 
 TEST_F(ModuleVisibilityTest, PrivateHelperUsableInsideModule) {
-    write(dir / "util.smc",
+    write(dir / "util.cmm",
           "module util;\n"
           "int32 helper() { return 7; }\n"
           "export int32 compute() { return helper() + 1; }\n");
@@ -159,7 +159,7 @@ TEST_F(ModuleVisibilityTest, PrivateHelperUsableInsideModule) {
 }
 
 TEST_F(ModuleVisibilityTest, LegacyUnitWithoutModuleDeclIsFullyVisible) {
-    write(dir / "util.smc", "int32 helper() { return 3; }\n");
+    write(dir / "util.cmm", "int32 helper() { return 3; }\n");
 
     std::vector<std::string> errors;
     auto ast = loadMain("import util;\nint32 main() { return helper() - 3; }\n", errors);
@@ -172,7 +172,7 @@ TEST_F(ModuleVisibilityTest, LegacyUnitWithoutModuleDeclIsFullyVisible) {
 }
 
 TEST_F(ModuleVisibilityTest, ExportedNamespaceMembersAreVisible) {
-    write(dir / "geom.smc",
+    write(dir / "geom.cmm",
           "module geom;\n"
           "export namespace g { int32 add(int32 a, int32 b) { return a + b; } }\n");
 
@@ -187,7 +187,7 @@ TEST_F(ModuleVisibilityTest, ExportedNamespaceMembersAreVisible) {
 }
 
 TEST_F(ModuleVisibilityTest, DottedModuleNameMustMatchPath) {
-    write(dir / "lib" / "util.smc",
+    write(dir / "lib" / "util.cmm",
           "module lib.util;\nexport int32 f() { return 9; }\n");
 
     std::vector<std::string> errors;
@@ -201,7 +201,7 @@ TEST_F(ModuleVisibilityTest, DottedModuleNameMustMatchPath) {
 }
 
 TEST_F(ModuleVisibilityTest, ModuleNameMismatchIsReported) {
-    write(dir / "util.smc", "module other;\nexport int32 helper() { return 1; }\n");
+    write(dir / "util.cmm", "module other;\nexport int32 helper() { return 1; }\n");
 
     std::vector<std::string> errors;
     auto ast = loadMain("import util;\nint32 main() { return helper(); }\n", errors);

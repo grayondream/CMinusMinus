@@ -18,9 +18,9 @@ struct ModuleSearchPaths {
 };
 
 // Resolve an import specifier to a readable file path, or "" when not found.
-// A specifier containing '/' (or ending in ".smc") is treated as a relative
-// path; otherwise dots map to directory separators and ".smc" is appended
-// (`std.c` -> `std/c.smc`). `paths.dirs` are searched in order.
+// A specifier containing '/' (or ending in ".cmm") is treated as a relative
+// path; otherwise dots map to directory separators and ".cmm" is appended
+// (`std.c` -> `std/c.cmm`). `paths.dirs` are searched in order.
 std::string resolveImport(const std::string& specifier, const ModuleSearchPaths& paths);
 
 // P0-04/MOD-04: collect top-level `import` specifiers from a token stream

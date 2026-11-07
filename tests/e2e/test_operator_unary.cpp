@@ -86,7 +86,7 @@ TEST_F(OperatorUnaryE2E, UnaryMinus) {
             struct V n = -v;
             return n.x + 5;
         }
-    )", "op_unary_minus.c"), 0);
+    )", "op_unary_minus.cmm"), 0);
 }
 
 TEST_F(OperatorUnaryE2E, UnaryBitNot) {
@@ -103,7 +103,7 @@ TEST_F(OperatorUnaryE2E, UnaryBitNot) {
             struct V n = ~v;
             return n.x + 1;
         }
-    )", "op_unary_bitnot.c"), 0);
+    )", "op_unary_bitnot.cmm"), 0);
 }
 
 TEST_F(OperatorUnaryE2E, PrefixIncrement) {
@@ -119,7 +119,7 @@ TEST_F(OperatorUnaryE2E, PrefixIncrement) {
             struct V w = ++v;
             return w.x - 2;
         }
-    )", "op_unary_preinc.c"), 0);
+    )", "op_unary_preinc.cmm"), 0);
 }
 
 TEST_F(OperatorUnaryE2E, PostfixIncrementWithDummyInt) {
@@ -135,7 +135,7 @@ TEST_F(OperatorUnaryE2E, PostfixIncrementWithDummyInt) {
             struct V w = v++;
             return w.x - 2;
         }
-    )", "op_unary_postinc.c"), 0);
+    )", "op_unary_postinc.cmm"), 0);
 }
 
 TEST_F(OperatorUnaryE2E, LogicalNot) {
@@ -150,7 +150,7 @@ TEST_F(OperatorUnaryE2E, LogicalNot) {
             if (!v) { return 0; }
             return 1;
         }
-    )", "op_unary_not.c"), 0);
+    )", "op_unary_not.cmm"), 0);
 }
 
 TEST_F(OperatorUnaryE2E, BuiltinUnaryStillWorks) {
@@ -161,5 +161,5 @@ TEST_F(OperatorUnaryE2E, BuiltinUnaryStillWorks) {
             if (~0 != -1) { return 1; }
             return y + 5;
         }
-    )", "op_unary_builtin.c"), 0);
+    )", "op_unary_builtin.cmm"), 0);
 }

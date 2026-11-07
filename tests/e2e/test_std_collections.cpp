@@ -131,7 +131,7 @@ TEST_F(StdCollectionsTest, VecGrowPushInsertRemove) {
             v.destroy();
             return 0;
         }
-    )", "coll_vec.c"), 0);
+    )", "coll_vec.cmm"), 0);
 }
 
 TEST_F(StdCollectionsTest, DequeRingWrap) {
@@ -155,7 +155,7 @@ TEST_F(StdCollectionsTest, DequeRingWrap) {
             d.destroy();
             return 0;
         }
-    )", "coll_deque.c"), 0);
+    )", "coll_deque.cmm"), 0);
 }
 
 TEST_F(StdCollectionsTest, HashMapPutGetRemoveTombstone) {
@@ -183,7 +183,7 @@ TEST_F(StdCollectionsTest, HashMapPutGetRemoveTombstone) {
             m.destroy();
             return 0;
         }
-    )", "coll_map.c"), 0);
+    )", "coll_map.cmm"), 0);
 }
 
 TEST_F(StdCollectionsTest, HashSetInsertRemove) {
@@ -208,7 +208,7 @@ TEST_F(StdCollectionsTest, HashSetInsertRemove) {
             s.destroy();
             return 0;
         }
-    )", "coll_set.c"), 0);
+    )", "coll_set.cmm"), 0);
 }
 
 // Each container lives in its own module and must be usable on its own.
@@ -243,5 +243,5 @@ TEST_F(StdCollectionsTest, DirectContainerModuleImports) {
             s.destroy();
             return 0;
         }
-    )", "coll_direct.c"), 0);
+    )", "coll_direct.cmm"), 0);
 }

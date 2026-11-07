@@ -35,7 +35,7 @@ protected:
     }
 };
 
-static int runSource(const std::string& source, const std::string& file = "arith.c") {
+static int runSource(const std::string& source, const std::string& file = "arith.cmm") {
     Lexer lexer(file, source);
     auto tokens = lexer.tokenize();
     Parser parser(tokens);

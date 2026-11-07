@@ -74,47 +74,47 @@ static int runSource(const std::string& source, const std::string& filename) {
 }
 
 TEST_F(EndToEndTest, SimpleReturn42) {
-    EXPECT_EQ(runSource("int32 main() { return 42; }", "simple.c"), 42);
+    EXPECT_EQ(runSource("int32 main() { return 42; }", "simple.cmm"), 42);
 }
 
 TEST_F(EndToEndTest, LocalVar) {
-    EXPECT_EQ(runSource("int32 main() { int32 a = 10; return a; }", "local.c"), 10);
+    EXPECT_EQ(runSource("int32 main() { int32 a = 10; return a; }", "local.cmm"), 10);
 }
 
 TEST_F(EndToEndTest, TwoVars) {
     EXPECT_EQ(runSource(
-        "int32 main() { int32 a = 10; int32 b = 20; return a + b; }", "two.c"), 30);
+        "int32 main() { int32 a = 10; int32 b = 20; return a + b; }", "two.cmm"), 30);
 }
 
 TEST_F(EndToEndTest, ExpressionArithmetic) {
     EXPECT_EQ(runSource(
-        "int32 main() { int32 a = 10; int32 b = 20; int32 c = a + b * 3; return c; }", "expr.c"), 70);
+        "int32 main() { int32 a = 10; int32 b = 20; int32 c = a + b * 3; return c; }", "expr.cmm"), 70);
 }
 
 TEST_F(EndToEndTest, ForLoop) {
     EXPECT_EQ(runSource(
-        "int32 main() { int32 sum = 0; for (int32 i = 0; i <= 10; i = i + 1) { sum = sum + i; } return sum; }", "for.c"), 55);
+        "int32 main() { int32 sum = 0; for (int32 i = 0; i <= 10; i = i + 1) { sum = sum + i; } return sum; }", "for.cmm"), 55);
 }
 
 TEST_F(EndToEndTest, SimpleFromFile) {
-    std::ifstream ifs(fs::path(TEST_INPUT_DIR) / "simple.c");
+    std::ifstream ifs(fs::path(TEST_INPUT_DIR) / "simple.cmm");
     ASSERT_TRUE(ifs.is_open());
     std::stringstream ss; ss << ifs.rdbuf();
-    EXPECT_EQ(runSource(ss.str(), "simple.c"), 42);
+    EXPECT_EQ(runSource(ss.str(), "simple.cmm"), 42);
 }
 
 TEST_F(EndToEndTest, ExpressionFromFile) {
-    std::ifstream ifs(fs::path(TEST_INPUT_DIR) / "expressions.c");
+    std::ifstream ifs(fs::path(TEST_INPUT_DIR) / "expressions.cmm");
     ASSERT_TRUE(ifs.is_open());
     std::stringstream ss; ss << ifs.rdbuf();
-    EXPECT_EQ(runSource(ss.str(), "expressions.c"), 70);
+    EXPECT_EQ(runSource(ss.str(), "expressions.cmm"), 70);
 }
 
 TEST_F(EndToEndTest, ControlFlowFromFile) {
-    std::ifstream ifs(fs::path(TEST_INPUT_DIR) / "control_flow.c");
+    std::ifstream ifs(fs::path(TEST_INPUT_DIR) / "control_flow.cmm");
     ASSERT_TRUE(ifs.is_open());
     std::stringstream ss; ss << ifs.rdbuf();
-    EXPECT_EQ(runSource(ss.str(), "control_flow.c"), 55);
+    EXPECT_EQ(runSource(ss.str(), "control_flow.cmm"), 55);
 }
 
 TEST_F(EndToEndTest, DeferRunsAtScopeExitInReverseOrder) {
@@ -125,7 +125,7 @@ TEST_F(EndToEndTest, DeferRunsAtScopeExitInReverseOrder) {
             { defer add(1); defer add(2); defer add(3); }
             return g;
         }
-    )", "defer_order.c"), 321);
+    )", "defer_order.cmm"), 321);
 }
 
 TEST_F(EndToEndTest, DeferRunsOnReturn) {
@@ -134,7 +134,7 @@ TEST_F(EndToEndTest, DeferRunsOnReturn) {
         int32 tick() { counter = counter + 1; return 0; }
         int32 helper() { defer tick(); return 0; }
         int32 main() { helper(); return counter; }
-    )", "defer_return.c"), 1);
+    )", "defer_return.cmm"), 1);
 }
 
 TEST_F(EndToEndTest, DeferRunsOnBreak) {
@@ -150,7 +150,7 @@ TEST_F(EndToEndTest, DeferRunsOnBreak) {
             }
             return counter;
         }
-    )", "defer_break.c"), 2);
+    )", "defer_break.cmm"), 2);
 }
 
 TEST_F(EndToEndTest, DeferRunsOnContinue) {
@@ -164,7 +164,7 @@ TEST_F(EndToEndTest, DeferRunsOnContinue) {
             }
             return counter;
         }
-    )", "defer_continue.c"), 3);
+    )", "defer_continue.cmm"), 3);
 }
 
 TEST_F(EndToEndTest, MultipleDeclarators) {
@@ -174,14 +174,14 @@ TEST_F(EndToEndTest, MultipleDeclarators) {
             int32 c = 1, d = 2, e = 4;
             return a + b + c + d + e;
         }
-    )", "multi_decl.c"), 15);
+    )", "multi_decl.cmm"), 15);
 }
 
 TEST_F(EndToEndTest, GlobalMultipleDeclarators) {
     EXPECT_EQ(runSource(R"(
         int32 g1 = 1, g2 = 2;
         int32 main() { return g1 + g2; }
-    )", "multi_global.c"), 3);
+    )", "multi_global.cmm"), 3);
 }
 
 TEST_F(EndToEndTest, PointerDeclaratorOnlyAppliesToFirst) {
@@ -191,7 +191,7 @@ TEST_F(EndToEndTest, PointerDeclaratorOnlyAppliesToFirst) {
             int32* a = &x, b = 3;
             return *a + b;
         }
-    )", "multi_ptr.c"), 10);
+    )", "multi_ptr.cmm"), 10);
 }
 
 TEST_F(EndToEndTest, ArrayDecaysToPointer) {
@@ -202,7 +202,7 @@ TEST_F(EndToEndTest, ArrayDecaysToPointer) {
             int32* p = arr;
             return p[2] + arr[0];
         }
-    )", "array_decay.c"), 4);
+    )", "array_decay.cmm"), 4);
 }
 
 TEST_F(EndToEndTest, ArrayArgumentDecaysToPointer) {
@@ -217,7 +217,7 @@ TEST_F(EndToEndTest, ArrayArgumentDecaysToPointer) {
             arr[0] = 1; arr[1] = 2; arr[2] = 3;
             return sum(arr, 3);
         }
-    )", "array_arg.c"), 6);
+    )", "array_arg.cmm"), 6);
 }
 
 TEST_F(EndToEndTest, FunctionPointerCall) {
@@ -227,7 +227,7 @@ TEST_F(EndToEndTest, FunctionPointerCall) {
             int32 (*fp)(int32, int32) = mul;
             return fp(2, 3);
         }
-    )", "func_ptr.c"), 6);
+    )", "func_ptr.cmm"), 6);
 }
 
 TEST_F(EndToEndTest, FunctionPointerReassignment) {
@@ -240,7 +240,7 @@ TEST_F(EndToEndTest, FunctionPointerReassignment) {
             fp = mul;
             return x + fp(2, 3);
         }
-    )", "func_ptr_reassign.c"), 11);
+    )", "func_ptr_reassign.cmm"), 11);
 }
 
 TEST_F(EndToEndTest, DereferenceIsAssignable) {
@@ -251,7 +251,7 @@ TEST_F(EndToEndTest, DereferenceIsAssignable) {
             *p = 9;
             return y;
         }
-    )", "deref_assign.c"), 9);
+    )", "deref_assign.cmm"), 9);
 }
 
 TEST_F(EndToEndTest, DereferenceInExpression) {
@@ -262,7 +262,7 @@ TEST_F(EndToEndTest, DereferenceInExpression) {
             int32 a = *p;
             return a + *p;
         }
-    )", "deref_expr.c"), 10);
+    )", "deref_expr.cmm"), 10);
 }
 
 TEST_F(EndToEndTest, PointerToPointerDereference) {
@@ -274,7 +274,7 @@ TEST_F(EndToEndTest, PointerToPointerDereference) {
             **pp = 11;
             return y;
         }
-    )", "deref_double.c"), 11);
+    )", "deref_double.cmm"), 11);
 }
 
 TEST_F(EndToEndTest, AssignAddressOfToPointer) {
@@ -285,7 +285,7 @@ TEST_F(EndToEndTest, AssignAddressOfToPointer) {
             q = &y;
             return *q;
         }
-    )", "addr_assign.c"), 5);
+    )", "addr_assign.cmm"), 5);
 }
 
 TEST_F(EndToEndTest, StructInitializerList) {
@@ -295,7 +295,7 @@ TEST_F(EndToEndTest, StructInitializerList) {
             struct Point p = {10, 20};
             return p.x + p.y;
         }
-    )", "struct_init.c"), 30);
+    )", "struct_init.cmm"), 30);
 }
 
 TEST_F(EndToEndTest, ArrayInitializerList) {
@@ -306,7 +306,7 @@ TEST_F(EndToEndTest, ArrayInitializerList) {
             for (int32 i = 0; i < 5; i = i + 1) { s = s + arr[i]; }
             return s;
         }
-    )", "array_init.c"), 15);
+    )", "array_init.cmm"), 15);
 }
 
 TEST_F(EndToEndTest, UnsizedArrayInitializerList) {
@@ -315,7 +315,7 @@ TEST_F(EndToEndTest, UnsizedArrayInitializerList) {
             int32 arr[] = {1, 2, 3};
             return arr[0] + arr[1] + arr[2];
         }
-    )", "unsized_array_init.c"), 6);
+    )", "unsized_array_init.cmm"), 6);
 }
 
 TEST_F(EndToEndTest, NestedAggregateInitializer) {
@@ -326,7 +326,7 @@ TEST_F(EndToEndTest, NestedAggregateInitializer) {
             struct R r = {{1, 2}, 3};
             return r.p.x + r.p.y + r.z;
         }
-    )", "nested_init.c"), 6);
+    )", "nested_init.cmm"), 6);
 }
 
 TEST_F(EndToEndTest, GlobalAggregateInitializer) {
@@ -334,7 +334,7 @@ TEST_F(EndToEndTest, GlobalAggregateInitializer) {
         struct P { int32 x; int32 y; };
         struct P g = {4, 5};
         int32 main() { return g.x + g.y; }
-    )", "global_init.c"), 9);
+    )", "global_init.cmm"), 9);
 }
 
 TEST_F(EndToEndTest, PartialAggregateInitializerZeroFills) {
@@ -344,7 +344,7 @@ TEST_F(EndToEndTest, PartialAggregateInitializerZeroFills) {
             struct P p = {10};
             return p.x + p.y;
         }
-    )", "partial_init.c"), 10);
+    )", "partial_init.cmm"), 10);
 }
 
 TEST_F(EndToEndTest, PointerArithmeticInLoop) {
@@ -356,7 +356,7 @@ TEST_F(EndToEndTest, PointerArithmeticInLoop) {
             for (int32 i = 0; i < 5; i = i + 1) { s = s + *(p + i); }
             return s;
         }
-    )", "ptr_arith.c"), 15);
+    )", "ptr_arith.cmm"), 15);
 }
 
 TEST_F(EndToEndTest, PointerSubtraction) {
@@ -366,33 +366,33 @@ TEST_F(EndToEndTest, PointerSubtraction) {
             int32* p = arr;
             return *(p + 3) - *(p + 1);
         }
-    )", "ptr_sub.c"), 2);
+    )", "ptr_sub.cmm"), 2);
 }
 
 TEST_F(EndToEndTest, NegativeFloatLiteral) {
     EXPECT_EQ(runSource(
-        "int32 main() { float64 d = -1.5; return (int32)(d * 10.0); }", "negfloat.c"), -15);
+        "int32 main() { float64 d = -1.5; return (int32)(d * 10.0); }", "negfloat.cmm"), -15);
 }
 
 TEST_F(EndToEndTest, NegativeFloatLiteralFloat) {
     EXPECT_EQ(runSource(
-        "int32 main() { float32 f = -2.0f; return (int32)f; }", "negfloatf.c"), -2);
+        "int32 main() { float32 f = -2.0f; return (int32)f; }", "negfloatf.cmm"), -2);
 }
 
 TEST_F(EndToEndTest, PrefixIncrement) {
     EXPECT_EQ(runSource(
-        "int32 main() { int32 a = 5; int32 k = ++a; return k * 10 + a; }", "preinc.c"), 66);
+        "int32 main() { int32 a = 5; int32 k = ++a; return k * 10 + a; }", "preinc.cmm"), 66);
 }
 
 TEST_F(EndToEndTest, PrefixDecrement) {
     EXPECT_EQ(runSource(
-        "int32 main() { int32 a = 5; int32 k = --a; return k * 10 + a; }", "predec.c"), 44);
+        "int32 main() { int32 a = 5; int32 k = --a; return k * 10 + a; }", "predec.cmm"), 44);
 }
 
 TEST_F(EndToEndTest, PrefixIncrementThroughDeref) {
     EXPECT_EQ(runSource(
         "int32 main() { int32 y = 1; int32* p = &y; int32 k = ++*p; return k + y; }",
-        "preinc_deref.c"), 4);
+        "preinc_deref.cmm"), 4);
 }
 
 TEST_F(EndToEndTest, SwitchDispatch) {
@@ -406,7 +406,7 @@ TEST_F(EndToEndTest, SwitchDispatch) {
             }
         }
         int32 main() { return pick(2) + pick(9); }
-    )", "switch.c"), 50);
+    )", "switch.cmm"), 50);
 }
 
 TEST_F(EndToEndTest, SwitchBreakStopsFallthrough) {
@@ -419,19 +419,19 @@ TEST_F(EndToEndTest, SwitchBreakStopsFallthrough) {
             }
             return r;
         }
-    )", "switch_break.c"), 1);
+    )", "switch_break.cmm"), 1);
 }
 
 TEST_F(EndToEndTest, PrintFormatsIntegers) {
     testing::internal::CaptureStdout();
     EXPECT_EQ(runSource(
-        "int32 main() { print(\"{} + {} = {}\", 1, 2, 3); return 0; }", "print_ints.c"), 0);
+        "int32 main() { print(\"{} + {} = {}\", 1, 2, 3); return 0; }", "print_ints.cmm"), 0);
     EXPECT_EQ(testing::internal::GetCapturedStdout(), "1 + 2 = 3");
 }
 
 TEST_F(EndToEndTest, PrintlnAppendsNewline) {
     testing::internal::CaptureStdout();
-    EXPECT_EQ(runSource("int32 main() { println(\"hi\"); return 0; }", "println.c"), 0);
+    EXPECT_EQ(runSource("int32 main() { println(\"hi\"); return 0; }", "println.cmm"), 0);
     EXPECT_EQ(testing::internal::GetCapturedStdout(), "hi\n");
 }
 
@@ -439,7 +439,7 @@ TEST_F(EndToEndTest, PrintFormatsMixedTypes) {
     testing::internal::CaptureStdout();
     EXPECT_EQ(runSource(
         "int32 main() { print(\"{} {} {} {} {}\", 42, 1.5, 'A', \"str\", 7); return 0; }",
-        "print_mixed.c"), 0);
+        "print_mixed.cmm"), 0);
     EXPECT_EQ(testing::internal::GetCapturedStdout(), "42 1.5 A str 7");
 }
 
@@ -449,7 +449,7 @@ TEST_F(EndToEndTest, PrintFormatsHalfAndQuad) {
     testing::internal::CaptureStdout();
     EXPECT_EQ(runSource(
         R"(int32 main() { print("{} {} {:f} {:.2f} {:e}", 1.5f16, 2.5f128, 1.5f16, 1.5f128, 1.5f16); return 0; })",
-        "print_f16_f128.c"), 0);
+        "print_f16_f128.cmm"), 0);
     EXPECT_EQ(testing::internal::GetCapturedStdout(),
               "1.5 2.5 1.500000 1.50 1.500000e+00");
 }
@@ -460,7 +460,7 @@ TEST_F(EndToEndTest, Float16VarargPromotesToDouble) {
     EXPECT_EQ(runSource(
         R"(extern int32 printf(const char* format, ...);
 int32 main() { printf("%f\n", 1.5f16); return 0; })",
-        "vararg_f16.c"), 0);
+        "vararg_f16.cmm"), 0);
     EXPECT_EQ(testing::internal::GetCapturedStdout(), "1.500000\n");
 }
 
@@ -468,13 +468,13 @@ TEST_F(EndToEndTest, PrintFormatsBool) {
     testing::internal::CaptureStdout();
     EXPECT_EQ(runSource(
         "int32 main() { bool t = 1; bool f = 0; print(\"{} {}\", t, f); return 0; }",
-        "print_bool.c"), 0);
+        "print_bool.cmm"), 0);
     EXPECT_EQ(testing::internal::GetCapturedStdout(), "true false");
 }
 
 TEST_F(EndToEndTest, PrintEscapesLiteralPercent) {
     testing::internal::CaptureStdout();
-    EXPECT_EQ(runSource("int32 main() { print(\"{}%\", 50); return 0; }", "print_pct.c"), 0);
+    EXPECT_EQ(runSource("int32 main() { print(\"{}%\", 50); return 0; }", "print_pct.cmm"), 0);
     EXPECT_EQ(testing::internal::GetCapturedStdout(), "50%");
 }
 
@@ -484,7 +484,7 @@ TEST_F(EndToEndTest, PrintUsesFreeFunctionToString) {
         "struct P { int32 x; int32 y; };"
         "const char* to_string(struct P p) { return \"Point\"; }"
         "int32 main() { struct P p; print(\"<{}>\", p); return 0; }",
-        "print_to_string.c"), 0);
+        "print_to_string.cmm"), 0);
     EXPECT_EQ(testing::internal::GetCapturedStdout(), "<Point>");
 }
 
@@ -493,7 +493,7 @@ TEST_F(EndToEndTest, PrintUsesMethodToString) {
     EXPECT_EQ(runSource(
         "class C { public: int32 x; public: const char* to_string() { return \"C!\"; } };"
         "int32 main() { C c; print(\"{}\", c); return 0; }",
-        "print_method_to_string.c"), 0);
+        "print_method_to_string.cmm"), 0);
     EXPECT_EQ(testing::internal::GetCapturedStdout(), "C!");
 }
 
@@ -505,7 +505,7 @@ TEST_F(EndToEndTest, VariableCopyInitializationLoadsValue) {
             int32 c = b;
             return a + b + c;
         }
-    )", "copy_init.c"), 15);
+    )", "copy_init.cmm"), 15);
 }
 
 TEST_F(EndToEndTest, UnionMemberAccess) {
@@ -519,14 +519,14 @@ TEST_F(EndToEndTest, UnionMemberAccess) {
             int32 s = sizeof(union Data);
             return a + c + s;
         }
-    )", "union_access.c"), 150);
+    )", "union_access.cmm"), 150);
 }
 
 TEST_F(EndToEndTest, UnionSizeIsLargestMember) {
     EXPECT_EQ(runSource(R"(
         union Data { int32 i; float32 f; char str[20]; };
         int32 main() { return sizeof(union Data); }
-    )", "union_size.c"), 20);
+    )", "union_size.cmm"), 20);
 }
 
 TEST_F(EndToEndTest, UnionPointerMemberAccess) {
@@ -539,7 +539,7 @@ TEST_F(EndToEndTest, UnionPointerMemberAccess) {
             p->i = 7;
             return p->i + d.i;
         }
-    )", "union_ptr.c"), 14);
+    )", "union_ptr.cmm"), 14);
 }
 
 TEST_F(EndToEndTest, StructArrayMember) {
@@ -553,7 +553,7 @@ TEST_F(EndToEndTest, StructArrayMember) {
             s.name[2] = 3;
             return s.n + s.name[0] + s.name[1] + s.name[2];
         }
-    )", "struct_array_member.c"), 11);
+    )", "struct_array_member.cmm"), 11);
 }
 
 TEST_F(EndToEndTest, PrototypeThenDefinition) {
@@ -561,7 +561,7 @@ TEST_F(EndToEndTest, PrototypeThenDefinition) {
         int32 add(int32 a, int32 b);
         int32 add(int32 a, int32 b) { return a + b; }
         int32 main() { return add(2, 3); }
-    )", "prototype.c"), 5);
+    )", "prototype.cmm"), 5);
 }
 
 TEST_F(EndToEndTest, SizeofTypeAndExpr) {
@@ -573,15 +573,15 @@ TEST_F(EndToEndTest, SizeofTypeAndExpr) {
             int32 c = sizeof(x + 1);
             return a + b + c;
         }
-    )", "sizeof.c"), 12);
+    )", "sizeof.cmm"), 12);
 }
 
 TEST_F(EndToEndTest, BitwiseNot) {
     EXPECT_EQ(runSource(
-        "int32 main() { int32 a = 5; return ~a; }", "bitnot.c"), -6);
+        "int32 main() { int32 a = 5; return ~a; }", "bitnot.cmm"), -6);
 }
 
 TEST_F(EndToEndTest, ShiftOperators) {
     EXPECT_EQ(runSource(
-        "int32 main() { int32 a = 1 << 4; int32 b = 32 >> 2; return a + b; }", "shift.c"), 24);
+        "int32 main() { int32 a = 1 << 4; int32 b = 32 >> 2; return a + b; }", "shift.cmm"), 24);
 }

@@ -99,7 +99,7 @@ TEST_F(StorageE2E, Char8Assignable) {
             char8 c = 65;
             return c == 65 ? 0 : 1;
         }
-    )", "char8.c"), 0);
+    )", "char8.cmm"), 0);
 }
 
 TEST_F(StorageE2E, Char16Assignable) {
@@ -108,7 +108,7 @@ TEST_F(StorageE2E, Char16Assignable) {
             char16 c = 50000;
             return c == 50000 ? 0 : 1;
         }
-    )", "char16.c"), 0);
+    )", "char16.cmm"), 0);
 }
 
 TEST_F(StorageE2E, ThreadLocalGlobalReadWrite) {
@@ -118,12 +118,12 @@ TEST_F(StorageE2E, ThreadLocalGlobalReadWrite) {
             x = x + 1;
             return x == 6 ? 0 : 1;
         }
-    )", "tls.c"), 0);
+    )", "tls.cmm"), 0);
 }
 
 TEST_F(StorageE2E, ThreadLocalOnFunctionRejected) {
     auto ast = [&]() {
-        Lexer lexer("tls_fn.c", R"(
+        Lexer lexer("tls_fn.cmm", R"(
             thread_local int32 f() { return 1; }
             int32 main() { return 0; }
         )");

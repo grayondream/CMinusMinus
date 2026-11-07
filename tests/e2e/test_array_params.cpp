@@ -75,7 +75,7 @@ TEST_F(ArrayParamsE2E, ArrayParamSum) {
             int32 arr[2] = {3, 4};
             return APSum(arr) == 7 ? 0 : 1;
         }
-    )", "test_ap_sum.c"), 0);
+    )", "test_ap_sum.cmm"), 0);
 }
 
 // Review Focus 1: the [N] in the parameter is documentation only — any
@@ -87,7 +87,7 @@ TEST_F(ArrayParamsE2E, ArrayParamAnyLengthAccepted) {
             int32 big[5] = {10, 20, 30, 40, 50};
             return APHead(big) == 30 ? 0 : 1;
         }
-    )", "test_ap_anylen.c"), 0);
+    )", "test_ap_anylen.cmm"), 0);
 }
 
 // TYP-12 zero-copy semantics carry over: writes through the parameter are
@@ -100,7 +100,7 @@ TEST_F(ArrayParamsE2E, ArrayParamWriteThrough) {
             APBump(arr);
             return arr[0] == 101 && arr[1] == 2 ? 0 : 1;
         }
-    )", "test_ap_writethrough.c"), 0);
+    )", "test_ap_writethrough.cmm"), 0);
 }
 
 // Review Focus 3: the dangling-return guard must not reject returning a
@@ -113,5 +113,5 @@ TEST_F(ArrayParamsE2E, ArrayParamReturnSlice) {
             int32[] s = APPick(a);
             return s[1] == 8 && s.len == 2 ? 0 : 1;
         }
-    )", "test_ap_return.c"), 0);
+    )", "test_ap_return.cmm"), 0);
 }

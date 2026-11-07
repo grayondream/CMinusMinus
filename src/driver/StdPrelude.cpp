@@ -15,7 +15,7 @@ namespace smc {
 std::string loadStdCPrelude(const std::vector<std::string>& dirs) {
     for (const std::string& dir : dirs) {
         std::filesystem::path candidate =
-            std::filesystem::path(dir) / "std" / "c.smc";
+            std::filesystem::path(dir) / "std" / "c.cmm";
         std::error_code ec;
         if (!std::filesystem::is_regular_file(candidate, ec)) {
             continue;

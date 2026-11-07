@@ -104,7 +104,7 @@ TEST_F(UtfPrefixE2E, U8LiteralBytes) {
             if (p[1] != 'i') { return 2; }
             return 0;
         }
-    )", "u8.c"), 0);
+    )", "u8.cmm"), 0);
 }
 
 TEST_F(UtfPrefixE2E, U16LiteralElements) {
@@ -115,7 +115,7 @@ TEST_F(UtfPrefixE2E, U16LiteralElements) {
             if (p[1] != 'i') { return 2; }
             return 0;
         }
-    )", "u16.c"), 0);
+    )", "u16.cmm"), 0);
 }
 
 TEST_F(UtfPrefixE2E, U32LiteralElements) {
@@ -126,5 +126,5 @@ TEST_F(UtfPrefixE2E, U32LiteralElements) {
             if (p[1] != 'i') { return 2; }
             return 0;
         }
-    )", "u32.c"), 0);
+    )", "u32.cmm"), 0);
 }

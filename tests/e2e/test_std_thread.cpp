@@ -114,7 +114,7 @@ TEST_F(StdThreadTest, JoinableAndIds) {
             if (!std::thread_equal(std::this_thread_get_id(), std::this_thread_get_id())) return 11;
             return 0;
         }
-    )", "std_thread_ids.c"), 0);
+    )", "std_thread_ids.cmm"), 0);
 }
 
 TEST_F(StdThreadTest, RepeatedLifecycleReturnsFalse) {
@@ -141,7 +141,7 @@ TEST_F(StdThreadTest, RepeatedLifecycleReturnsFalse) {
             std::this_thread_sleep_ms(10);
             return 0;
         }
-    )", "std_thread_lifecycle.c"), 0);
+    )", "std_thread_lifecycle.cmm"), 0);
 }
 
 TEST_F(StdThreadTest, DetachRunsToCompletion) {
@@ -164,7 +164,7 @@ TEST_F(StdThreadTest, DetachRunsToCompletion) {
             }
             return 3;
         }
-    )", "std_thread_detach.c"), 0);
+    )", "std_thread_detach.cmm"), 0);
 }
 
 TEST_F(StdThreadTest, HardwareConcurrencyPositive) {
@@ -173,7 +173,7 @@ TEST_F(StdThreadTest, HardwareConcurrencyPositive) {
         int32 main() {
             return std::hardware_concurrency() > 0 ? 0 : 1;
         }
-    )", "std_thread_hw.c"), 0);
+    )", "std_thread_hw.cmm"), 0);
 }
 
 TEST_F(StdThreadTest, ThisThreadYieldAndSleep) {
@@ -184,7 +184,7 @@ TEST_F(StdThreadTest, ThisThreadYieldAndSleep) {
             std::this_thread_sleep_ms(1);
             return 0;
         }
-    )", "std_thread_yield.c"), 0);
+    )", "std_thread_yield.cmm"), 0);
 }
 
 TEST_F(StdThreadTest, ThreadLocalIsPerThread) {
@@ -215,7 +215,7 @@ TEST_F(StdThreadTest, ThreadLocalIsPerThread) {
             }
             return 0;
         }
-    )", "std_thread_tls.c"), 0);
+    )", "std_thread_tls.cmm"), 0);
 }
 
 TEST_F(StdThreadTest, AtomicCounterStress) {
@@ -243,7 +243,7 @@ TEST_F(StdThreadTest, AtomicCounterStress) {
             if (!t3.join()) return 8;
             return counter.load() == 40000 ? 0 : 9;
         }
-    )", "std_thread_stress.c"), 0);
+    )", "std_thread_stress.cmm"), 0);
 }
 
 TEST_F(StdThreadTest, StartJoinPassesArgument) {
@@ -261,7 +261,7 @@ TEST_F(StdThreadTest, StartJoinPassesArgument) {
             if (!t.join()) return 2;
             return seen == 42 ? 0 : 3;
         }
-    )", "std_thread_start.c"), 0);
+    )", "std_thread_start.cmm"), 0);
 }
 
 } // namespace

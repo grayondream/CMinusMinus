@@ -115,7 +115,7 @@ TEST_F(CompoundLiteralE2E, ArrayCompoundLiteralDecaysToPointer) {
             int32* p = (int32[3]){1,2,3};
             return p[0] + p[2] - 4;
         }
-    )", "cl_array.c"), 0);
+    )", "cl_array.cmm"), 0);
 }
 
 TEST_F(CompoundLiteralE2E, StructCompoundLiteralFields) {
@@ -125,7 +125,7 @@ TEST_F(CompoundLiteralE2E, StructCompoundLiteralFields) {
             struct P q = (struct P){1,2};
             return q.x + q.y - 3;
         }
-    )", "cl_struct.c"), 0);
+    )", "cl_struct.cmm"), 0);
 }
 
 TEST_F(CompoundLiteralE2E, ScalarCompoundLiteralEqualsCast) {
@@ -134,7 +134,7 @@ TEST_F(CompoundLiteralE2E, ScalarCompoundLiteralEqualsCast) {
             int32 v = (int32){5};
             return v - 5;
         }
-    )", "cl_scalar.c"), 0);
+    )", "cl_scalar.cmm"), 0);
 }
 
 TEST_F(CompoundLiteralE2E, ByValueCopyToGlobalAllowed) {
@@ -145,7 +145,7 @@ TEST_F(CompoundLiteralE2E, ByValueCopyToGlobalAllowed) {
             g = (struct P){1,2};
             return g.x + g.y - 3;
         }
-    )", "cl_global_copy.c"), 0);
+    )", "cl_global_copy.cmm"), 0);
 }
 
 TEST_F(CompoundLiteralE2E, ReturnCompoundLiteralRejected) {
@@ -154,7 +154,7 @@ TEST_F(CompoundLiteralE2E, ReturnCompoundLiteralRejected) {
             return (int32[2]){1,2};
         }
         int32 main() { return 0; }
-    )", "cl_return.c"));
+    )", "cl_return.cmm"));
 }
 
 TEST_F(CompoundLiteralE2E, AddressOfCompoundLiteralRejected) {
@@ -163,7 +163,7 @@ TEST_F(CompoundLiteralE2E, AddressOfCompoundLiteralRejected) {
             int32** pp = &(int32[2]){1,2};
             return 0;
         }
-    )", "cl_addr.c"));
+    )", "cl_addr.cmm"));
 }
 
 TEST_F(CompoundLiteralE2E, SliceFormCompoundLiteral) {
@@ -173,7 +173,7 @@ TEST_F(CompoundLiteralE2E, SliceFormCompoundLiteral) {
             if (s.len != 3) { return 1; }
             return s[0] + s[2] - 4;
         }
-    )", "cl_slice.c"), 0);
+    )", "cl_slice.cmm"), 0);
 }
 
 TEST_F(CompoundLiteralE2E, FileScopeStructCompoundLiteral) {
@@ -183,7 +183,7 @@ TEST_F(CompoundLiteralE2E, FileScopeStructCompoundLiteral) {
         int32 main() {
             return g.x + g.y - 3;
         }
-    )", "cl_file_scope.c"), 0);
+    )", "cl_file_scope.cmm"), 0);
 }
 
 TEST_F(CompoundLiteralE2E, FileScopeArrayCompoundLiteral) {
@@ -192,5 +192,5 @@ TEST_F(CompoundLiteralE2E, FileScopeArrayCompoundLiteral) {
         int32 main() {
             return p[0] + p[1] - 3;
         }
-    )", "cl_file_array.c"), 0);
+    )", "cl_file_array.cmm"), 0);
 }

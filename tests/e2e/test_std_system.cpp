@@ -119,7 +119,7 @@ TEST_F(StdSystemTest, FileReadWriteAppendRemove) {
             if (std::exists(other)) return 10;
             return 0;
         }
-    )", "sys_fs.c"), 0);
+    )", "sys_fs.cmm"), 0);
 }
 
 TEST_F(StdSystemTest, ReadLineZeroCapacityDoesNotWrite) {
@@ -133,7 +133,7 @@ TEST_F(StdSystemTest, ReadLineZeroCapacityDoesNotWrite) {
             if (buf[0] != 'X') return 2;
             return 0;
         }
-    )", "sys_readline.c"), 0);
+    )", "sys_readline.cmm"), 0);
 }
 
 TEST_F(StdSystemTest, TimeOsAndTesting) {
@@ -161,5 +161,5 @@ TEST_F(StdSystemTest, TimeOsAndTesting) {
             cwd.destroy();
             return 0;
         }
-    )", "sys_time.c"), 0);
+    )", "sys_time.cmm"), 0);
 }

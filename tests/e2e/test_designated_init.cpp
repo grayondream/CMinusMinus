@@ -76,7 +76,7 @@ TEST_F(DesignatedInitE2E, LocalStruct) {
             if (r.x != 3 || r.y != 4) { return 3; }
             return 0;
         }
-    )", "di_local_struct.c"), 0);
+    )", "di_local_struct.cmm"), 0);
 }
 
 TEST_F(DesignatedInitE2E, LocalPartialPositionalZeroFills) {
@@ -87,7 +87,7 @@ TEST_F(DesignatedInitE2E, LocalPartialPositionalZeroFills) {
             if (p.x != 1 || p.y != 0) { return 1; }
             return 0;
         }
-    )", "di_partial_zero.c"), 0);
+    )", "di_partial_zero.cmm"), 0);
 }
 
 TEST_F(DesignatedInitE2E, LocalArrayDesignators) {
@@ -100,7 +100,7 @@ TEST_F(DesignatedInitE2E, LocalArrayDesignators) {
             if (sizeof(b) != 16) { return 3; }
             return 0;
         }
-    )", "di_local_array.c"), 0);
+    )", "di_local_array.cmm"), 0);
 }
 
 TEST_F(DesignatedInitE2E, LocalNestedAndBitfieldAndBase) {
@@ -119,7 +119,7 @@ TEST_F(DesignatedInitE2E, LocalNestedAndBitfieldAndBase) {
             if (d.baseField != 7 || d.own != 3) { return 3; }
             return 0;
         }
-    )", "di_local_nested.c"), 0);
+    )", "di_local_nested.cmm"), 0);
 }
 
 TEST_F(DesignatedInitE2E, LocalUnionDesignator) {
@@ -132,7 +132,7 @@ TEST_F(DesignatedInitE2E, LocalUnionDesignator) {
             if (v.i != 42) { return 2; }
             return 0;
         }
-    )", "di_local_union.c"), 0);
+    )", "di_local_union.cmm"), 0);
 }
 
 TEST_F(DesignatedInitE2E, GlobalStruct) {
@@ -145,7 +145,7 @@ TEST_F(DesignatedInitE2E, GlobalStruct) {
             if (h.x != 1 || h.y != 2) { return 2; }
             return 0;
         }
-    )", "di_global_struct.c"), 0);
+    )", "di_global_struct.cmm"), 0);
 }
 
 TEST_F(DesignatedInitE2E, GlobalArrayAndBitfield) {
@@ -158,7 +158,7 @@ TEST_F(DesignatedInitE2E, GlobalArrayAndBitfield) {
             if (ga[2] != 9 || ga[0] != 0) { return 2; }
             return 0;
         }
-    )", "di_global_bf.c"), 0);
+    )", "di_global_bf.cmm"), 0);
 }
 // ---- 终审修复回归测试（C1/C2/I1/I2/I3）----
 
@@ -172,7 +172,7 @@ TEST_F(DesignatedInitE2E, BaseWithBitfieldDesignators) {
             if (d.a != 1 || d.c != 5 || d.reg != 9) { return 1; }
             return 0;
         }
-    )", "di_base_bf.c"), 0);
+    )", "di_base_bf.cmm"), 0);
 }
 
 TEST_F(DesignatedInitE2E, GlobalBaseFieldAndMultiLink) {
@@ -191,7 +191,7 @@ TEST_F(DesignatedInitE2E, GlobalBaseFieldAndMultiLink) {
             if (ga[1].b != 7 || ga[0].a != 0) { return 3; }
             return 0;
         }
-    )", "di_global_base_multi.c"), 0);
+    )", "di_global_base_multi.cmm"), 0);
 }
 
 TEST_F(DesignatedInitE2E, GlobalUnionLastWins) {
@@ -203,7 +203,7 @@ TEST_F(DesignatedInitE2E, GlobalUnionLastWins) {
             if (g.i != 42) { return 1; }
             return 0;
         }
-    )", "di_global_union_lw.c"), 0);
+    )", "di_global_union_lw.cmm"), 0);
 }
 
 TEST_F(DesignatedInitE2E, UsingArrayZeroFill) {
@@ -217,7 +217,7 @@ TEST_F(DesignatedInitE2E, UsingArrayZeroFill) {
             if (a[0] != 0 || a[1] != 7 || a[2] != 0 || a[3] != 0) { return 1; }
             return 0;
         }
-    )", "di_using_arr_zero.c"), 0);
+    )", "di_using_arr_zero.cmm"), 0);
 }
 
 TEST_F(DesignatedInitE2E, MultiDimDesignatorInference) {
@@ -228,5 +228,5 @@ TEST_F(DesignatedInitE2E, MultiDimDesignatorInference) {
             if (a[1][2] != 5 || a[0][0] != 0) { return 1; }
             return 0;
         }
-    )", "di_multi_dim.c"), 0);
+    )", "di_multi_dim.cmm"), 0);
 }

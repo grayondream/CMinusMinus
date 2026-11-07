@@ -72,13 +72,13 @@ TEST_F(AnonClassE2E, FieldsMethodsAndAccess) {
             if (c.get() != 5) return 1;
             return 0;
         }
-    )", "anon_cls_fm.c"), 0);
+    )", "anon_cls_fm.cmm"), 0);
 }
 
 TEST_F(AnonClassE2E, PrivateFieldRejectedOutside) {
     // 匿名 class 默认 private：类外直接访问 private 字段报 E2009。
     auto run = []() {
-        Lexer lexer("anon_cls_priv.c",
+        Lexer lexer("anon_cls_priv.cmm",
             "class { int32 secret; } c;\n"
             "int32 main() { c.secret = 1; return 0; }\n");
         auto tokens = lexer.tokenize();
@@ -100,7 +100,7 @@ TEST_F(AnonClassE2E, MultiVarDeclarators) {
             if (x.a != 1 || y.b != 2) return 1;
             return 0;
         }
-    )", "anon_cls_multi.c"), 0);
+    )", "anon_cls_multi.cmm"), 0);
 }
 
 TEST_F(AnonClassE2E, LocalAnonymousClass) {
@@ -111,5 +111,5 @@ TEST_F(AnonClassE2E, LocalAnonymousClass) {
             if (c.v != 7) return 1;
             return 0;
         }
-    )", "anon_cls_local.c"), 0);
+    )", "anon_cls_local.cmm"), 0);
 }

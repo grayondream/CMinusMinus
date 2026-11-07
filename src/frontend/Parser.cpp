@@ -2224,7 +2224,7 @@ std::unique_ptr<TranslationUnitAST> Parser::parse() {
             continue;
         }
         
-        // import declaration: `import a.b;` or `import "dir/file.smc";`
+        // import declaration: `import a.b;` or `import "dir/file.cmm";`
         if (check(TokenType::TOKEN_IMPORT)) {
             advance(); // consume "import"
             std::string importName;

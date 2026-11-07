@@ -97,7 +97,7 @@ static int runWithPrelude(const std::string& source, const std::string& filename
 
 TEST_F(StdPreludeE2E, CallsLibcAbsThroughBindingLayer) {
     EXPECT_EQ(runWithPrelude(
-        "int32 main() { return abs(-42) - 42; }", "std_prelude_abs.c"), 0);
+        "int32 main() { return abs(-42) - 42; }", "std_prelude_abs.cmm"), 0);
 }
 
 TEST_F(StdPreludeE2E, CallsLibcMallocFree) {
@@ -108,5 +108,5 @@ TEST_F(StdPreludeE2E, CallsLibcMallocFree) {
             free(p);
             return 0;
         }
-    )", "std_prelude_malloc.c"), 0);
+    )", "std_prelude_malloc.cmm"), 0);
 }

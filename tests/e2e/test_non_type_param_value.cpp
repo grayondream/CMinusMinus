@@ -87,7 +87,7 @@ TEST_F(NonTypeParamE2E, ValueParamUsedAsReturnValue) {
         int32 main() {
             return c<5>() - 5;
         }
-    )", "ntp_return.c"), 0);
+    )", "ntp_return.cmm"), 0);
 }
 
 TEST_F(NonTypeParamE2E, ValueParamInArithmetic) {
@@ -97,7 +97,7 @@ TEST_F(NonTypeParamE2E, ValueParamInArithmetic) {
         int32 main() {
             return d<7>() - 14;
         }
-    )", "ntp_arith.c"), 0);
+    )", "ntp_arith.cmm"), 0);
 }
 
 TEST_F(NonTypeParamE2E, ExistingArraySizeParamStillWorks) {
@@ -110,7 +110,7 @@ TEST_F(NonTypeParamE2E, ExistingArraySizeParamStillWorks) {
             a.data[3] = 9;
             return a.data[0] + a.data[3] - 12;
         }
-    )", "ntp_array.c"), 0);
+    )", "ntp_array.cmm"), 0);
 }
 
 TEST_F(NonTypeParamE2E, LocalShadowingValueParamRejected) {
@@ -118,7 +118,7 @@ TEST_F(NonTypeParamE2E, LocalShadowingValueParamRejected) {
         template<int32 N>
         int32 e() { int32 N = 3; return N; }
         int32 main() { return e<1>(); }
-    )", "ntp_shadow.c"));
+    )", "ntp_shadow.cmm"));
 }
 
 TEST_F(NonTypeParamE2E, CompoundLiteralInsideTemplateBody) {
@@ -129,7 +129,7 @@ TEST_F(NonTypeParamE2E, CompoundLiteralInsideTemplateBody) {
             return p[0] + p[1];
         }
         int32 main() { return sum2<3>() - 6; }
-    )", "ntp_compound.c"), 0);
+    )", "ntp_compound.cmm"), 0);
 }
 
 TEST_F(NonTypeParamE2E, PrefixedStringInsideTemplateBody) {
@@ -141,5 +141,5 @@ TEST_F(NonTypeParamE2E, PrefixedStringInsideTemplateBody) {
             return 0;
         }
         int32 main() { return firstByte<1>() - 1; }
-    )", "ntp_prefix.c"), 0);
+    )", "ntp_prefix.cmm"), 0);
 }

@@ -74,59 +74,59 @@ static int runSource(const std::string& source, const std::string& filename) {
 
 TEST_F(ConstConstexprE2E, ConstVariable) {
     EXPECT_EQ(runSource(
-        "const int32 x = 42; int32 main() { return x; }", "const_var.c"), 42);
+        "const int32 x = 42; int32 main() { return x; }", "const_var.cmm"), 42);
 }
 
 TEST_F(ConstConstexprE2E, ConstexprVariable) {
     EXPECT_EQ(runSource(
-        "constexpr int32 x = 42; int32 main() { return x; }", "constexpr_var.c"), 42);
+        "constexpr int32 x = 42; int32 main() { return x; }", "constexpr_var.cmm"), 42);
 }
 
 TEST_F(ConstConstexprE2E, ConstexprTwoGlobals) {
     EXPECT_EQ(runSource(
         "constexpr int32 a = 10; constexpr int32 b = 23; int32 main() { return b; }",
-        "constexpr_two.c"), 23);
+        "constexpr_two.cmm"), 23);
 }
 
 TEST_F(ConstConstexprE2E, ConstexprExpression) {
     EXPECT_EQ(runSource(
         "constexpr int32 a = 10; constexpr int32 b = a * 2 + 3; int32 main() { return b; }",
-        "constexpr_expr.c"), 23);
+        "constexpr_expr.cmm"), 23);
 }
 
 TEST_F(ConstConstexprE2E, LocalConstVariable) {
     EXPECT_EQ(runSource(
-        "int32 main() { const int32 x = 42; return x; }", "local_const.c"), 42);
+        "int32 main() { const int32 x = 42; return x; }", "local_const.cmm"), 42);
 }
 
 TEST_F(ConstConstexprE2E, LocalConstexprVariable) {
     EXPECT_EQ(runSource(
-        "int32 main() { constexpr int32 x = 42; return x; }", "local_constexpr.c"), 42);
+        "int32 main() { constexpr int32 x = 42; return x; }", "local_constexpr.cmm"), 42);
 }
 
 TEST_F(ConstConstexprE2E, MixedConstConstexpr) {
     EXPECT_EQ(runSource(
         "constexpr int32 a = 10; const int32 b = 20; int32 main() { return a + b; }",
-        "mixed.c"), 30);
+        "mixed.cmm"), 30);
 }
 
 TEST_F(ConstConstexprE2E, ConstexprInFunction) {
     EXPECT_EQ(runSource(
         "int32 main() { constexpr int32 x = 5; constexpr int32 y = x * 3; return y; }",
-        "constexpr_func.c"), 15);
+        "constexpr_func.cmm"), 15);
 }
 
 TEST_F(ConstConstexprE2E, ConstFromResourceFile) {
-    std::ifstream ifs(fs::path(E2E_RESOURCE_DIR) / "test_const.c");
+    std::ifstream ifs(fs::path(E2E_RESOURCE_DIR) / "test_const.cmm");
     ASSERT_TRUE(ifs.is_open());
     std::stringstream ss;
     ss << ifs.rdbuf();
-    EXPECT_EQ(runSource(ss.str(), "test_const.c"), 0);
+    EXPECT_EQ(runSource(ss.str(), "test_const.cmm"), 0);
 }
 
 TEST_F(ConstConstexprE2E, DriverBasicUsage) {
     CompilerDriver driver;
-    std::string testFile = std::string(E2E_RESOURCE_DIR) + "/test_const.c";
+    std::string testFile = std::string(E2E_RESOURCE_DIR) + "/test_const.cmm";
     const char* argv[] = {"cmm", "-o", "test_const_e2e", testFile.c_str()};
     ASSERT_TRUE(driver.parseArguments(4, argv));
     EXPECT_EQ(driver.run(), 0);

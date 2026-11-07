@@ -31,7 +31,7 @@ protected:
 };
 
 static int runSource(const std::string& source) {
-    Lexer lexer("ergonomics.c", source);
+    Lexer lexer("ergonomics.cmm", source);
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
     auto ast = parser.parse();
@@ -42,7 +42,7 @@ static int runSource(const std::string& source) {
     if (!analyzer.getErrors().empty()) return -1;
 
     CodegenContext ctx;
-    ctx.setSourceFile("ergonomics.c");
+    ctx.setSourceFile("ergonomics.cmm");
     ast->codegen(ctx);
     ctx.finalizeDebugInfo();
 
@@ -64,7 +64,7 @@ static int runSource(const std::string& source) {
 }
 
 static bool compiles(const std::string& source) {
-    Lexer lexer("ergonomics.c", source);
+    Lexer lexer("ergonomics.cmm", source);
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
     auto ast = parser.parse();
@@ -75,7 +75,7 @@ static bool compiles(const std::string& source) {
 }
 
 static std::string compileIR(const std::string& source) {
-    Lexer lexer("ergonomics.c", source);
+    Lexer lexer("ergonomics.cmm", source);
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
     auto ast = parser.parse();
@@ -84,7 +84,7 @@ static std::string compileIR(const std::string& source) {
     analyzer.analyze(*ast);
     if (!analyzer.getErrors().empty()) return "<sema-error>";
     CodegenContext ctx;
-    ctx.setSourceFile("ergonomics.c");
+    ctx.setSourceFile("ergonomics.cmm");
     ast->codegen(ctx);
     std::string ir;
     llvm::raw_string_ostream os(ir);

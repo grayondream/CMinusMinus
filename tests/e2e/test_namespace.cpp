@@ -65,7 +65,7 @@ static int runSource(const std::string& source, const std::string& filename) {
 }
 
 TEST_F(NamespaceE2E, ParsesNamespaceDeclaration) {
-    Lexer lexer("ns.c", "namespace geometry { int32 f() { return 1; } }");
+    Lexer lexer("ns.cmm", "namespace geometry { int32 f() { return 1; } }");
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
     auto ast = parser.parse();
@@ -82,7 +82,7 @@ TEST_F(NamespaceE2E, QualifiedCallResolves) {
     EXPECT_EQ(runSource(R"(
 namespace A { int32 f() { return 7; } }
 int32 main() { return A::f() - 7; }
-)", "ns_qualified.c"), 0);
+)", "ns_qualified.cmm"), 0);
 }
 
 TEST_F(NamespaceE2E, UnqualifiedSiblingCallInsideNamespace) {
@@ -92,7 +92,7 @@ namespace A {
     int32 f() { return g() + 1; }
 }
 int32 main() { return A::f() - 2; }
-)", "ns_sibling.c"), 0);
+)", "ns_sibling.cmm"), 0);
 }
 
 TEST_F(NamespaceE2E, NamespacesDoNotCollideWithGlobals) {
@@ -100,14 +100,14 @@ TEST_F(NamespaceE2E, NamespacesDoNotCollideWithGlobals) {
 int32 f() { return 1; }
 namespace A { int32 f() { return 2; } }
 int32 main() { return f() + A::f() - 3; }
-)", "ns_collision.c"), 0);
+)", "ns_collision.cmm"), 0);
 }
 
 TEST_F(NamespaceE2E, NestedNamespaces) {
     EXPECT_EQ(runSource(R"(
 namespace A.B { int32 f() { return 9; } }
 int32 main() { return A::B::f() - 9; }
-)", "ns_nested.c"), 0);
+)", "ns_nested.cmm"), 0);
 }
 
 TEST_F(NamespaceE2E, QualifiedStructType) {
@@ -122,7 +122,7 @@ int32 main() {
     p.y = 4;
     return A::sum(&p) - 7;
 }
-)", "ns_type_struct.c"), 0);
+)", "ns_type_struct.cmm"), 0);
 }
 
 TEST_F(NamespaceE2E, QualifiedUsingType) {
@@ -132,14 +132,14 @@ int32 main() {
     A::Handle h = 5;
     return h - 5;
 }
-)", "ns_type_using.c"), 0);
+)", "ns_type_using.cmm"), 0);
 }
 
 TEST_F(NamespaceE2E, QualifiedEnumConstant) {
     EXPECT_EQ(runSource(R"(
 namespace A { enum Color { Red, Green }; }
 int32 main() { return A::Green - 1; }
-)", "ns_type_enum.c"), 0);
+)", "ns_type_enum.cmm"), 0);
 }
 
 TEST_F(NamespaceE2E, NestedQualifiedStructType) {
@@ -150,5 +150,5 @@ int32 main() {
     p.v = 9;
     return p.v - 9;
 }
-)", "ns_type_nested.c"), 0);
+)", "ns_type_nested.cmm"), 0);
 }

@@ -106,7 +106,7 @@ TEST_F(CompileTimeE2E, TargetOsIsLinux) {
     int r = runSource(R"(
 constexpr int32 isLinux = compile_time.target.os == "linux";
 int32 main() { return isLinux ? 1 : 0; }
-)", "ct_target_os.c");
+)", "ct_target_os.cmm");
     EXPECT_EQ(r, 1);
 }
 
@@ -114,8 +114,8 @@ TEST_F(CompileTimeE2E, BuildDebugSetter) {
     const char* src = R"(
 int32 main() { bool d = compile_time.build.debug; return d ? 1 : 0; }
 )";
-    EXPECT_EQ(runSourceImpl(src, "ct_debug_true.c", true), 1);
-    EXPECT_EQ(runSourceImpl(src, "ct_debug_false.c", false), 0);
+    EXPECT_EQ(runSourceImpl(src, "ct_debug_true.cmm", true), 1);
+    EXPECT_EQ(runSourceImpl(src, "ct_debug_false.cmm", false), 0);
 }
 
 // ---- P1-04 / CT-06: 布局查询（size_of/align_of/offset_of）----
@@ -130,7 +130,7 @@ constexpr usize sp = compile_time.size_of(int32*);
 int32 main() {
     return (s32 == 4 && s64 == 8 && s8 == 1 && sb == 1 && sp == 8) ? 1 : 0;
 }
-)", "ct_sizeof_scalars.c");
+)", "ct_sizeof_scalars.cmm");
     EXPECT_EQ(r, 1);
 }
 
@@ -142,7 +142,7 @@ class D : B { public: float64 v; }
 int32 main() {
     return (compile_time.size_of(D) == 16 && compile_time.offset_of(D, "v") == 8) ? 1 : 0;
 }
-)", "ct_sizeof_base.c");
+)", "ct_sizeof_base.cmm");
     EXPECT_EQ(r, 1);
 }
 
@@ -158,7 +158,7 @@ int32 main() {
          && compile_time.size_of(U) == 8
          && compile_time.align_of(Outer) == 8) ? 1 : 0;
 }
-)", "ct_sizeof_nested.c");
+)", "ct_sizeof_nested.cmm");
     EXPECT_EQ(r, 1);
 }
 
@@ -166,7 +166,7 @@ TEST_F(CompileTimeE2E, ConstVarFromCompileTime) {
     int r = runSource(R"(
 constexpr usize N = compile_time.size_of(float64);
 int32 main() { return N == 8 ? 1 : 0; }
-)", "ct_constvar.c");
+)", "ct_constvar.cmm");
     EXPECT_EQ(r, 1);
 }
 
@@ -176,7 +176,7 @@ TEST_F(CompileTimeE2E, ConstExprFnInCompileTime) {
 constexpr int32 twice(int32 x) { return x * 2; }
 constexpr int32 r = compile_time.size_of(int32) * 0 + twice(21);
 int32 main() { return r == 42 ? 1 : 0; }
-)", "ct_constexpr_fn.c");
+)", "ct_constexpr_fn.cmm");
     EXPECT_EQ(r, 1);
 }
 
@@ -185,7 +185,7 @@ TEST_F(CompileTimeE2E, StaticAssertE2E) {
 compile_time.static_assert(compile_time.target.os == "linux", "this test runs on linux");
 compile_time.static_assert(compile_time.size_of(int32) == 4, "int32 is 4 bytes");
 int32 main() { return 0; }
-)", "ct_static_assert.c");
+)", "ct_static_assert.cmm");
     EXPECT_EQ(r, 0);
 }
 
@@ -200,7 +200,7 @@ compile_time.if (compile_time.target.os == "linux") {
     int32 f() { return NoSuchSymbolAnywhere(); }
 }
 int32 main() { return f(); }
-)", "ct_if_then.c");
+)", "ct_if_then.cmm");
     EXPECT_EQ(r, 42);
 }
 
@@ -212,13 +212,13 @@ compile_time.if (1 == 2) {
     int32 g() { return 7; }
 }
 int32 main() { return g(); }
-)", "ct_if_else.c");
+)", "ct_if_else.cmm");
     EXPECT_EQ(r, 7);
 }
 
 TEST_F(CompileTimeE2E, DeadBranchTypeUseDiagnosed) {
     // Review Focus 1: 未选分支 parse 期注册的类型名被使用 → 诊断不崩溃。
-    Lexer lexer("ct_if_dead.c", R"(
+    Lexer lexer("ct_if_dead.cmm", R"(
 compile_time.if (1 == 2) {
     struct Ghost { int32 x; }
 } else {
@@ -259,7 +259,7 @@ int32 main() {
     if (!compile_time.version.at_least("1.0.0")) return 6;
     return 42;
 }
-)", "ct_ergonomics_scalar.c");
+)", "ct_ergonomics_scalar.cmm");
     EXPECT_EQ(r, 42);
 }
 
@@ -274,7 +274,7 @@ int32 main() {
     if (compile_time.attribute_arg_of(E2ES, "align", 0) != 16) return 5;
     return 42;
 }
-)", "ct_ergonomics_reflection.c");
+)", "ct_ergonomics_reflection.cmm");
     EXPECT_EQ(r, 42);
 }
 
@@ -297,7 +297,7 @@ int32 main() {
     if (compile_time.type_kind_of(1) != "integer") return 9;
     return 42;
 }
-)", "ct_ergonomics_batch2.c");
+)", "ct_ergonomics_batch2.cmm");
     EXPECT_EQ(r, 42);
 }
 
@@ -308,7 +308,7 @@ int32 main() {
     compile_time.repeat(3) { total += 1; }
     return total;
 }
-)", "ct_repeat.c");
+)", "ct_repeat.cmm");
     EXPECT_EQ(r, 3);
 }
 
@@ -319,7 +319,7 @@ int32 main() {
     compile_time.repeat(3) { t += 1; break; }
     return t;
 }
-)", "ct_repeat_break.c"), 1);
+)", "ct_repeat_break.cmm"), 1);
 
     EXPECT_EQ(runSource(R"(
 int32 main() {
@@ -327,7 +327,7 @@ int32 main() {
     compile_time.repeat(3) { continue; t += 1; }
     return t;
 }
-)", "ct_repeat_continue.c"), 0);
+)", "ct_repeat_continue.cmm"), 0);
 
     EXPECT_EQ(runSource(R"(
 template<typename T> int32 repeat_in_template() {
@@ -336,7 +336,7 @@ template<typename T> int32 repeat_in_template() {
     return t;
 }
 int32 main() { return repeat_in_template<int32>(); }
-)", "ct_repeat_template.c"), 3);
+)", "ct_repeat_template.cmm"), 3);
 }
 
 TEST_F(CompileTimeE2E, RepeatUsesSourceLocation) {
@@ -346,7 +346,7 @@ int32 main() {
     compile_time.repeat(compile_time.line) { t += 1; }
     return t;
 }
-)", "ct_repeat_loc.c"), 4);
+)", "ct_repeat_loc.cmm"), 4);
 }
 
 TEST_F(CompileTimeE2E, CastAndParenthesizedQueries) {
@@ -357,7 +357,7 @@ int32 main() {
     if ((int32)compile_time.line <= 0) return 2;
     return 42;
 }
-)", "ct_cast_query.c"), 42);
+)", "ct_cast_query.cmm"), 42);
 }
 
 TEST_F(CompileTimeE2E, CTDepthLimitE2E) {
@@ -367,7 +367,7 @@ TEST_F(CompileTimeE2E, CTDepthLimitE2E) {
     expr += "1";
     for (int i = 0; i < 100; ++i) expr += "+1)";
     std::string src = "int32 main() { int32 x = " + expr + "; return 0; }\n";
-    Lexer lexer("ct_depth_e2e.c", src);
+    Lexer lexer("ct_depth_e2e.cmm", src);
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
     auto ast = parser.parse();

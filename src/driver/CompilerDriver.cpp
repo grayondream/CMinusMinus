@@ -240,6 +240,11 @@ int CompilerDriver::run() {
 }
 
 int CompilerDriver::compileFile(const std::string& inputFile) {
+    if (std::filesystem::path(inputFile).extension() == ".smc") {
+        std::cerr << "legacy .smc source is not supported; rename it to .cmm\n";
+        return 1;
+    }
+
     if (verbose) {
         std::cout << "compiling: " << inputFile << "\n";
         std::cout << "  output: " << outputFile << "\n";
@@ -369,7 +374,7 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
 
     // Inject std.c (MOD-09 / STD-23) before semantic analysis so its
     // declarations precede user code. The binding layer is a standard-library
-    // file (libs/std/c.smc), never compiler-embedded source.
+    // file (libs/std/c.cmm), never compiler-embedded source.
     if (usePrelude) {
         std::vector<std::string> stdDirs;
         for (const auto& dir : modulePaths) {
@@ -378,7 +383,7 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
         appendStdLibDirs(stdDirs);
         std::string preludeSource = smc::loadStdCPrelude(stdDirs);
         if (preludeSource.empty()) {
-            std::cerr << "error: standard library not found (expected <std>/c.smc); "
+            std::cerr << "error: standard library not found (expected <std>/c.cmm); "
                          "install the stdlib or pass -M, or use --no-prelude\n";
             return 1;
         }

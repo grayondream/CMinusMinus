@@ -101,7 +101,7 @@ TEST_F(DefaultArgsE2E, FillsDefault) {
             if (f(5, 2) != 7) return 2;
             return 0;
         }
-    )", "def_fill.c"), 0);
+    )", "def_fill.cmm"), 0);
 }
 
 TEST_F(DefaultArgsE2E, OverloadPrefersFewerDefaults) {
@@ -112,12 +112,12 @@ TEST_F(DefaultArgsE2E, OverloadPrefersFewerDefaults) {
             if (f(1) != 1) return 1;        // one-arg overload wins
             return 0;
         }
-    )", "def_over1.c"), 0);
+    )", "def_over1.cmm"), 0);
 }
 
 TEST_F(DefaultArgsE2E, TooManyArgsRejected) {
     auto ast = [&]() {
-        Lexer lexer("def_many.c", R"(
+        Lexer lexer("def_many.cmm", R"(
             int32 f(int32 x, int32 y = 5) { return x + y; }
             int32 main() { f(1, 2, 3); return 0; }
         )");
@@ -138,7 +138,7 @@ TEST_F(DefaultArgsE2E, TooManyArgsRejected) {
 
 TEST_F(DefaultArgsE2E, DefaultValueMustBeConstexpr) {
     auto ast = [&]() {
-        Lexer lexer("def_ct.c", R"(
+        Lexer lexer("def_ct.cmm", R"(
             int32 g(int32 x) { return x; }
             int32 f(int32 a = g(1)) { return a; }
             int32 main() { return 0; }
@@ -158,7 +158,7 @@ TEST_F(DefaultArgsE2E, DefaultValueMustBeConstexpr) {
 
 TEST_F(DefaultArgsE2E, MiddleDefaultRejected) {
     auto tokens = [&]() {
-        Lexer lexer("def_mid.c", R"(
+        Lexer lexer("def_mid.cmm", R"(
             int32 f(int32 x = 1, int32 y) { return x + y; }
             int32 main() { return 0; }
         )");
@@ -188,7 +188,7 @@ TEST_F(DefaultArgsE2E, FloatDefaultValueIsFloat) {
             if (f(2.5) != 2.5) return 2;
             return 0;
         }
-    )", "def_float.c"), 0);
+    )", "def_float.cmm"), 0);
 }
 
 TEST_F(DefaultArgsE2E, RedeclarationCarriesDefaults) {
@@ -202,7 +202,7 @@ TEST_F(DefaultArgsE2E, RedeclarationCarriesDefaults) {
             if (f(1, 2) != 3) return 2;
             return 0;
         }
-    )", "def_redecl.c"), 0);
+    )", "def_redecl.cmm"), 0);
 }
 
 TEST_F(DefaultArgsE2E, MethodDefaultArgs) {
@@ -217,5 +217,5 @@ TEST_F(DefaultArgsE2E, MethodDefaultArgs) {
             if (c.add(5, 2) != 7) return 2;
             return 0;
         }
-    )", "def_method.c"), 0);
+    )", "def_method.cmm"), 0);
 }

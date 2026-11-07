@@ -173,7 +173,7 @@ TEST_F(ConstexprContainersTest, VecSumInConstexpr) {
             return total;
         }
         int32 main() { constexpr int32 x = sum8(); return x - 140; }
-    )", "ct_vec_sum.c"), 0);
+    )", "ct_vec_sum.cmm"), 0);
 }
 
 TEST_F(ConstexprContainersTest, HashMapInConstexpr) {
@@ -205,7 +205,7 @@ TEST_F(ConstexprContainersTest, HashMapInConstexpr) {
             return 0;
         }
         int32 main() { constexpr int32 x = mapWork(); return x; }
-    )", "ct_map.c"), 0);
+    )", "ct_map.cmm"), 0);
 }
 
 TEST_F(ConstexprContainersTest, HashSetInConstexpr) {
@@ -234,7 +234,7 @@ TEST_F(ConstexprContainersTest, HashSetInConstexpr) {
             return 0;
         }
         int32 main() { constexpr int32 x = setWork(); return x; }
-    )", "ct_set.c"), 0);
+    )", "ct_set.cmm"), 0);
 }
 
 TEST_F(ConstexprContainersTest, StringViewElementsInConstexpr) {
@@ -258,7 +258,7 @@ TEST_F(ConstexprContainersTest, StringViewElementsInConstexpr) {
             return 0;
         }
         int32 main() { constexpr int32 x = strWork(); return x; }
-    )", "ct_vec_string.c"), 0);
+    )", "ct_vec_string.cmm"), 0);
 }
 
 TEST_F(ConstexprContainersTest, OutParametersInConstexpr) {
@@ -278,7 +278,7 @@ TEST_F(ConstexprContainersTest, OutParametersInConstexpr) {
             return out;
         }
         int32 main() { constexpr int32 x = outWork(); return x - 20; }
-    )", "ct_out.c"), 0);
+    )", "ct_out.cmm"), 0);
 }
 
 TEST_F(ConstexprContainersTest, ConstexprLoopStepLimit) {
@@ -292,7 +292,7 @@ TEST_F(ConstexprContainersTest, ConstexprLoopStepLimit) {
             return 0;
         }
         int32 main() { constexpr int32 x = spin(); return x; }
-    )", "ct_step_limit.c"), -1);
+    )", "ct_step_limit.cmm"), -1);
 }
 
 TEST_F(ConstexprContainersTest, DequeRingInConstexpr) {
@@ -318,7 +318,7 @@ TEST_F(ConstexprContainersTest, DequeRingInConstexpr) {
             return 0;
         }
         int32 main() { constexpr int64 x = dequeSum(); return (int32)x; }
-    )", "ct_deque_ring.c"), 0);
+    )", "ct_deque_ring.cmm"), 0);
 }
 
 TEST_F(ConstexprContainersTest, AcceptsContainerConstexprFunction) {
@@ -336,7 +336,7 @@ TEST_F(ConstexprContainersTest, AcceptsContainerConstexprFunction) {
         constexpr std::Vec<int32> T = make();
         constexpr std::Vec<int32> B = T;
         int32 main() { return T.get(0) + B.get(0) - 2; }
-    )", "ct_accept_vec.c");
+    )", "ct_accept_vec.cmm");
     for (auto& e : errors) std::cerr << "sema: " << e << "\n";
     EXPECT_TRUE(errors.empty());
 }
@@ -354,7 +354,7 @@ TEST_F(ConstexprContainersTest, RejectsMutationOfConstexprContainer) {
         }
         constexpr std::Vec<int32> T = make();
         int32 main() { T.push(1); return 0; }
-    )", "ct_mutate_vec.c");
+    )", "ct_mutate_vec.cmm");
     EXPECT_TRUE(hasErrorContaining(errors, "constexpr container"));
 }
 
@@ -371,7 +371,7 @@ TEST_F(ConstexprContainersTest, RejectsFieldWriteOnConstexprContainer) {
         }
         constexpr std::Vec<int32> T = make();
         int32 main() { T.len = 0; return 0; }
-    )", "ct_mutate_field.c");
+    )", "ct_mutate_field.cmm");
     EXPECT_TRUE(hasErrorContaining(errors, "constexpr container"));
 }
 
@@ -388,7 +388,7 @@ TEST_F(ConstexprContainersTest, RejectsMutableCopyOfConstexprContainer) {
         }
         constexpr std::Vec<int32> T = make();
         int32 main() { std::Vec<int32> M = T; return 0; }
-    )", "ct_copy_vec.c");
+    )", "ct_copy_vec.cmm");
     EXPECT_TRUE(hasErrorContaining(errors, "read-only"));
 }
 
@@ -396,7 +396,7 @@ TEST_F(ConstexprContainersTest, StillRejectsStringConstexprFunction) {
     auto errors = analyzeWithImports(R"(
         constexpr string make() { return string.new("x"); }
         int32 main() { return 0; }
-    )", "ct_string_constexpr.c");
+    )", "ct_string_constexpr.cmm");
     EXPECT_TRUE(hasErrorContaining(errors, "literal return type"));
 }
 
@@ -419,7 +419,7 @@ TEST_F(ConstexprContainersTest, VecTableIsReadableAtRuntime) {
             if (T.data[6] != 36) return 3;
             return 0;
         }
-    )", "ct_table_vec.c"), 0);
+    )", "ct_table_vec.cmm"), 0);
 }
 
 TEST_F(ConstexprContainersTest, DequeTableIsReadableAtRuntime) {
@@ -442,7 +442,7 @@ TEST_F(ConstexprContainersTest, DequeTableIsReadableAtRuntime) {
             if (T.get(0) != 0 || T.get(1) != 1 || T.get(2) != 2) return 2;
             return 0;
         }
-    )", "ct_table_deque.c"), 0);
+    )", "ct_table_deque.cmm"), 0);
 }
 
 TEST_F(ConstexprContainersTest, EmptyVecTableIsReadableAtRuntime) {
@@ -462,7 +462,7 @@ TEST_F(ConstexprContainersTest, EmptyVecTableIsReadableAtRuntime) {
             if (!T.is_empty()) return 2;
             return 0;
         }
-    )", "ct_table_empty.c"), 0);
+    )", "ct_table_empty.cmm"), 0);
 }
 
 TEST_F(ConstexprContainersTest, StringViewTableIsReadableAtRuntime) {
@@ -486,7 +486,7 @@ TEST_F(ConstexprContainersTest, StringViewTableIsReadableAtRuntime) {
             if (T.get(2).len() != 5) return 3;
             return 0;
         }
-    )", "ct_table_str.c"), 0);
+    )", "ct_table_str.cmm"), 0);
 }
 
 TEST_F(ConstexprContainersTest, HashMapTableIsReadableAtRuntime) {
@@ -510,7 +510,7 @@ TEST_F(ConstexprContainersTest, HashMapTableIsReadableAtRuntime) {
             if (!T.contains(63)) return 3;
             return 0;
         }
-    )", "ct_table_map.c"), 0);
+    )", "ct_table_map.cmm"), 0);
 }
 
 TEST_F(ConstexprContainersTest, HashSetTableIsReadableAtRuntime) {
@@ -533,7 +533,7 @@ TEST_F(ConstexprContainersTest, HashSetTableIsReadableAtRuntime) {
             if (T.contains(31)) return 3;
             return 0;
         }
-    )", "ct_table_set.c"), 0);
+    )", "ct_table_set.cmm"), 0);
 }
 
 TEST_F(ConstexprContainersTest, StringViewMapTableIsReadableAtRuntime) {
@@ -559,7 +559,7 @@ TEST_F(ConstexprContainersTest, StringViewMapTableIsReadableAtRuntime) {
             if (T.contains("four")) return 3;
             return 0;
         }
-    )", "ct_table_strmap.c"), 0);
+    )", "ct_table_strmap.cmm"), 0);
 }
 
 TEST_F(ConstexprContainersTest, RejectsMutableAssignmentFromConstexprContainer) {
@@ -580,7 +580,7 @@ TEST_F(ConstexprContainersTest, RejectsMutableAssignmentFromConstexprContainer) 
             M = T;
             return 0;
         }
-    )", "ct_assign_copy.c");
+    )", "ct_assign_copy.cmm");
     EXPECT_TRUE(hasErrorContaining(errors, "read-only"));
 }
 
@@ -593,7 +593,7 @@ TEST_F(ConstexprContainersTest, RejectsGetPtrOnConstexprContainer) {
         constexpr std::Vec<int32> make() { std::Vec<int32> v; v.init(); v.push(1); return v; }
         constexpr std::Vec<int32> T = make();
         int32 main() { int32* p = T.get_ptr(0); return *p; }
-    )", "ct_get_ptr.c");
+    )", "ct_get_ptr.cmm");
     EXPECT_TRUE(hasErrorContaining(errors, "constexpr container"));
 }
 
@@ -612,7 +612,7 @@ TEST_F(ConstexprContainersTest, RejectsMutablePointerIntoConstexprData) {
             *q = 10;
             return 0;
         }
-    )", "ct_data_ptr.c");
+    )", "ct_data_ptr.cmm");
     EXPECT_TRUE(hasErrorContaining(errors, "constexpr container"));
 }
 
@@ -626,7 +626,7 @@ TEST_F(ConstexprContainersTest, RejectsPassingConstexprTableByValue) {
         constexpr std::Vec<int32> T = make();
         int32 mutate(std::Vec<int32> w) { w.push(2); return w.len; }
         int32 main() { return mutate(T); }
-    )", "ct_pass_value.c");
+    )", "ct_pass_value.cmm");
     EXPECT_TRUE(hasErrorContaining(errors, "read-only"));
 }
 
@@ -644,7 +644,7 @@ TEST_F(ConstexprContainersTest, AllowsScalarReadFromConstexprTable) {
             int32 y = T.data[0];
             return n + x + y - 3;
         }
-    )", "ct_scalar_read.c");
+    )", "ct_scalar_read.cmm");
     for (auto& e : errors) std::cerr << "sema: " << e << "\n";
     EXPECT_TRUE(errors.empty());
 }
@@ -663,7 +663,7 @@ TEST_F(ConstexprContainersTest, AllowsShadowingConstexprContainerName) {
             T.push(9);
             return T.len == 1 ? 0 : 1;
         }
-    )", "ct_shadow.c");
+    )", "ct_shadow.cmm");
     for (auto& e : errors) std::cerr << "sema: " << e << "\n";
     EXPECT_TRUE(errors.empty());
 }

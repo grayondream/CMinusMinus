@@ -83,7 +83,7 @@ protected:
 // 正向测试走显式 parser 管线并精确断言 FieldInfo.bitWidth（runSource 只查
 // ast!=nullptr，无法捕获"位宽被静默丢弃"——当前解析器把 `a : 3` 当普通字段 `a`）。
 TEST_F(BitFieldE2E, ParseBasicDeclaration) {
-    Lexer lexer("bf_parse.c",
+    Lexer lexer("bf_parse.cmm",
         "struct S { int32 a : 3; uint32 b : 5; int32 : 0; int32 : 3; }; "
         "int32 main() { return 0; }");
     auto tokens = lexer.tokenize();
@@ -107,7 +107,7 @@ TEST_F(BitFieldE2E, ParseBasicDeclaration) {
 
 // 位域 + 数组后缀互斥：`int32 a : 3[2]` 报错（数组后缀落在位域宽度之后）。
 TEST_F(BitFieldE2E, ParseArraySuffixRejected) {
-    Lexer lexer("bf_arr.c",
+    Lexer lexer("bf_arr.cmm",
         "struct S { int32 a : 3[2]; }; int32 main() { return 0; }");
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
@@ -118,7 +118,7 @@ TEST_F(BitFieldE2E, ParseArraySuffixRejected) {
 
 // 位域宽度须为常量表达式：`int32 a : x;`（x 为运行时变量）报错。
 TEST_F(BitFieldE2E, ParseNonConstWidthRejected) {
-    Lexer lexer("bf_nc.c",
+    Lexer lexer("bf_nc.cmm",
         "struct S { int32 a : x; }; int32 main() { int32 x = 3; return 0; }");
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
@@ -144,7 +144,7 @@ static std::vector<Diagnostic> semaErrorsOf(const std::string& source, const std
 TEST_F(BitFieldE2E, FloatBaseRejected) {
     // 浮点基础类型 → E2025。
     auto errs = semaErrorsOf(
-        "struct S { float64 a : 3; }; int32 main(){return 0;}", "bf_f.c");
+        "struct S { float64 a : 3; }; int32 main(){return 0;}", "bf_f.cmm");
     ASSERT_FALSE(errs.empty());
     EXPECT_EQ(errs.front().code, DiagnosticCode::SemBitFieldInvalidType);
 }
@@ -152,7 +152,7 @@ TEST_F(BitFieldE2E, FloatBaseRejected) {
 TEST_F(BitFieldE2E, EnumBaseRejected) {
     // 枚举基础类型 → E2025。
     auto errs = semaErrorsOf(
-        "enum E : uint8 { A }; struct S { enum E e : 2; }; int32 main(){return 0;}", "bf_e.c");
+        "enum E : uint8 { A }; struct S { enum E e : 2; }; int32 main(){return 0;}", "bf_e.cmm");
     ASSERT_FALSE(errs.empty());
     EXPECT_EQ(errs.front().code, DiagnosticCode::SemBitFieldInvalidType);
 }
@@ -160,14 +160,14 @@ TEST_F(BitFieldE2E, EnumBaseRejected) {
 TEST_F(BitFieldE2E, WidthTooWideRejected) {
     // 宽度超类型位宽 → E2026。
     auto errs = semaErrorsOf(
-        "struct S { int32 a : 40; }; int32 main(){return 0;}", "bf_w.c");
+        "struct S { int32 a : 40; }; int32 main(){return 0;}", "bf_w.cmm");
     ASSERT_FALSE(errs.empty());
     EXPECT_EQ(errs.front().code, DiagnosticCode::SemBitFieldWidthOutOfRange);
 }
 
 TEST_F(BitFieldE2E, NamedZeroWidthRejected) {
     // 命名零宽位域 → parse 期拒绝（FieldInfo 编码不可表示该状态，Ruling 记录）。
-    Lexer lexer("bf_z.c",
+    Lexer lexer("bf_z.cmm",
         "struct S { int32 a : 0; }; int32 main(){return 0;}");
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
@@ -179,7 +179,7 @@ TEST_F(BitFieldE2E, NamedZeroWidthRejected) {
 TEST_F(BitFieldE2E, AddrOfRejected) {
     // 对位域取址 → E2027。
     auto errs = semaErrorsOf(
-        "struct S { int32 a : 3; }; int32 main(){ struct S s; int32* p = &s.a; return 0; }", "bf_addr.c");
+        "struct S { int32 a : 3; }; int32 main(){ struct S s; int32* p = &s.a; return 0; }", "bf_addr.cmm");
     ASSERT_FALSE(errs.empty());
     EXPECT_EQ(errs.front().code, DiagnosticCode::SemBitFieldNotAddressable);
 }
@@ -195,7 +195,7 @@ TEST_F(BitFieldE2E, LayoutPack29) {
             return (compile_time.size_of(struct S) == 8 &&
                     compile_time.align_of(struct S) == 4) ? 0 : 1;
         }
-    )", "bf_l1.c"), 0);
+    )", "bf_l1.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, LayoutSplit28) {
@@ -203,7 +203,7 @@ TEST_F(BitFieldE2E, LayoutSplit28) {
     EXPECT_EQ(runSource(R"(
         struct S { int32 a : 28; int32 b : 28; };
         int32 main() { return (compile_time.size_of(struct S) == 8) ? 0 : 1; }
-    )", "bf_l2.c"), 0);
+    )", "bf_l2.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, LayoutUint8Share) {
@@ -211,7 +211,7 @@ TEST_F(BitFieldE2E, LayoutUint8Share) {
     EXPECT_EQ(runSource(R"(
         struct S { uint8 a : 3; uint8 b : 3; };
         int32 main() { return (compile_time.size_of(struct S) == 1) ? 0 : 1; }
-    )", "bf_l3.c"), 0);
+    )", "bf_l3.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, LayoutZeroWidthAlign) {
@@ -219,7 +219,7 @@ TEST_F(BitFieldE2E, LayoutZeroWidthAlign) {
     EXPECT_EQ(runSource(R"(
         struct S { int32 a : 3; int32 : 0; int32 b : 3; };
         int32 main() { return (compile_time.size_of(struct S) == 8) ? 0 : 1; }
-    )", "bf_l4.c"), 0);
+    )", "bf_l4.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, LayoutUnnamedPad) {
@@ -227,7 +227,7 @@ TEST_F(BitFieldE2E, LayoutUnnamedPad) {
     EXPECT_EQ(runSource(R"(
         struct S { int32 a : 3; int32 : 5; int32 b : 3; };
         int32 main() { return (compile_time.size_of(struct S) == 4) ? 0 : 1; }
-    )", "bf_l5.c"), 0);
+    )", "bf_l5.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, LayoutBoolUnit) {
@@ -235,7 +235,7 @@ TEST_F(BitFieldE2E, LayoutBoolUnit) {
     EXPECT_EQ(runSource(R"(
         struct S { bool b : 1; };
         int32 main() { return (compile_time.size_of(struct S) == 1) ? 0 : 1; }
-    )", "bf_l6.c"), 0);
+    )", "bf_l6.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, LayoutPackedTight) {
@@ -243,7 +243,7 @@ TEST_F(BitFieldE2E, LayoutPackedTight) {
     EXPECT_EQ(runSource(R"(
         [[packed]] struct S { int32 a : 24; int32 b : 8; };
         int32 main() { return (compile_time.size_of(struct S) == 4) ? 0 : 1; }
-    )", "bf_l7.c"), 0);
+    )", "bf_l7.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, OffsetOfBitFieldRejected) {
@@ -252,7 +252,7 @@ TEST_F(BitFieldE2E, OffsetOfBitFieldRejected) {
     auto errs = semaErrorsOf(R"(
         struct S { int32 a : 3; };
         int32 main() { return (compile_time.offset_of(struct S, "a") == 0) ? 0 : 1; }
-    )", "bf_off.c");
+    )", "bf_off.cmm");
     ASSERT_FALSE(errs.empty());
 }
 
@@ -268,7 +268,7 @@ TEST_F(BitFieldE2E, ReadWriteBasic) {
             if (s.a != 2) { return 2; }
             return 0;
         }
-    )", "bf_rw.c"), 0);
+    )", "bf_rw.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, SignedExtendNegative) {
@@ -281,7 +281,7 @@ TEST_F(BitFieldE2E, SignedExtendNegative) {
             if (!(s.a < 0)) { return 2; }
             return 0;
         }
-    )", "bf_sgn.c"), 0);
+    )", "bf_sgn.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, UnsignedTruncate) {
@@ -293,7 +293,7 @@ TEST_F(BitFieldE2E, UnsignedTruncate) {
             if (s.a != 1) { return 1; }
             return 0;
         }
-    )", "bf_uns.c"), 0);
+    )", "bf_uns.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, CompoundAssign) {
@@ -306,7 +306,7 @@ TEST_F(BitFieldE2E, CompoundAssign) {
             if (s.a != 1) { return 1; }
             return 0;
         }
-    )", "bf_cmp.c"), 0);
+    )", "bf_cmp.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, IncDec) {
@@ -323,7 +323,7 @@ TEST_F(BitFieldE2E, IncDec) {
             if (s.a != 0) { return 3; }
             return 0;
         }
-    )", "bf_inc.c"), 0);
+    )", "bf_inc.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, BoolBitField) {
@@ -337,7 +337,7 @@ TEST_F(BitFieldE2E, BoolBitField) {
             if (s.b) { return 2; }
             return 0;
         }
-    )", "bf_bool.c"), 0);
+    )", "bf_bool.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, NestedChain) {
@@ -355,7 +355,7 @@ TEST_F(BitFieldE2E, NestedChain) {
             if (arr[1].i.bf != 3) { return 2; }
             return 0;
         }
-    )", "bf_chain.c"), 0);
+    )", "bf_chain.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, AsArgAndReturn) {
@@ -372,7 +372,7 @@ TEST_F(BitFieldE2E, AsArgAndReturn) {
             if (readA(&t) != -2) { return 2; }
             return 0;
         }
-    )", "bf_arg.c"), 0);
+    )", "bf_arg.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, StructCopy) {
@@ -386,7 +386,7 @@ TEST_F(BitFieldE2E, StructCopy) {
             if (y.a != -3 || y.b != 7) { return 1; }
             return 0;
         }
-    )", "bf_copy.c"), 0);
+    )", "bf_copy.cmm"), 0);
 }
 
 // ---- Task 5: 全局/static 位域初始化（常量构造位域感知）----
@@ -401,7 +401,7 @@ TEST_F(BitFieldE2E, GlobalInitSharedUnit) {
             if (g.a != 5 || g.b != 7) { return 1; }
             return 0;
         }
-    )", "bf_ginit.c"), 0);
+    )", "bf_ginit.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, LocalBraceInitTruncation) {
@@ -416,7 +416,7 @@ TEST_F(BitFieldE2E, LocalBraceInitTruncation) {
             if (s.a != 1) { return 1; }
             return 0;
         }
-    )", "bf_linit.c"), 0);
+    )", "bf_linit.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, ZeroWidthInitSkipsUnnamed) {
@@ -430,7 +430,7 @@ TEST_F(BitFieldE2E, ZeroWidthInitSkipsUnnamed) {
             if (t.a != 3 || t.b != 4) { return 1; }
             return 0;
         }
-    )", "bf_zwinit.c"), 0);
+    )", "bf_zwinit.cmm"), 0);
 }
 
 // ---- Task 6: union / [[packed]] / class 位域 ----
@@ -442,7 +442,7 @@ TEST_F(BitFieldE2E, UnionSizeAlign) {
         int32 main() {
             return (compile_time.size_of(union U) == 4) ? 0 : 1;
         }
-    )", "bf_usz.c"), 0);
+    )", "bf_usz.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, UnionOverlap) {
@@ -456,7 +456,7 @@ TEST_F(BitFieldE2E, UnionOverlap) {
             if (u.b != 5) { return 1; }
             return 0;
         }
-    )", "bf_uov.c"), 0);
+    )", "bf_uov.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, PackedZeroWidth) {
@@ -465,7 +465,7 @@ TEST_F(BitFieldE2E, PackedZeroWidth) {
     EXPECT_EQ(runSource(R"(
         [[packed]] struct S { int32 a : 3; int32 : 0; int32 b : 3; };
         int32 main() { return (compile_time.size_of(struct S) == 5) ? 0 : 1; }
-    )", "bf_pz.c"), 0);
+    )", "bf_pz.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, PackedTightFit) {
@@ -473,7 +473,7 @@ TEST_F(BitFieldE2E, PackedTightFit) {
     EXPECT_EQ(runSource(R"(
         [[packed]] struct S { int32 a : 3; int32 b : 3; };
         int32 main() { return (compile_time.size_of(struct S) == 1) ? 0 : 1; }
-    )", "bf_pt.c"), 0);
+    )", "bf_pt.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, ClassBitField) {
@@ -485,7 +485,7 @@ TEST_F(BitFieldE2E, ClassBitField) {
             if (c.a != -2) { return 1; }
             return 0;
         }
-    )", "bf_cls.c"), 0);
+    )", "bf_cls.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, ClassInheritedBitField) {
@@ -499,7 +499,7 @@ TEST_F(BitFieldE2E, ClassInheritedBitField) {
             if (d.base != 11 || d.bf != 2) { return 1; }
             return 0;
         }
-    )", "bf_cls2.c"), 0);
+    )", "bf_cls2.cmm"), 0);
 }
 
 // ---- 评审修复回归（union 位域全通路、派生混合字段、位宽溢出）----
@@ -514,13 +514,13 @@ TEST_F(BitFieldE2E, UnionBitFieldTruncates) {
             if (u.a != 1) { return 1; }
             return 0;
         }
-    )", "bf_utrunc.c"), 0);
+    )", "bf_utrunc.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, UnionBitFieldAddrOfRejected) {
     // C1：union 位域取址同样拒绝（E2027）。
     auto errs = semaErrorsOf(
-        "union UB { uint32 a : 3; }; int32 main(){ union UB u; uint32* p = &u.a; return 0; }", "bf_uaddr.c");
+        "union UB { uint32 a : 3; }; int32 main(){ union UB u; uint32* p = &u.a; return 0; }", "bf_uaddr.cmm");
     ASSERT_FALSE(errs.empty());
     EXPECT_EQ(errs.front().code, DiagnosticCode::SemBitFieldNotAddressable);
 }
@@ -531,7 +531,7 @@ TEST_F(BitFieldE2E, UnionBitFieldGlobalInit) {
         union UB { uint32 a : 3; };
         union UB g = { 9 };
         int32 main() { return (g.a == 1) ? 0 : 1; }
-    )", "bf_uginit.c"), 0);
+    )", "bf_uginit.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, DerivedNormalAndBitField) {
@@ -547,12 +547,12 @@ TEST_F(BitFieldE2E, DerivedNormalAndBitField) {
             if (d.base != 11 || d.x != 111 || d.bf != 2) { return 1; }
             return 0;
         }
-    )", "bf_dmix.c"), 0);
+    )", "bf_dmix.cmm"), 0);
 }
 
 TEST_F(BitFieldE2E, WidthOverflowRejected) {
     // M1：超 int32 范围位宽在 parse 期拒绝（防 static_cast<int> 回绕绕过 E2026）。
-    Lexer lexer("bf_wovf.c",
+    Lexer lexer("bf_wovf.cmm",
         "struct S { int32 a : 4294967297; }; int32 main() { return 0; }");
     auto tokens = lexer.tokenize();
     Parser parser(tokens);

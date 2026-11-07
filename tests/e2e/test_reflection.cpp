@@ -105,7 +105,7 @@ TEST_F(ReflectionE2E, NameOfReturnsTypeName) {
             if (n[7] != 'S') return 4;
             return 0;
         }
-    )", "refl_name.c"), 0);
+    )", "refl_name.cmm"), 0);
 }
 
 TEST_F(ReflectionE2E, FieldsOfReturnsFieldTable) {
@@ -120,7 +120,7 @@ TEST_F(ReflectionE2E, FieldsOfReturnsFieldTable) {
             if (fs[1].offset != 8) return 5;
             return 0;
         }
-    )", "refl_fields.c"), 0);
+    )", "refl_fields.cmm"), 0);
 }
 
 TEST_F(ReflectionE2E, AttributesOfReturnsAnnotations) {
@@ -136,12 +136,12 @@ TEST_F(ReflectionE2E, AttributesOfReturnsAnnotations) {
             }
             return 0;
         }
-    )", "refl_attrs.c"), 0);
+    )", "refl_attrs.cmm"), 0);
 }
 
 TEST_F(ReflectionE2E, FieldsOfNonAggregateRejected) {
     auto ast = [&]() {
-        Lexer lexer("refl_na.c", R"(
+        Lexer lexer("refl_na.cmm", R"(
             int32 main() {
                 FieldInfo[] fs = compile_time.fields_of(int32);
                 return 0;

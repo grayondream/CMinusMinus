@@ -109,7 +109,7 @@ TEST_F(StringOwnershipE2E, AssignCopyIndependent) {
             b.destroy();
             return 0;
         }
-    )", "own_assign.c"), 0);
+    )", "own_assign.cmm"), 0);
 }
 
 // I4 (D7, 自赋值守卫): `b = b;` 不得 free 共享缓冲（双 free abort）——
@@ -124,7 +124,7 @@ TEST_F(StringOwnershipE2E, SelfAssignSafe) {
             b.destroy();
             return 0;
         }
-    )", "own_self.c"), 0);
+    )", "own_self.cmm"), 0);
 }
 
 // I4 (D7): `b = a;` 后 b 持有 a 的深拷贝（值正确、len 正确），a 仍有效
@@ -142,7 +142,7 @@ TEST_F(StringOwnershipE2E, AssignFreesOldBuffer) {
             b.destroy();
             return 0;
         }
-    )", "own_frees_old.c"), 0);
+    )", "own_frees_old.cmm"), 0);
 }
 
 // I4 (D7, fresh 赋值): `b = string.new("y");` 覆盖已初始化 b——移动（free
@@ -157,7 +157,7 @@ TEST_F(StringOwnershipE2E, AssignFreshValueFreesOld) {
             b.destroy();
             return 0;
         }
-    )", "own_fresh.c"), 0);
+    )", "own_fresh.cmm"), 0);
 }
 
 // I4 (D2): `string t = s;`（初始化）必须深拷贝——`s`/`t` 各自独立缓冲，
@@ -171,7 +171,7 @@ TEST_F(StringOwnershipE2E, InitCopyIndependent) {
             t.destroy();
             return 0;
         }
-    )", "own_init.c"), 0);
+    )", "own_init.cmm"), 0);
 }
 
 // I4 (D2, fresh 初始化): `string s = string.new("x");` 直接 store（移动），
@@ -183,7 +183,7 @@ TEST_F(StringOwnershipE2E, InitMoveFromNew) {
             s.destroy();
             return 0;
         }
-    )", "own_init_fresh.c"), 0);
+    )", "own_init_fresh.cmm"), 0);
 }
 
 // I4 (D2, fresh 初始化/函数调用): `string s = fresh();`——函数调用 rvalue
@@ -198,7 +198,7 @@ TEST_F(StringOwnershipE2E, InitFromCall) {
             s.destroy();
             return 0;
         }
-    )", "own_init_call.c"), 0);
+    )", "own_init_call.cmm"), 0);
 }
 
 // I4 (D2, 默认安全): `string s = flag ? a : b;`——三元非调用 → 深拷贝，
@@ -217,7 +217,7 @@ TEST_F(StringOwnershipE2E, InitTernaryCopiesOperands) {
             s.destroy();
             return 0;
         }
-    )", "own_init_ternary.c"), 0);
+    )", "own_init_ternary.cmm"), 0);
 }
 
 // I4 (D2/D6): `kill(a)`（string 按值传参）必须深拷贝——callee 内 destroy
@@ -232,7 +232,7 @@ TEST_F(StringOwnershipE2E, PassByValueIndependent) {
             a.destroy();
             return 0;
         }
-    )", "own_pass.c"), 0);
+    )", "own_pass.cmm"), 0);
 }
 
 // I4 (D6): `return s;`（局部 string）→ 移动——返回值独占缓冲、源存储置零，
@@ -250,7 +250,7 @@ TEST_F(StringOwnershipE2E, ReturnMovesLocal) {
             r.destroy();
             return 0;
         }
-    )", "own_ret_local.c"), 0);
+    )", "own_ret_local.cmm"), 0);
 }
 
 // I4 (D6, review focus): `return g.s;`（struct 字段 string 返回）→ 拷贝，
@@ -269,7 +269,7 @@ TEST_F(StringOwnershipE2E, ReturnFieldCopies) {
             r.destroy();
             return 0;
         }
-    )", "own_ret_field.c"), 0);
+    )", "own_ret_field.cmm"), 0);
 }
 
 // I4 (D6, review focus): `return flag ? ga : gb;`（三元含活变量）→ 拷贝，
@@ -290,7 +290,7 @@ TEST_F(StringOwnershipE2E, ConditionalReturnCopiesOperands) {
             r.destroy();
             return 0;
         }
-    )", "own_ret_ternary.c"), 0);
+    )", "own_ret_ternary.cmm"), 0);
 }
 
 // I4 (D6): `check(string.new("tmp"))`——新鲜实参 → 移动（零拷贝），
@@ -306,7 +306,7 @@ TEST_F(StringOwnershipE2E, TempArgMove) {
         int32 main() {
             return check(string.new("tmp"));
         }
-    )", "own_temp_arg.c"), 0);
+    )", "own_temp_arg.cmm"), 0);
 }
 
 // I4 (D7, spec §3.1/§5): `struct S y = x;`（聚合初始化含 string 字段）必须
@@ -322,7 +322,7 @@ TEST_F(StringOwnershipE2E, StructFieldCopyIndependent) {
             y.s.destroy();
             return 0;
         }
-    )", "own_struct_init.c"), 0);
+    )", "own_struct_init.cmm"), 0);
 }
 
 // I4 (D7): 聚合赋值 `b = a;` 覆盖旧 string 字段——free 旧缓冲 + 深拷贝，
@@ -340,7 +340,7 @@ TEST_F(StringOwnershipE2E, StructWithStringAssignFreesOld) {
             b.s.destroy();
             return 0;
         }
-    )", "own_struct_assign.c"), 0);
+    )", "own_struct_assign.cmm"), 0);
 }
 
 // I4 (D7): brace-init string 字段活值深拷贝——`struct S y = { src };` 后
@@ -357,7 +357,7 @@ TEST_F(StringOwnershipE2E, BraceInitStringFieldCopies) {
             y.s.destroy();
             return 0;
         }
-    )", "own_struct_brace.c"), 0);
+    )", "own_struct_brace.cmm"), 0);
 }
 
 // Found issue（I4 review）: 未初始化 `string s;` 零初始化 {null,0,0}——
@@ -372,7 +372,7 @@ TEST_F(StringOwnershipE2E, UninitializedStringLocalAssignSafe) {
             s.destroy();
             return 0;
         }
-    )", "own_uninit_safe.c"), 0);
+    )", "own_uninit_safe.cmm"), 0);
 }
 
 // Found issue（I4 review）: 聚合内 string 数组字段——字段感知逐元素拷贝。
@@ -394,7 +394,7 @@ TEST_F(StringOwnershipE2E, AggregateArrayOfStringsCopyIndependent) {
             y.arr[1].destroy();
             return 0;
         }
-    )", "own_agg_array.c"), 0);
+    )", "own_agg_array.cmm"), 0);
 }
 
 // Found issue（I4 review）: 聚合内 optional<string> 字段——valid 时字段感知
@@ -414,7 +414,7 @@ TEST_F(StringOwnershipE2E, AggregateOptionalStringCopyIndependent) {
             y.o.value.destroy();
             return 0;
         }
-    )", "own_agg_opt.c"), 0);
+    )", "own_agg_opt.cmm"), 0);
 }
 
 // Found issue（I4 review）: 聚合内 result<string, int32> 字段——ok 时字段
@@ -435,7 +435,7 @@ TEST_F(StringOwnershipE2E, AggregateResultStringCopyIndependent) {
             y.r.value.destroy();
             return 0;
         }
-    )", "own_agg_res.c"), 0);
+    )", "own_agg_res.cmm"), 0);
 }
 
 // Found issue（I4 review）: 聚合赋值 `y = x;`（optional<string> 字段，
@@ -458,7 +458,7 @@ TEST_F(StringOwnershipE2E, AggregateOptionalAssignFreesOld) {
             y.o.value.destroy();
             return 0;
         }
-    )", "own_agg_opt_assign.c"), 0);
+    )", "own_agg_opt_assign.cmm"), 0);
 }
 
 // Found issue（I4 review 顺带发现）: struct 字段 optional<string> 的嵌套
@@ -476,7 +476,7 @@ TEST_F(StringOwnershipE2E, NestedBraceInitOptionalStringField) {
             x.o.value.destroy();
             return 0;
         }
-    )", "own_brinit_opt.c"), 0);
+    )", "own_brinit_opt.cmm"), 0);
 }
 
 // Found issue（I4 review 顺带发现）: struct 字段 result<string, int32> 的嵌套
@@ -492,7 +492,7 @@ TEST_F(StringOwnershipE2E, NestedBraceInitResultStringField) {
             x.r.value.destroy();
             return 0;
         }
-    )", "own_brinit_res.c"), 0);
+    )", "own_brinit_res.cmm"), 0);
 }
 
 // 遗留缺陷（新遗留项）: optional/result 聚合赋值 valid→invalid（ok→err、
@@ -511,7 +511,7 @@ TEST_F(StringOwnershipE2E, OptionalAssignValidToInvalidReleasesOld) {
             if (v.len() != 0) { return 2; }
             return 0;
         }
-    )", "own_opt_v2i.c"), 0);
+    )", "own_opt_v2i.cmm"), 0);
 }
 
 // 同上——optional 元素为含 string 字段的 struct：递归释放失效槽内聚合的缓冲。
@@ -528,7 +528,7 @@ TEST_F(StringOwnershipE2E, OptionalAssignValidToInvalidReleasesStructField) {
             if (v.len() != 0) { return 2; }
             return 0;
         }
-    )", "own_opt_v2i_struct.c"), 0);
+    )", "own_opt_v2i_struct.cmm"), 0);
 }
 
 // 同上——optional 元素为含 string 数组字段的 struct：递归逐元素释放。
@@ -546,7 +546,7 @@ TEST_F(StringOwnershipE2E, OptionalAssignValidToInvalidReleasesArrayField) {
             if (v0.len() != 0 || v1.len() != 0) { return 2; }
             return 0;
         }
-    )", "own_opt_v2i_arr.c"), 0);
+    )", "own_opt_v2i_arr.cmm"), 0);
 }
 
 // 同上——result ok→err：失效的 value 槽释放。
@@ -562,7 +562,7 @@ TEST_F(StringOwnershipE2E, ResultAssignOkToErrReleasesOldValue) {
             if (v.len() != 0) { return 2; }
             return 0;
         }
-    )", "own_res_o2e.c"), 0);
+    )", "own_res_o2e.cmm"), 0);
 }
 
 // 同上——result err→ok：失效的 error 槽释放（error 为 string）。
@@ -578,7 +578,7 @@ TEST_F(StringOwnershipE2E, ResultAssignErrToOkReleasesOldError) {
             if (e.len() != 0) { return 2; }
             return 0;
         }
-    )", "own_res_e2o.c"), 0);
+    )", "own_res_e2o.cmm"), 0);
 }
 
 // 同上——valid→invalid 释放并置零后，再 invalid→valid 不得双 free（value 槽
@@ -598,5 +598,5 @@ TEST_F(StringOwnershipE2E, OptionalInvalidateThenRevalidateSafe) {
             x.o.value.destroy();
             return 0;
         }
-    )", "own_opt_retrans.c"), 0);
+    )", "own_opt_retrans.cmm"), 0);
 }

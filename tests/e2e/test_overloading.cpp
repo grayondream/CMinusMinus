@@ -79,7 +79,7 @@ TEST_F(OverloadingE2E, FunctionOverloading) {
             int32 r2 = add(1, 2, 3);
             return r1 + r2 - 13;
         }
-    )", "test_func_overload.c"), 0);
+    )", "test_func_overload.cmm"), 0);
 }
 
 TEST_F(OverloadingE2E, OperatorOverloading) {
@@ -103,7 +103,7 @@ TEST_F(OverloadingE2E, OperatorOverloading) {
             struct Point p3 = p1 + p2;
             return p3.x - 4;
         }
-    )", "test_op_overload.c"), 0);
+    )", "test_op_overload.cmm"), 0);
 }
 
 // TYP-23: an int32-valued expression (notably a comparison) must be usable
@@ -117,7 +117,7 @@ TEST_F(OverloadingE2E, ComparisonResultAsBoolArgument) {
             if (truth(7) != 1) return 3;
             return 0;
         }
-    )", "cmp_bool_arg.c"), 0);
+    )", "cmp_bool_arg.cmm"), 0);
 }
 
 TEST_F(OverloadingE2E, ComparisonResultPrefersInt32Overload) {
@@ -125,5 +125,5 @@ TEST_F(OverloadingE2E, ComparisonResultPrefersInt32Overload) {
         int32 pick(bool b) { return 1; }
         int32 pick(int32 x) { return 2; }
         int32 main() { return pick(1 == 1) - 2; }
-    )", "cmp_bool_overload.c"), 0);
+    )", "cmp_bool_overload.cmm"), 0);
 }

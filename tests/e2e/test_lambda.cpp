@@ -107,7 +107,7 @@ TEST_F(LambdaE2E, NoCaptureAsFunctionPointer) {
             if (fp(21) != 42) return 1;
             return 0;
         }
-    )", "lam_nocap.c"), 0);
+    )", "lam_nocap.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, NoCaptureImmediateInvocation) {
@@ -117,7 +117,7 @@ TEST_F(LambdaE2E, NoCaptureImmediateInvocation) {
             if (r != 7) return 1;
             return 0;
         }
-    )", "lam_immediate.c"), 0);
+    )", "lam_immediate.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, ByValueCaptureImmediate) {
@@ -128,7 +128,7 @@ TEST_F(LambdaE2E, ByValueCaptureImmediate) {
             if (r != 7) return 1;
             return 0;
         }
-    )", "lam_byval.c"), 0);
+    )", "lam_byval.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, ByReferenceCaptureWrites) {
@@ -139,7 +139,7 @@ TEST_F(LambdaE2E, ByReferenceCaptureWrites) {
             if (a != 9) return 1;
             return 0;
         }
-    )", "lam_byref.c"), 0);
+    )", "lam_byref.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, CaptureAll) {
@@ -150,7 +150,7 @@ TEST_F(LambdaE2E, CaptureAll) {
             if (r != 7) return 1;
             return 0;
         }
-    )", "lam_captureall.c"), 0);
+    )", "lam_captureall.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, QsortComparator) {
@@ -169,7 +169,7 @@ TEST_F(LambdaE2E, QsortComparator) {
             if (arr[0] != 1 || arr[4] != 5) return 1;
             return 0;
         }
-    )", "lam_qsort.c"), 0);
+    )", "lam_qsort.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, ReturnTypeInference) {
@@ -179,7 +179,7 @@ TEST_F(LambdaE2E, ReturnTypeInference) {
             if (r != 3) return 1;
             return 0;
         }
-    )", "lam_infer.c"), 0);
+    )", "lam_infer.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, CaptureAllByReferenceWrites) {
@@ -190,7 +190,7 @@ TEST_F(LambdaE2E, CaptureAllByReferenceWrites) {
             f();
             return (a == 10 && b == 20) ? 0 : 1;
         }
-    )", "lam_refall.c"), 0);
+    )", "lam_refall.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, MixedCaptureDefaultValueAndRefOverride) {
@@ -201,7 +201,7 @@ TEST_F(LambdaE2E, MixedCaptureDefaultValueAndRefOverride) {
             int32 r = f();
             return (r == 21 && a == 1 && b == 20) ? 0 : 1;
         }
-    )", "lam_mixed1.c"), 0);
+    )", "lam_mixed1.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, MixedCaptureDefaultRefAndValueOverride) {
@@ -212,7 +212,7 @@ TEST_F(LambdaE2E, MixedCaptureDefaultRefAndValueOverride) {
             int32 r = f();
             return (r == 21 && a == 1 && b == 20) ? 0 : 1;
         }
-    )", "lam_mixed2.c"), 0);
+    )", "lam_mixed2.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, CaptureInitializerEvaluatedOnce) {
@@ -223,7 +223,7 @@ TEST_F(LambdaE2E, CaptureInitializerEvaluatedOnce) {
             int32 r = [x = next()]() -> int32 { return x; }();
             return (r == 1 && calls == 1) ? 0 : 1;
         }
-    )", "lam_init_once.c"), 0);
+    )", "lam_init_once.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, CaptureInitializerByReference) {
@@ -234,7 +234,7 @@ TEST_F(LambdaE2E, CaptureInitializerByReference) {
             int32 r = f();
             return (r == 2 && n == 2) ? 0 : 1;
         }
-    )", "lam_init_ref.c"), 0);
+    )", "lam_init_ref.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, ThisImplicitMember) {
@@ -252,7 +252,7 @@ TEST_F(LambdaE2E, ThisImplicitMember) {
             }
         };
         int32 main() { LambdaThisC c; c.v = 7; return (c.f() == 7 && c.h() == 8) ? 0 : 1; }
-    )", "lam_this.c"), 0);
+    )", "lam_this.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, NestedLambdaCapturesOuter) {
@@ -265,7 +265,7 @@ TEST_F(LambdaE2E, NestedLambdaCapturesOuter) {
             };
             return outer() == 2 ? 0 : 1;
         }
-    )", "lam_nested.c"), 0);
+    )", "lam_nested.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, ReturnInferenceSeesBodyLocal) {
@@ -277,7 +277,7 @@ TEST_F(LambdaE2E, ReturnInferenceSeesBodyLocal) {
             };
             return f() == 1 ? 0 : 1;
         }
-    )", "lam_retlocal.c"), 0);
+    )", "lam_retlocal.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, CaptureInitializerArrayByValue) {
@@ -288,7 +288,7 @@ TEST_F(LambdaE2E, CaptureInitializerArrayByValue) {
             arr[0] = 99;
             return f() == 4 ? 0 : 1;
         }
-    )", "lam_init_array.c"), 0);
+    )", "lam_init_array.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, CaptureInitializerArrayImmediate) {
@@ -298,7 +298,7 @@ TEST_F(LambdaE2E, CaptureInitializerArrayImmediate) {
             int32 r = [t = arr]() -> int32 { return t[0] + t[2]; }();
             return r == 4 ? 0 : 1;
         }
-    )", "lam_init_array_imm.c"), 0);
+    )", "lam_init_array_imm.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, CaptureInitializerMemberArrayByValue) {
@@ -314,7 +314,7 @@ TEST_F(LambdaE2E, CaptureInitializerMemberArrayByValue) {
             p.a[0] = 99;
             return f() == 4 ? 0 : 1;
         }
-    )", "lam_init_member_array.c"), 0);
+    )", "lam_init_member_array.cmm"), 0);
 }
 
 // PAR-11 final review regressions.
@@ -329,7 +329,7 @@ TEST_F(LambdaE2E, InferredArrayReturnDecaysToPointer) {
             };
             return f(1)[0] - 10;
         }
-    )", "lam_ret_array.c"), 0);
+    )", "lam_ret_array.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, CaptureAllBodyLocalShadowsByRef) {
@@ -340,7 +340,7 @@ TEST_F(LambdaE2E, CaptureAllBodyLocalShadowsByRef) {
             f();
             return x - 1;
         }
-    )", "lam_shadow_ref.c"), 0);
+    )", "lam_shadow_ref.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, CaptureAllBodyLocalShadowsByValue) {
@@ -350,7 +350,7 @@ TEST_F(LambdaE2E, CaptureAllBodyLocalShadowsByValue) {
             auto f = [=]() -> int32 { int32 x = 5; return x; };
             return f() - 5;
         }
-    )", "lam_shadow_val.c"), 0);
+    )", "lam_shadow_val.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, NestedInitCaptureDoesNotCaptureOuterName) {
@@ -363,7 +363,7 @@ TEST_F(LambdaE2E, NestedInitCaptureDoesNotCaptureOuterName) {
             };
             return fp(1) + z - 9;
         }
-    )", "lam_nested_init.c"), 0);
+    )", "lam_nested_init.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, ImplicitThisInsideSwitch) {
@@ -386,7 +386,7 @@ TEST_F(LambdaE2E, ImplicitThisInsideSwitch) {
             c.v = 7;
             return c.f() == 70 ? 0 : 1;
         }
-    )", "lam_this_switch.c"), 0);
+    )", "lam_this_switch.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, StaticLocalBeatsSameNamedField) {
@@ -405,7 +405,7 @@ TEST_F(LambdaE2E, StaticLocalBeatsSameNamedField) {
             c.x = 99;
             return c.f() - 5;
         }
-    )", "lam_static_shadow.c"), 0);
+    )", "lam_static_shadow.cmm"), 0);
 }
 
 TEST_F(LambdaE2E, EnumeratorLosesToSameNamedField) {
@@ -424,5 +424,5 @@ TEST_F(LambdaE2E, EnumeratorLosesToSameNamedField) {
             c.Red = 7;
             return c.f() - 7;
         }
-    )", "lam_enum_shadow.c"), 0);
+    )", "lam_enum_shadow.cmm"), 0);
 }

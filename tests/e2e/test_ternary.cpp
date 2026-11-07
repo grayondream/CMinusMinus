@@ -103,7 +103,7 @@ TEST_F(TernaryE2E, ScalarLvalueBranchTrue) {
             int32 x = t ? a : b;
             return x;
         }
-    )", "ternary1.c"), 3);
+    )", "ternary1.cmm"), 3);
 }
 
 TEST_F(TernaryE2E, ScalarLvalueBranchFalse) {
@@ -113,7 +113,7 @@ TEST_F(TernaryE2E, ScalarLvalueBranchFalse) {
             int32 x = t ? a : b;
             return x;
         }
-    )", "ternary2.c"), 7);
+    )", "ternary2.cmm"), 7);
 }
 
 TEST_F(TernaryE2E, PointerBranchSelectsTarget) {
@@ -127,7 +127,7 @@ TEST_F(TernaryE2E, PointerBranchSelectsTarget) {
             *r = 5;
             return v1;
         }
-    )", "ternary3.c"), 5);
+    )", "ternary3.cmm"), 5);
 }
 
 TEST_F(TernaryE2E, SameTypeStructBranch) {
@@ -138,7 +138,7 @@ TEST_F(TernaryE2E, SameTypeStructBranch) {
             P c = t ? a : b;
             return c.x * 10 + c.y;
         }
-    )", "ternary4.c"), 12);
+    )", "ternary4.cmm"), 12);
 }
 
 TEST_F(TernaryE2E, OptionalBranch) {
@@ -149,7 +149,7 @@ TEST_F(TernaryE2E, OptionalBranch) {
             if (c.valid) { return c.value; }
             return -1;
         }
-    )", "ternary5.c"), 5);
+    )", "ternary5.cmm"), 5);
 }
 
 TEST_F(TernaryE2E, ResultBranch) {
@@ -162,7 +162,7 @@ TEST_F(TernaryE2E, ResultBranch) {
             if (c.ok) { return c.value; }
             return -c.error;
         }
-    )", "ternary6.c"), 3);
+    )", "ternary6.cmm"), 3);
 }
 
 TEST_F(TernaryE2E, MixedWidthPromotion) {
@@ -173,7 +173,7 @@ TEST_F(TernaryE2E, MixedWidthPromotion) {
             float64 x = t ? a : b;
             return x == 3.0 ? 1 : 0;
         }
-    )", "ternary7.c"), 1);
+    )", "ternary7.cmm"), 1);
 }
 
 TEST_F(TernaryE2E, NestedTernary) {
@@ -183,7 +183,7 @@ TEST_F(TernaryE2E, NestedTernary) {
             int32 t = 1; int32 u = 0;
             return t ? (u ? a : b) : c;
         }
-    )", "ternary8.c"), 2);
+    )", "ternary8.cmm"), 2);
 }
 
 TEST_F(TernaryE2E, UnaryMinusOnStructMember) {
@@ -194,7 +194,7 @@ TEST_F(TernaryE2E, UnaryMinusOnStructMember) {
             A a = {5, 6};
             return -a.v + a.w;
         }
-    )", "ternary9.c"), 1);
+    )", "ternary9.cmm"), 1);
 }
 
 TEST_F(TernaryE2E, UnaryMinusOnSubscript) {
@@ -205,7 +205,7 @@ TEST_F(TernaryE2E, UnaryMinusOnSubscript) {
             int32 i = 1;
             return -arr[i];
         }
-    )", "ternary10.c"), -9);
+    )", "ternary10.cmm"), -9);
 }
 
 TEST_F(TernaryE2E, PrefixIncOnMember) {
@@ -216,5 +216,5 @@ TEST_F(TernaryE2E, PrefixIncOnMember) {
             A a = {5};
             return ++a.v;
         }
-    )", "ternary11.c"), 6);
+    )", "ternary11.cmm"), 6);
 }
