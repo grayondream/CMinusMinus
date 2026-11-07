@@ -7,7 +7,7 @@
 // records per-type reflection data (keyed by the type's mangled name); codegen
 // materializes them as global constant arrays + slice views. Process-level
 // singleton so multiple calls for the same type share one registry.
-namespace smc {
+namespace cmm {
 
 struct FieldInfoData {
     std::string name;
@@ -38,4 +38,4 @@ private:
     Impl* d = nullptr;
 };
 
-} // namespace smc
+} // namespace cmm

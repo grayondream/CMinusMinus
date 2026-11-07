@@ -46,11 +46,11 @@ static int runWithImports(const std::string& source, const std::string& filename
     auto tokens = lexer.tokenize();
     if (!lexer.getDiagnostics().empty()) return -1;
 
-    smc::ModuleSearchPaths paths{{STD_DIR}};
+    cmm::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::unique_ptr<DeclAST>> importedDecls;
     std::vector<std::string> errors;
-    smc::preloadImports(smc::collectImportSpecifiers(tokens), ".", paths, loaded,
+    cmm::preloadImports(cmm::collectImportSpecifiers(tokens), ".", paths, loaded,
                         importedDecls, errors);
     if (!errors.empty()) return -1;
 
@@ -62,7 +62,7 @@ static int runWithImports(const std::string& source, const std::string& filename
                                  std::make_move_iterator(importedDecls.begin()),
                                  std::make_move_iterator(importedDecls.end()));
     }
-    smc::processImports(*ast, ".", paths, loaded, errors);
+    cmm::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) return -1;
 
     SemanticAnalyzer analyzer;
@@ -97,7 +97,7 @@ TEST_F(StdSystemTest, FileReadWriteAppendRemove) {
     EXPECT_EQ(runWithImports(R"(
         import std.fs;
         int32 main() {
-            string_view path = "/tmp/smc_std_fs_e2e.txt";
+            string_view path = "/tmp/cmm_std_fs_e2e.txt";
             std::remove_file(path);
             if (!std::write_file(path, "hello")) return 1;
             if (!std::exists(path) || !std::is_file(path)) return 2;
@@ -111,7 +111,7 @@ TEST_F(StdSystemTest, FileReadWriteAppendRemove) {
             string_view sv2 = s;
             if (sv2 != "hello world") return 6;
             s.destroy();
-            string_view other = "/tmp/smc_std_fs_e2e_renamed.txt";
+            string_view other = "/tmp/cmm_std_fs_e2e_renamed.txt";
             std::remove_file(other);
             if (!std::rename_path(path, other)) return 7;
             if (std::exists(path) || !std::exists(other)) return 8;
@@ -146,12 +146,12 @@ TEST_F(StdSystemTest, TimeOsAndTesting) {
             if (std::unix_seconds() <= 0) return 1;
             if (std::unix_millis() <= 0) return 2;
             if (std::pid() <= 0) return 3;
-            if (!std::env_set("SMC_STD_E2E_VAR", "abc123")) return 5;
-            string v = std::env_get("SMC_STD_E2E_VAR");
+            if (!std::env_set("CMM_STD_E2E_VAR", "abc123")) return 5;
+            string v = std::env_get("CMM_STD_E2E_VAR");
             string_view vv = v;
             if (vv != "abc123") { v.destroy(); return 6; }
             v.destroy();
-            if (!std::env_unset("SMC_STD_E2E_VAR")) return 7;
+            if (!std::env_unset("CMM_STD_E2E_VAR")) return 7;
             std::sleep_ms(1);
             std::expect(true, "expect true");
             std::expect_eq_i64(42, 42, "eq");

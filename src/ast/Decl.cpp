@@ -954,7 +954,7 @@ static llvm::Constant* ctMakeStringConstant(CodegenContext& ctx,
     auto* data = llvm::ConstantDataArray::getString(ctx.getContext(), value, true);
     auto* gv = new llvm::GlobalVariable(module, arrTy, /*isConstant=*/true,
                                         llvm::GlobalVariable::PrivateLinkage, data,
-                                        "__smc_ct_str_" + std::to_string(g_ctTableId++));
+                                        "__cmm_ct_str_" + std::to_string(g_ctTableId++));
     return gv;
 }
 
@@ -1050,14 +1050,14 @@ static llvm::Constant* buildCtContainerConstant(CodegenContext& ctx, Type* type,
 
     if (c.kind == CtContainer::Vec || c.kind == CtContainer::Deque) {
         if (c.elementType) {
-            data = ctArrayConstant(ctx, c.elementType, storage, cap, "__smc_ct_data");
+            data = ctArrayConstant(ctx, c.elementType, storage, cap, "__cmm_ct_data");
         }
     } else {
         if (c.keyType) {
-            keys = ctArrayConstant(ctx, c.keyType, c.keys, cap, "__smc_ct_keys");
+            keys = ctArrayConstant(ctx, c.keyType, c.keys, cap, "__cmm_ct_keys");
         }
         if (c.kind == CtContainer::HashMap && c.valueType) {
-            values = ctArrayConstant(ctx, c.valueType, c.values, cap, "__smc_ct_values");
+            values = ctArrayConstant(ctx, c.valueType, c.values, cap, "__cmm_ct_values");
         }
         std::vector<CtValue> stateValues;
         stateValues.reserve(cap);
@@ -1066,7 +1066,7 @@ static llvm::Constant* buildCtContainerConstant(CodegenContext& ctx, Type* type,
             stateValues.push_back(ctInt(state, 8, true));
         }
         states = ctArrayConstant(ctx, TypeContext::instance().getUInt8(),
-                                 stateValues, cap, "__smc_ct_states");
+                                 stateValues, cap, "__cmm_ct_states");
         auto lookupFn = [&](const std::string& name) -> llvm::Constant* {
             if (name.empty()) return nullptr;
             return ctx.getModule().getFunction(name);
@@ -1150,7 +1150,7 @@ llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
                                  : nullptr;
         std::string fnName = fn ? fn->getName().str() : "global";
         static unsigned long staticLocalId = 0;
-        std::string globalName = "__smc_static_" + fnName + "_" + name + "_" +
+        std::string globalName = "__cmm_static_" + fnName + "_" + name + "_" +
                                  std::to_string(staticLocalId++);
         auto* global = new llvm::GlobalVariable(
             ctx.getModule(), llvmType, type->isConst,

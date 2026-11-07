@@ -32,7 +32,7 @@ std::set<std::string> functionNames(TranslationUnitAST& ast) {
 } // namespace
 
 TEST_F(StdPreludeTest, OnDiskPreludeParsesCleanly) {
-    Lexer lexer("<std.c>", smc::loadStdCPrelude({STD_DIR}));
+    Lexer lexer("<std.c>", cmm::loadStdCPrelude({STD_DIR}));
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
     auto ast = parser.parse();
@@ -47,12 +47,12 @@ TEST_F(StdPreludeTest, OnDiskPreludeParsesCleanly) {
 }
 
 TEST_F(StdPreludeTest, PrependDeclarationsPutsPreludeFirst) {
-    auto prelude = smc::parseStdCPrelude("int32 pre();", "pre");
-    auto target = smc::parseStdCPrelude("int32 usr();", "usr");
+    auto prelude = cmm::parseStdCPrelude("int32 pre();", "pre");
+    auto target = cmm::parseStdCPrelude("int32 usr();", "usr");
     ASSERT_NE(prelude, nullptr);
     ASSERT_NE(target, nullptr);
 
-    smc::prependDeclarations(*target, *prelude);
+    cmm::prependDeclarations(*target, *prelude);
 
     ASSERT_EQ(target->declarations.size(), 2u);
     auto* first = dynamic_cast<FunctionDeclAST*>(target->declarations[0].get());
@@ -65,11 +65,11 @@ TEST_F(StdPreludeTest, PrependDeclarationsPutsPreludeFirst) {
 
 TEST_F(StdPreludeTest, UserCodeCanResolvePreludeSymbols) {
     // abs() is not declared by the user; the prelude supplies it.
-    auto ast = smc::parseStdCPrelude("int32 main() { return abs(-5) - 5; }", "user");
+    auto ast = cmm::parseStdCPrelude("int32 main() { return abs(-5) - 5; }", "user");
     ASSERT_NE(ast, nullptr);
-    auto prelude = smc::parseStdCPrelude(smc::loadStdCPrelude({STD_DIR}), "<std.c>");
+    auto prelude = cmm::parseStdCPrelude(cmm::loadStdCPrelude({STD_DIR}), "<std.c>");
     ASSERT_NE(prelude, nullptr);
-    smc::prependDeclarations(*ast, *prelude);
+    cmm::prependDeclarations(*ast, *prelude);
 
     SemanticAnalyzer analyzer;
     analyzer.analyze(*ast);
@@ -78,12 +78,12 @@ TEST_F(StdPreludeTest, UserCodeCanResolvePreludeSymbols) {
 
 TEST_F(StdPreludeTest, UserCanRedeclarePreludeSymbol) {
     // A matching user prototype must not be reported as a redefinition.
-    auto ast = smc::parseStdCPrelude(
+    auto ast = cmm::parseStdCPrelude(
         "extern int32 abs(int32 x);\nint32 main() { return abs(-3) - 3; }", "user");
     ASSERT_NE(ast, nullptr);
-    auto prelude = smc::parseStdCPrelude(smc::loadStdCPrelude({STD_DIR}), "<std.c>");
+    auto prelude = cmm::parseStdCPrelude(cmm::loadStdCPrelude({STD_DIR}), "<std.c>");
     ASSERT_NE(prelude, nullptr);
-    smc::prependDeclarations(*ast, *prelude);
+    cmm::prependDeclarations(*ast, *prelude);
 
     SemanticAnalyzer analyzer;
     analyzer.analyze(*ast);
@@ -93,5 +93,5 @@ TEST_F(StdPreludeTest, UserCanRedeclarePreludeSymbol) {
 TEST_F(StdPreludeTest, MissingStdlibHasNoEmbeddedFallback) {
     // The standard library is data, not compiler-embedded source. A missing
     // installation must be reported rather than silently using a stale copy.
-    EXPECT_TRUE(smc::loadStdCPrelude({"/nonexistent/smc-stdlib"}).empty());
+    EXPECT_TRUE(cmm::loadStdCPrelude({"/nonexistent/cmm-stdlib"}).empty());
 }

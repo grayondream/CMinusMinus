@@ -44,13 +44,13 @@ protected:
 };
 
 static int runWithImports(const std::string& source, const std::string& filename) {
-    auto ast = smc::parseStdCPrelude(source, filename);
+    auto ast = cmm::parseStdCPrelude(source, filename);
     if (!ast) return -1;
 
-    smc::ModuleSearchPaths paths{{STD_DIR}};
+    cmm::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::string> errors;
-    smc::processImports(*ast, ".", paths, loaded, errors);
+    cmm::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) return -1;
 
     SemanticAnalyzer analyzer;
@@ -167,7 +167,7 @@ TEST_F(StdMathTest, SameNamedUserFunctionKeepsNamespaceSymbol) {
 // F2 (review): a global-scope extern (prelude `malloc`) is NOT reachable as
 // `std::malloc` — namespace isolation preserved (compile-time diagnostic).
 TEST_F(StdMathTest, GlobalExternNotReachableViaNamespace) {
-    auto ast = smc::parseStdCPrelude(R"(
+    auto ast = cmm::parseStdCPrelude(R"(
         import std.math;
         int32 main() {
             void* p = std::malloc(100);
@@ -176,10 +176,10 @@ TEST_F(StdMathTest, GlobalExternNotReachableViaNamespace) {
     )", "math_f2.cmm");
     ASSERT_NE(ast, nullptr);
 
-    smc::ModuleSearchPaths paths{{STD_DIR}};
+    cmm::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::string> errors;
-    smc::processImports(*ast, ".", paths, loaded, errors);
+    cmm::processImports(*ast, ".", paths, loaded, errors);
     ASSERT_TRUE(errors.empty());
 
     SemanticAnalyzer analyzer;

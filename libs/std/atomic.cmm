@@ -1,7 +1,7 @@
 // ===== std.atomic — C++-capability atomics without C++ syntax =====
 // Import with `import std.atomic;` and use `std::Atomic<T>` or the
 // per-order free functions. The compiler provides only the internal
-// `__smc_atomic_*` lowering; all API shape lives here.
+// `__cmm_atomic_*` lowering; all API shape lives here.
 module std.atomic;
 
 export namespace std {
@@ -20,198 +20,198 @@ enum MemoryOrder : int32 {
 // ----- load -----
 
 template<typename T> T atomic_load_relaxed(T* p) {
-    return __smc_atomic_load(p, std::MemoryOrderRelaxed);
+    return __cmm_atomic_load(p, std::MemoryOrderRelaxed);
 }
 template<typename T> T atomic_load_consume(T* p) {
-    return __smc_atomic_load(p, std::MemoryOrderConsume);
+    return __cmm_atomic_load(p, std::MemoryOrderConsume);
 }
 template<typename T> T atomic_load_acquire(T* p) {
-    return __smc_atomic_load(p, std::MemoryOrderAcquire);
+    return __cmm_atomic_load(p, std::MemoryOrderAcquire);
 }
 template<typename T> T atomic_load_seq_cst(T* p) {
-    return __smc_atomic_load(p, std::MemoryOrderSeqCst);
+    return __cmm_atomic_load(p, std::MemoryOrderSeqCst);
 }
 
 // ----- store -----
 
 template<typename T> void atomic_store_relaxed(T* p, T value) {
-    __smc_atomic_store(p, value, std::MemoryOrderRelaxed);
+    __cmm_atomic_store(p, value, std::MemoryOrderRelaxed);
 }
 template<typename T> void atomic_store_release(T* p, T value) {
-    __smc_atomic_store(p, value, std::MemoryOrderRelease);
+    __cmm_atomic_store(p, value, std::MemoryOrderRelease);
 }
 template<typename T> void atomic_store_seq_cst(T* p, T value) {
-    __smc_atomic_store(p, value, std::MemoryOrderSeqCst);
+    __cmm_atomic_store(p, value, std::MemoryOrderSeqCst);
 }
 
 // ----- exchange -----
 
 template<typename T> T atomic_exchange_relaxed(T* p, T value) {
-    return __smc_atomic_exchange(p, value, std::MemoryOrderRelaxed);
+    return __cmm_atomic_exchange(p, value, std::MemoryOrderRelaxed);
 }
 template<typename T> T atomic_exchange_acquire(T* p, T value) {
-    return __smc_atomic_exchange(p, value, std::MemoryOrderAcquire);
+    return __cmm_atomic_exchange(p, value, std::MemoryOrderAcquire);
 }
 template<typename T> T atomic_exchange_release(T* p, T value) {
-    return __smc_atomic_exchange(p, value, std::MemoryOrderRelease);
+    return __cmm_atomic_exchange(p, value, std::MemoryOrderRelease);
 }
 template<typename T> T atomic_exchange_acq_rel(T* p, T value) {
-    return __smc_atomic_exchange(p, value, std::MemoryOrderAcqRel);
+    return __cmm_atomic_exchange(p, value, std::MemoryOrderAcqRel);
 }
 template<typename T> T atomic_exchange_seq_cst(T* p, T value) {
-    return __smc_atomic_exchange(p, value, std::MemoryOrderSeqCst);
+    return __cmm_atomic_exchange(p, value, std::MemoryOrderSeqCst);
 }
 
 // ----- fetch_add -----
 
 template<typename T> T atomic_fetch_add_relaxed(T* p, isize delta) {
-    return __smc_atomic_fetch_add(p, delta, std::MemoryOrderRelaxed);
+    return __cmm_atomic_fetch_add(p, delta, std::MemoryOrderRelaxed);
 }
 template<typename T> T atomic_fetch_add_acquire(T* p, isize delta) {
-    return __smc_atomic_fetch_add(p, delta, std::MemoryOrderAcquire);
+    return __cmm_atomic_fetch_add(p, delta, std::MemoryOrderAcquire);
 }
 template<typename T> T atomic_fetch_add_release(T* p, isize delta) {
-    return __smc_atomic_fetch_add(p, delta, std::MemoryOrderRelease);
+    return __cmm_atomic_fetch_add(p, delta, std::MemoryOrderRelease);
 }
 template<typename T> T atomic_fetch_add_acq_rel(T* p, isize delta) {
-    return __smc_atomic_fetch_add(p, delta, std::MemoryOrderAcqRel);
+    return __cmm_atomic_fetch_add(p, delta, std::MemoryOrderAcqRel);
 }
 template<typename T> T atomic_fetch_add_seq_cst(T* p, isize delta) {
-    return __smc_atomic_fetch_add(p, delta, std::MemoryOrderSeqCst);
+    return __cmm_atomic_fetch_add(p, delta, std::MemoryOrderSeqCst);
 }
 
 // ----- fetch_sub -----
 
 template<typename T> T atomic_fetch_sub_relaxed(T* p, isize delta) {
-    return __smc_atomic_fetch_sub(p, delta, std::MemoryOrderRelaxed);
+    return __cmm_atomic_fetch_sub(p, delta, std::MemoryOrderRelaxed);
 }
 template<typename T> T atomic_fetch_sub_acquire(T* p, isize delta) {
-    return __smc_atomic_fetch_sub(p, delta, std::MemoryOrderAcquire);
+    return __cmm_atomic_fetch_sub(p, delta, std::MemoryOrderAcquire);
 }
 template<typename T> T atomic_fetch_sub_release(T* p, isize delta) {
-    return __smc_atomic_fetch_sub(p, delta, std::MemoryOrderRelease);
+    return __cmm_atomic_fetch_sub(p, delta, std::MemoryOrderRelease);
 }
 template<typename T> T atomic_fetch_sub_acq_rel(T* p, isize delta) {
-    return __smc_atomic_fetch_sub(p, delta, std::MemoryOrderAcqRel);
+    return __cmm_atomic_fetch_sub(p, delta, std::MemoryOrderAcqRel);
 }
 template<typename T> T atomic_fetch_sub_seq_cst(T* p, isize delta) {
-    return __smc_atomic_fetch_sub(p, delta, std::MemoryOrderSeqCst);
+    return __cmm_atomic_fetch_sub(p, delta, std::MemoryOrderSeqCst);
 }
 
 // ----- fetch_and -----
 
 template<typename T> T atomic_fetch_and_relaxed(T* p, T operand) {
-    return __smc_atomic_fetch_and(p, operand, std::MemoryOrderRelaxed);
+    return __cmm_atomic_fetch_and(p, operand, std::MemoryOrderRelaxed);
 }
 template<typename T> T atomic_fetch_and_acquire(T* p, T operand) {
-    return __smc_atomic_fetch_and(p, operand, std::MemoryOrderAcquire);
+    return __cmm_atomic_fetch_and(p, operand, std::MemoryOrderAcquire);
 }
 template<typename T> T atomic_fetch_and_release(T* p, T operand) {
-    return __smc_atomic_fetch_and(p, operand, std::MemoryOrderRelease);
+    return __cmm_atomic_fetch_and(p, operand, std::MemoryOrderRelease);
 }
 template<typename T> T atomic_fetch_and_acq_rel(T* p, T operand) {
-    return __smc_atomic_fetch_and(p, operand, std::MemoryOrderAcqRel);
+    return __cmm_atomic_fetch_and(p, operand, std::MemoryOrderAcqRel);
 }
 template<typename T> T atomic_fetch_and_seq_cst(T* p, T operand) {
-    return __smc_atomic_fetch_and(p, operand, std::MemoryOrderSeqCst);
+    return __cmm_atomic_fetch_and(p, operand, std::MemoryOrderSeqCst);
 }
 
 // ----- fetch_or -----
 
 template<typename T> T atomic_fetch_or_relaxed(T* p, T operand) {
-    return __smc_atomic_fetch_or(p, operand, std::MemoryOrderRelaxed);
+    return __cmm_atomic_fetch_or(p, operand, std::MemoryOrderRelaxed);
 }
 template<typename T> T atomic_fetch_or_acquire(T* p, T operand) {
-    return __smc_atomic_fetch_or(p, operand, std::MemoryOrderAcquire);
+    return __cmm_atomic_fetch_or(p, operand, std::MemoryOrderAcquire);
 }
 template<typename T> T atomic_fetch_or_release(T* p, T operand) {
-    return __smc_atomic_fetch_or(p, operand, std::MemoryOrderRelease);
+    return __cmm_atomic_fetch_or(p, operand, std::MemoryOrderRelease);
 }
 template<typename T> T atomic_fetch_or_acq_rel(T* p, T operand) {
-    return __smc_atomic_fetch_or(p, operand, std::MemoryOrderAcqRel);
+    return __cmm_atomic_fetch_or(p, operand, std::MemoryOrderAcqRel);
 }
 template<typename T> T atomic_fetch_or_seq_cst(T* p, T operand) {
-    return __smc_atomic_fetch_or(p, operand, std::MemoryOrderSeqCst);
+    return __cmm_atomic_fetch_or(p, operand, std::MemoryOrderSeqCst);
 }
 
 // ----- fetch_xor -----
 
 template<typename T> T atomic_fetch_xor_relaxed(T* p, T operand) {
-    return __smc_atomic_fetch_xor(p, operand, std::MemoryOrderRelaxed);
+    return __cmm_atomic_fetch_xor(p, operand, std::MemoryOrderRelaxed);
 }
 template<typename T> T atomic_fetch_xor_acquire(T* p, T operand) {
-    return __smc_atomic_fetch_xor(p, operand, std::MemoryOrderAcquire);
+    return __cmm_atomic_fetch_xor(p, operand, std::MemoryOrderAcquire);
 }
 template<typename T> T atomic_fetch_xor_release(T* p, T operand) {
-    return __smc_atomic_fetch_xor(p, operand, std::MemoryOrderRelease);
+    return __cmm_atomic_fetch_xor(p, operand, std::MemoryOrderRelease);
 }
 template<typename T> T atomic_fetch_xor_acq_rel(T* p, T operand) {
-    return __smc_atomic_fetch_xor(p, operand, std::MemoryOrderAcqRel);
+    return __cmm_atomic_fetch_xor(p, operand, std::MemoryOrderAcqRel);
 }
 template<typename T> T atomic_fetch_xor_seq_cst(T* p, T operand) {
-    return __smc_atomic_fetch_xor(p, operand, std::MemoryOrderSeqCst);
+    return __cmm_atomic_fetch_xor(p, operand, std::MemoryOrderSeqCst);
 }
 
 // ----- compare-exchanges: common success/failure pairs -----
 
 template<typename T> bool atomic_compare_exchange_weak_relaxed(
     T* p, T* expected, T desired) {
-    return __smc_atomic_compare_exchange_weak(
+    return __cmm_atomic_compare_exchange_weak(
         p, expected, desired,
         std::MemoryOrderRelaxed, std::MemoryOrderRelaxed);
 }
 template<typename T> bool atomic_compare_exchange_weak_acquire(
     T* p, T* expected, T desired) {
-    return __smc_atomic_compare_exchange_weak(
+    return __cmm_atomic_compare_exchange_weak(
         p, expected, desired,
         std::MemoryOrderAcquire, std::MemoryOrderAcquire);
 }
 template<typename T> bool atomic_compare_exchange_weak_release(
     T* p, T* expected, T desired) {
-    return __smc_atomic_compare_exchange_weak(
+    return __cmm_atomic_compare_exchange_weak(
         p, expected, desired,
         std::MemoryOrderRelease, std::MemoryOrderRelaxed);
 }
 template<typename T> bool atomic_compare_exchange_weak_acq_rel(
     T* p, T* expected, T desired) {
-    return __smc_atomic_compare_exchange_weak(
+    return __cmm_atomic_compare_exchange_weak(
         p, expected, desired,
         std::MemoryOrderAcqRel, std::MemoryOrderAcquire);
 }
 template<typename T> bool atomic_compare_exchange_weak_seq_cst(
     T* p, T* expected, T desired) {
-    return __smc_atomic_compare_exchange_weak(
+    return __cmm_atomic_compare_exchange_weak(
         p, expected, desired,
         std::MemoryOrderSeqCst, std::MemoryOrderSeqCst);
 }
 
 template<typename T> bool atomic_compare_exchange_strong_relaxed(
     T* p, T* expected, T desired) {
-    return __smc_atomic_compare_exchange_strong(
+    return __cmm_atomic_compare_exchange_strong(
         p, expected, desired,
         std::MemoryOrderRelaxed, std::MemoryOrderRelaxed);
 }
 template<typename T> bool atomic_compare_exchange_strong_acquire(
     T* p, T* expected, T desired) {
-    return __smc_atomic_compare_exchange_strong(
+    return __cmm_atomic_compare_exchange_strong(
         p, expected, desired,
         std::MemoryOrderAcquire, std::MemoryOrderAcquire);
 }
 template<typename T> bool atomic_compare_exchange_strong_release(
     T* p, T* expected, T desired) {
-    return __smc_atomic_compare_exchange_strong(
+    return __cmm_atomic_compare_exchange_strong(
         p, expected, desired,
         std::MemoryOrderRelease, std::MemoryOrderRelaxed);
 }
 template<typename T> bool atomic_compare_exchange_strong_acq_rel(
     T* p, T* expected, T desired) {
-    return __smc_atomic_compare_exchange_strong(
+    return __cmm_atomic_compare_exchange_strong(
         p, expected, desired,
         std::MemoryOrderAcqRel, std::MemoryOrderAcquire);
 }
 template<typename T> bool atomic_compare_exchange_strong_seq_cst(
     T* p, T* expected, T desired) {
-    return __smc_atomic_compare_exchange_strong(
+    return __cmm_atomic_compare_exchange_strong(
         p, expected, desired,
         std::MemoryOrderSeqCst, std::MemoryOrderSeqCst);
 }
@@ -221,28 +221,28 @@ template<typename T> bool atomic_compare_exchange_strong_seq_cst(
 // are not supported by the language yet).
 template<typename T, int32 Success, int32 Failure>
 bool atomic_compare_exchange_weak_explicit(T* p, T* expected, T desired) {
-    return __smc_atomic_compare_exchange_weak(
+    return __cmm_atomic_compare_exchange_weak(
         p, expected, desired, Success, Failure);
 }
 template<typename T, int32 Success, int32 Failure>
 bool atomic_compare_exchange_strong_explicit(T* p, T* expected, T desired) {
-    return __smc_atomic_compare_exchange_strong(
+    return __cmm_atomic_compare_exchange_strong(
         p, expected, desired, Success, Failure);
 }
 
 // ----- fences -----
 
 template<int32 Order> void atomic_thread_fence() {
-    __smc_atomic_thread_fence(Order);
+    __cmm_atomic_thread_fence(Order);
 }
 template<int32 Order> void atomic_signal_fence() {
-    __smc_atomic_signal_fence(Order);
+    __cmm_atomic_signal_fence(Order);
 }
 void atomic_thread_fence_seq_cst() {
-    __smc_atomic_thread_fence(std::MemoryOrderSeqCst);
+    __cmm_atomic_thread_fence(std::MemoryOrderSeqCst);
 }
 void atomic_signal_fence_seq_cst() {
-    __smc_atomic_signal_fence(std::MemoryOrderSeqCst);
+    __cmm_atomic_signal_fence(std::MemoryOrderSeqCst);
 }
 
 // ----- Atomic<T> -----

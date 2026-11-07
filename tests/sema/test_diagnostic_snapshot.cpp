@@ -2,7 +2,7 @@
 //
 // Each case formats the analyzer diagnostics for a source and compares them to
 // a golden file under tests/diagnostics/snapshots/<name>.txt. Regenerate with:
-//   SMC_UPDATE_SNAPSHOTS=1 ./build/bin/compiler_tests --gtest_filter='*Snapshot*'
+//   CMM_UPDATE_SNAPSHOTS=1 ./build/bin/compiler_tests --gtest_filter='*Snapshot*'
 #include <gtest/gtest.h>
 
 #include <cstdlib>
@@ -59,7 +59,7 @@ std::string analyzeDiagnostics(const std::string& source) {
 void expectSnapshot(const std::string& name, const std::string& actual) {
     fs::path file = fs::path(SNAPSHOT_DIR) / (name + ".txt");
 
-    if (std::getenv("SMC_UPDATE_SNAPSHOTS")) {
+    if (std::getenv("CMM_UPDATE_SNAPSHOTS")) {
         fs::create_directories(file.parent_path());
         std::ofstream out(file);
         out << actual;
@@ -67,7 +67,7 @@ void expectSnapshot(const std::string& name, const std::string& actual) {
     }
 
     ASSERT_TRUE(fs::exists(file)) << "missing snapshot: " << file
-                                  << " (regenerate with SMC_UPDATE_SNAPSHOTS=1)";
+                                  << " (regenerate with CMM_UPDATE_SNAPSHOTS=1)";
     std::ifstream in(file);
     std::string expected((std::istreambuf_iterator<char>(in)),
                          std::istreambuf_iterator<char>());

@@ -10,7 +10,7 @@
 #include <iterator>
 #include <sstream>
 
-namespace smc {
+namespace cmm {
 
 std::string loadStdCPrelude(const std::vector<std::string>& dirs) {
     for (const std::string& dir : dirs) {
@@ -67,4 +67,4 @@ void prependDeclarations(TranslationUnitAST& target, TranslationUnitAST& prelude
     prelude.declarations.clear();
 }
 
-} // namespace smc
+} // namespace cmm

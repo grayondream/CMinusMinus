@@ -68,11 +68,11 @@ static int runSource(const std::string& source, const std::string& filename) {
 // 含 std prelude（qsort 等 libc 绑定经 std.c）。CLI 自动注入，JIT harness 需
 // 手动前置（test_function_pointer 先例）。
 static int runWithPrelude(const std::string& source, const std::string& filename) {
-    auto ast = smc::parseStdCPrelude(source, filename);
+    auto ast = cmm::parseStdCPrelude(source, filename);
     if (!ast) return -1;
-    auto prelude = smc::parseStdCPrelude(smc::loadStdCPrelude({STD_DIR}), "<std.c>");
+    auto prelude = cmm::parseStdCPrelude(cmm::loadStdCPrelude({STD_DIR}), "<std.c>");
     if (!prelude) return -1;
-    smc::prependDeclarations(*ast, *prelude);
+    cmm::prependDeclarations(*ast, *prelude);
 
     SemanticAnalyzer analyzer;
     analyzer.analyze(*ast);

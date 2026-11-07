@@ -51,8 +51,8 @@ static void appendStdLibDirs(std::vector<std::string>& dirs) {
     auto exe = std::filesystem::read_symlink("/proc/self/exe", ec);
     if (!ec) {
         auto base = exe.parent_path();
-        add(base / ".." / "share" / "smc" / "libs");
-        add(base / ".." / "lib" / "smc" / "libs");
+        add(base / ".." / "share" / "cmm" / "libs");
+        add(base / ".." / "lib" / "cmm" / "libs");
     }
 }
 
@@ -288,7 +288,7 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
     // types are registered in TypeContext when `S s;` is parsed. Functions and
     // variables already worked through sema; types need this parse-time pass.
     std::set<std::string> loadedModules;
-    smc::ModuleSearchPaths paths;
+    cmm::ModuleSearchPaths paths;
     std::vector<std::unique_ptr<DeclAST>> importedDecls;
     std::vector<std::string> importErrors;
     std::string importerDir =
@@ -301,8 +301,8 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
             paths.dirs.push_back(dir);
         }
         appendStdLibDirs(paths.dirs);
-        auto specs = smc::collectImportSpecifiers(tokens);
-        smc::preloadImports(specs, importerDir, paths, loadedModules, importedDecls, importErrors);
+        auto specs = cmm::collectImportSpecifiers(tokens);
+        cmm::preloadImports(specs, importerDir, paths, loadedModules, importedDecls, importErrors);
         if (!importErrors.empty()) {
             for (const auto& err : importErrors) {
                 std::cerr << err << "\n";
@@ -360,7 +360,7 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
     }
     // Keep the existing post-parse path as a safety net; `loadedModules`
     // deduplicates anything preloaded above.
-    smc::processImports(*ast, importerDir, paths, loadedModules, importErrors);
+    cmm::processImports(*ast, importerDir, paths, loadedModules, importErrors);
     if (!importErrors.empty()) {
         for (const auto& err : importErrors) {
             std::cerr << err << "\n";
@@ -381,14 +381,14 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
             stdDirs.push_back(dir);
         }
         appendStdLibDirs(stdDirs);
-        std::string preludeSource = smc::loadStdCPrelude(stdDirs);
+        std::string preludeSource = cmm::loadStdCPrelude(stdDirs);
         if (preludeSource.empty()) {
             std::cerr << "error: standard library not found (expected <std>/c.cmm); "
                          "install the stdlib or pass -M, or use --no-prelude\n";
             return 1;
         }
-        if (auto prelude = smc::parseStdCPrelude(preludeSource, "<std.c>")) {
-            smc::prependDeclarations(*ast, *prelude);
+        if (auto prelude = cmm::parseStdCPrelude(preludeSource, "<std.c>")) {
+            cmm::prependDeclarations(*ast, *prelude);
         }
     }
 

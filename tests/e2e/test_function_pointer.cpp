@@ -40,17 +40,17 @@ protected:
 // Compile `source` together with the built-in std.c binding layer and run main
 // in-process. Returns main's value, or -1 on any failure.
 static int runWithPrelude(const std::string& source, const std::string& filename) {
-    auto ast = smc::parseStdCPrelude(source, filename);
+    auto ast = cmm::parseStdCPrelude(source, filename);
     if (!ast) {
         ADD_FAILURE() << "user parse failed";
         return -1;
     }
-    auto prelude = smc::parseStdCPrelude(smc::loadStdCPrelude({STD_DIR}), "<std.c>");
+    auto prelude = cmm::parseStdCPrelude(cmm::loadStdCPrelude({STD_DIR}), "<std.c>");
     if (!prelude) {
         ADD_FAILURE() << "prelude parse failed";
         return -1;
     }
-    smc::prependDeclarations(*ast, *prelude);
+    cmm::prependDeclarations(*ast, *prelude);
 
     SemanticAnalyzer analyzer;
     analyzer.analyze(*ast);

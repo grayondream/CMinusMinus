@@ -352,7 +352,7 @@ TEST_F(StringE2E, StrFromCRuntimeValidates) {
         }
     )", "str18.cmm");
     ASSERT_FALSE(ir.empty());
-    EXPECT_NE(ir.find("smc.utf8.validate"), std::string::npos);
+    EXPECT_NE(ir.find("cmm.utf8.validate"), std::string::npos);
 }
 
 TEST_F(StringE2E, StrFromCRuntimeValidExec) {

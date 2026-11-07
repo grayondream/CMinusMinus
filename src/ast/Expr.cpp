@@ -870,7 +870,7 @@ static llvm::AtomicOrdering toLLVMAtomicOrder(int order) {
     }
 }
 
-// Lower one internal __smc_atomic_* call. Sema has already checked arity,
+// Lower one internal __cmm_atomic_* call. Sema has already checked arity,
 // pointer/value types and memory-order constants.
 static llvm::Value* emitAtomicBuiltin(CodegenContext& ctx, CallExprAST& node) {
     auto& builder = ctx.getBuilder();
@@ -1210,7 +1210,7 @@ llvm::Value* CallExprAST::codegen(CodegenContext& ctx) {
     // P1-09 (FMT-07/12): builtin `format(fmt, args...) -> string`. Literal
     // formats assemble straight-line (global segments + snprintf/padded slot
     // buffers, one malloc, no realloc); dynamic formats render each argument
-    // with its default conversion into chunks and let smc.format.dyn scan.
+    // with its default conversion into chunks and let cmm.format.dyn scan.
     if (isFormat) {
         llvm::LLVMContext& c = ctx.getContext();
         auto& builder = ctx.getBuilder();
@@ -1381,7 +1381,7 @@ llvm::Value* CallExprAST::codegen(CodegenContext& ctx) {
         }
 
         // Dynamic format string: pre-render every argument with its default
-        // conversion, then let smc.format.dyn interleave (FMT-09 contract).
+        // conversion, then let cmm.format.dyn interleave (FMT-09 contract).
         llvm::Value* fmtV = args[0]->codegen(ctx);
         if (!fmtV) return nullptr;
         if (args[0]->isLValue) fmtV = readLValue(ctx, *args[0], fmtV);
@@ -3811,7 +3811,7 @@ static llvm::Value* codegenStrFromC(CodegenContext& ctx, CallExprAST& node) {
 // name); this materializes the runtime value: a {ptr,len} string_view for
 // name_of, or a {ptr,len} slice over a global constant array for the others.
 static llvm::Value* codegenReflection(CodegenContext& ctx, MethodCallExprAST& node) {
-    auto& registry = smc::ReflectionRegistry::instance();
+    auto& registry = cmm::ReflectionRegistry::instance();
     std::string key = typeToMangled(node.reflectType);
     llvm::LLVMContext& c = ctx.getContext();
     auto& builder = ctx.getBuilder();

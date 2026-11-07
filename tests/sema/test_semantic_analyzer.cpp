@@ -1332,11 +1332,11 @@ TEST(SliceSemTest, SMStaticNotInLayout) {
 }
 
 TEST(SliceSemTest, SMStaticCollisionRejected) {
-    // Review Focus 5: hand-written SMC_v collides with the desugared
-    // SMC::v — a redefinition error, never silent shadowing.
+    // Review Focus 5: hand-written CMM_v collides with the desugared
+    // CMM::v — a redefinition error, never silent shadowing.
     EXPECT_FALSE(analyzeOk(
-        "class SMC { public: static int32 v = 0; }; "
-        "int32 SMC_v = 1; int32 main() { return 0; }"));
+        "class CMM { public: static int32 v = 0; }; "
+        "int32 CMM_v = 1; int32 main() { return 0; }"));
 }
 
 TEST(SliceSemTest, SMStaticInNamespace) {

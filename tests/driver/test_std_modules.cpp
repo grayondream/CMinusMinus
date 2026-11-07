@@ -41,13 +41,13 @@ protected:
 };
 
 int runWithImports(const std::string& source, const std::string& filename) {
-    auto ast = smc::parseStdCPrelude(source, filename);
+    auto ast = cmm::parseStdCPrelude(source, filename);
     if (!ast) return -1;
 
-    smc::ModuleSearchPaths paths{{STD_DIR}};
+    cmm::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::string> errors;
-    smc::processImports(*ast, ".", paths, loaded, errors);
+    cmm::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) return -1;
 
     SemanticAnalyzer analyzer;
@@ -80,13 +80,13 @@ int runWithImports(const std::string& source, const std::string& filename) {
 // Used for the terminating builtins (`assert`/`panic`), which cannot be run
 // in-process because they abort.
 std::string compileToIR(const std::string& source, const std::string& filename) {
-    auto ast = smc::parseStdCPrelude(source, filename);
+    auto ast = cmm::parseStdCPrelude(source, filename);
     if (!ast) return "";
 
-    smc::ModuleSearchPaths paths{{STD_DIR}};
+    cmm::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::string> errors;
-    smc::processImports(*ast, ".", paths, loaded, errors);
+    cmm::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) return "";
 
     SemanticAnalyzer analyzer;
@@ -111,9 +111,9 @@ std::string compileToIR(const std::string& source, const std::string& filename) 
 } // namespace
 
 TEST_F(StdModulesTest, ResolvesModulesFromStdDir) {
-    smc::ModuleSearchPaths paths{{STD_DIR}};
-    EXPECT_FALSE(smc::resolveImport("std.core", paths).empty());
-    EXPECT_FALSE(smc::resolveImport("std.io", paths).empty());
+    cmm::ModuleSearchPaths paths{{STD_DIR}};
+    EXPECT_FALSE(cmm::resolveImport("std.core", paths).empty());
+    EXPECT_FALSE(cmm::resolveImport("std.io", paths).empty());
 }
 
 TEST_F(StdModulesTest, CoreMinMax) {
@@ -177,13 +177,13 @@ TEST_F(StdModulesTest, FileWriteReadRoundTrip) {
     EXPECT_EQ(runWithImports(
         "import std.io;\n"
         "int32 main() {\n"
-        "    void* f = std::file_open(\"/tmp/smc_std_io_test.txt\", \"w\");\n"
+        "    void* f = std::file_open(\"/tmp/cmm_std_io_test.txt\", \"w\");\n"
         "    if (f == null) return 1;\n"
         "    char out[4];\n"
         "    out[0] = 'a'; out[1] = 'b'; out[2] = 'c'; out[3] = 0;\n"
         "    std::file_write(f, out, 3);\n"
         "    std::file_close(f);\n"
-        "    void* g = std::file_open(\"/tmp/smc_std_io_test.txt\", \"r\");\n"
+        "    void* g = std::file_open(\"/tmp/cmm_std_io_test.txt\", \"r\");\n"
         "    if (g == null) return 2;\n"
         "    char in[8];\n"
         "    usize n = std::file_read(g, in, 3);\n"
@@ -199,11 +199,11 @@ TEST_F(StdModulesTest, IoReadWriteChar) {
     EXPECT_EQ(runWithImports(
         "import std.io;\n"
         "int32 main() {\n"
-        "    void* f = std::file_open(\"/tmp/smc_std_io_char.txt\", \"w\");\n"
+        "    void* f = std::file_open(\"/tmp/cmm_std_io_char.txt\", \"w\");\n"
         "    if (f == null) return 1;\n"
         "    std::file_write_char(f, 'Z');\n"
         "    std::file_close(f);\n"
-        "    void* g = std::file_open(\"/tmp/smc_std_io_char.txt\", \"r\");\n"
+        "    void* g = std::file_open(\"/tmp/cmm_std_io_char.txt\", \"r\");\n"
         "    if (g == null) return 2;\n"
         "    int32 c = std::file_read_char(g);\n"
         "    std::file_close(g);\n"

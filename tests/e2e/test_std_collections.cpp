@@ -48,11 +48,11 @@ static int runWithImports(const std::string& source, const std::string& filename
     auto tokens = lexer.tokenize();
     if (!lexer.getDiagnostics().empty()) return -1;
 
-    smc::ModuleSearchPaths paths{{STD_DIR}};
+    cmm::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::unique_ptr<DeclAST>> importedDecls;
     std::vector<std::string> errors;
-    smc::preloadImports(smc::collectImportSpecifiers(tokens), ".", paths, loaded,
+    cmm::preloadImports(cmm::collectImportSpecifiers(tokens), ".", paths, loaded,
                         importedDecls, errors);
     if (!errors.empty()) {
         for (auto& e : errors) std::cerr << "import error: " << e << "\n";
@@ -67,7 +67,7 @@ static int runWithImports(const std::string& source, const std::string& filename
                                  std::make_move_iterator(importedDecls.begin()),
                                  std::make_move_iterator(importedDecls.end()));
     }
-    smc::processImports(*ast, ".", paths, loaded, errors);
+    cmm::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) {
         for (auto& e : errors) std::cerr << "import error: " << e << "\n";
         return -1;

@@ -6,7 +6,7 @@
 
 class TranslationUnitAST;
 
-namespace smc {
+namespace cmm {
 
 // Built-in C binding layer (TODO MOD-09 / STD-23).
 //
@@ -32,4 +32,4 @@ std::unique_ptr<TranslationUnitAST> parseStdCPrelude(const std::string& source,
 // declared before any user declaration that may reference them.
 void prependDeclarations(TranslationUnitAST& target, TranslationUnitAST& prelude);
 
-} // namespace smc
+} // namespace cmm

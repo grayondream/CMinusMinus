@@ -10,7 +10,7 @@
 class TranslationUnitAST;
 class DeclAST;
 
-namespace smc {
+namespace cmm {
 
 // Ordered directories used to resolve `import` specifiers (P0-04 / MOD-04).
 struct ModuleSearchPaths {
@@ -60,4 +60,4 @@ void processImports(TranslationUnitAST& tu,
                     std::set<std::string>& loaded,
                     std::vector<std::string>& errors);
 
-} // namespace smc
+} // namespace cmm

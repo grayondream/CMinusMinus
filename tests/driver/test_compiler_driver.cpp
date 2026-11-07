@@ -243,7 +243,7 @@ TEST_F(CompilerDriverTest, RejectsLegacySmcInput) {
 
 TEST_F(CompilerDriverTest, LexSyntaxOnlySucceedsForValidSource) {
     const std::filesystem::path p =
-        writeTempSource("smc_driver_valid.cmm", "int32 main() { return 0; }\n");
+        writeTempSource("cmm_driver_valid.cmm", "int32 main() { return 0; }\n");
     const std::string path = p.string();
     const char* argv[] = {"cmm", "-fsyntax-only", path.c_str()};
     ASSERT_TRUE(driver.parseArguments(3, argv));
@@ -253,7 +253,7 @@ TEST_F(CompilerDriverTest, LexSyntaxOnlySucceedsForValidSource) {
 
 TEST_F(CompilerDriverTest, InvalidCharacterFailsCompilation) {
     // LEX-13: the driver must surface lexer diagnostics and fail the build.
-    const std::filesystem::path p = writeTempSource("smc_driver_badlex.cmm", "int32 @ x;\n");
+    const std::filesystem::path p = writeTempSource("cmm_driver_badlex.cmm", "int32 @ x;\n");
     const std::string path = p.string();
     const char* argv[] = {"cmm", "-fsyntax-only", path.c_str()};
     ASSERT_TRUE(driver.parseArguments(3, argv));
@@ -266,7 +266,7 @@ TEST_F(CompilerDriverTest, ThreadProgramLinksAndRuns) {
     // programs; this exercises the real compile+link path, not the JIT.
     const std::filesystem::path dir =
         std::filesystem::temp_directory_path() /
-        ("smc_thread_driver_" + std::to_string(::getpid()));
+        ("cmm_thread_driver_" + std::to_string(::getpid()));
     std::filesystem::create_directories(dir);
     const std::filesystem::path src = dir / "thread.cmm";
     const std::filesystem::path out = dir / "thread";

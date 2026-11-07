@@ -12,7 +12,7 @@
 
 namespace fs = std::filesystem;
 
-namespace smc {
+namespace cmm {
 
 namespace {
 
@@ -312,4 +312,4 @@ void processImports(TranslationUnitAST& tu,
     }
 }
 
-} // namespace smc
+} // namespace cmm

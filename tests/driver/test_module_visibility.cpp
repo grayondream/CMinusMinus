@@ -49,7 +49,7 @@ protected:
         // makes concurrent ModuleVisibility tests overwrite each other's
         // util.cmm. Isolate by pid so -j8 is deterministic.
         dir = fs::temp_directory_path() /
-              ("smc_module_visibility_test_" + std::to_string(::getpid()));
+              ("cmm_module_visibility_test_" + std::to_string(::getpid()));
         fs::remove_all(dir);
         fs::create_directories(dir);
     }
@@ -66,9 +66,9 @@ protected:
     // the spliced translation unit plus any loader errors.
     std::unique_ptr<TranslationUnitAST> loadMain(const std::string& mainSource,
                                                  std::vector<std::string>& errors) {
-        auto ast = smc::parseStdCPrelude(mainSource, (dir / "main.cmm").string());
+        auto ast = cmm::parseStdCPrelude(mainSource, (dir / "main.cmm").string());
         std::set<std::string> loaded;
-        smc::processImports(*ast, dir.string(), {}, loaded, errors);
+        cmm::processImports(*ast, dir.string(), {}, loaded, errors);
         return ast;
     }
 

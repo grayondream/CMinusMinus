@@ -154,18 +154,18 @@ static bool isSupportedAtomicIntegerScalar(Type* type) {
 }
 
 static AtomicBuiltin atomicBuiltinForName(const std::string& name) {
-    if (name == "__smc_atomic_load") return AtomicBuiltin::Load;
-    if (name == "__smc_atomic_store") return AtomicBuiltin::Store;
-    if (name == "__smc_atomic_exchange") return AtomicBuiltin::Exchange;
-    if (name == "__smc_atomic_compare_exchange_weak") return AtomicBuiltin::CompareExchangeWeak;
-    if (name == "__smc_atomic_compare_exchange_strong") return AtomicBuiltin::CompareExchangeStrong;
-    if (name == "__smc_atomic_fetch_add") return AtomicBuiltin::FetchAdd;
-    if (name == "__smc_atomic_fetch_sub") return AtomicBuiltin::FetchSub;
-    if (name == "__smc_atomic_fetch_and") return AtomicBuiltin::FetchAnd;
-    if (name == "__smc_atomic_fetch_or") return AtomicBuiltin::FetchOr;
-    if (name == "__smc_atomic_fetch_xor") return AtomicBuiltin::FetchXor;
-    if (name == "__smc_atomic_thread_fence") return AtomicBuiltin::ThreadFence;
-    if (name == "__smc_atomic_signal_fence") return AtomicBuiltin::SignalFence;
+    if (name == "__cmm_atomic_load") return AtomicBuiltin::Load;
+    if (name == "__cmm_atomic_store") return AtomicBuiltin::Store;
+    if (name == "__cmm_atomic_exchange") return AtomicBuiltin::Exchange;
+    if (name == "__cmm_atomic_compare_exchange_weak") return AtomicBuiltin::CompareExchangeWeak;
+    if (name == "__cmm_atomic_compare_exchange_strong") return AtomicBuiltin::CompareExchangeStrong;
+    if (name == "__cmm_atomic_fetch_add") return AtomicBuiltin::FetchAdd;
+    if (name == "__cmm_atomic_fetch_sub") return AtomicBuiltin::FetchSub;
+    if (name == "__cmm_atomic_fetch_and") return AtomicBuiltin::FetchAnd;
+    if (name == "__cmm_atomic_fetch_or") return AtomicBuiltin::FetchOr;
+    if (name == "__cmm_atomic_fetch_xor") return AtomicBuiltin::FetchXor;
+    if (name == "__cmm_atomic_thread_fence") return AtomicBuiltin::ThreadFence;
+    if (name == "__cmm_atomic_signal_fence") return AtomicBuiltin::SignalFence;
     return AtomicBuiltin::None;
 }
 
@@ -1509,7 +1509,7 @@ bool SemanticAnalyzer::analyzeReflectionCall(MethodCallExprAST& node) {
     }
 
     std::string key = typeToMangled(targetType);
-    auto& registry = smc::ReflectionRegistry::instance();
+    auto& registry = cmm::ReflectionRegistry::instance();
 
     if (node.methodName == "name_of") {
         registry.registerName(key, typeToString(targetType));
@@ -1533,7 +1533,7 @@ bool SemanticAnalyzer::analyzeReflectionCall(MethodCallExprAST& node) {
             return true;
         }
         auto fields = ctEval().evalReflectFields(targetType, node);
-        std::vector<smc::FieldInfoData> data;
+        std::vector<cmm::FieldInfoData> data;
         for (auto& f : fields) data.push_back({f.name, f.offset, f.size});
         registry.registerFields(key, std::move(data));
         node.reflectKind = MethodCallExprAST::ReflectionKind::FieldsOf;
@@ -1543,7 +1543,7 @@ bool SemanticAnalyzer::analyzeReflectionCall(MethodCallExprAST& node) {
     }
 
     if (node.methodName == "attributes_of") {
-        std::vector<smc::AttributeData> attrs;
+        std::vector<cmm::AttributeData> attrs;
         if (targetType->deprecated) attrs.push_back({"deprecated"});
         registry.registerAttributes(key, std::move(attrs));
         node.reflectKind = MethodCallExprAST::ReflectionKind::AttributesOf;
@@ -2905,7 +2905,7 @@ void SemanticAnalyzer::visit(StringExprAST& node) {
     // creation — invalid sequences are a compile error (E2015), never a
     // runtime surprise. TYP-05: prefixed literals store raw bytes (no
     // transcoding), so they are exempt from the UTF-8 check.
-    if (node.prefix == StringLiteralPrefix::None && !smc_utf8::valid(node.value)) {
+    if (node.prefix == StringLiteralPrefix::None && !cmm_utf8::valid(node.value)) {
         emitError(DiagnosticCode::SemInvalidUtf8,
                   "invalid UTF-8 sequence in string literal", node);
     }
@@ -3503,7 +3503,7 @@ bool SemanticAnalyzer::lowerToString(CallExprAST& node, size_t argIndex, Type* a
 
 // Internal atomic builtins are recognized only when the user has not declared
 // a function of the same name. They are deliberately unspellable in normal
-// source (double-underscore `__smc_` prefix) and exist for libs/std/atomic.cmm.
+// source (double-underscore `__cmm_` prefix) and exist for libs/std/atomic.cmm.
 bool SemanticAnalyzer::tryAnalyzeAtomicBuiltin(CallExprAST& node) {
     AtomicBuiltin kind = atomicBuiltinForName(node.callee);
     if (kind == AtomicBuiltin::None) return false;
@@ -4016,9 +4016,9 @@ bool SemanticAnalyzer::tryAnalyzeStrFromCCall(CallExprAST& node) {
         return true;
     }
     // P1-06 (FMT-04): a literal argument is validated statically (E2015);
-    // runtime buffers are validated at codegen (smc.utf8.validate + panic).
+    // runtime buffers are validated at codegen (cmm.utf8.validate + panic).
     if (auto* lit = dynamic_cast<StringExprAST*>(node.args[0].get())) {
-        if (!smc_utf8::valid(lit->value)) {
+        if (!cmm_utf8::valid(lit->value)) {
             emitError(DiagnosticCode::SemInvalidUtf8,
                       "invalid UTF-8 sequence passed to str_from_c", node);
             return true;

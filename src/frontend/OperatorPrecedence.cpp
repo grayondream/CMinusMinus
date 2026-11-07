@@ -1,6 +1,6 @@
 #include "frontend/OperatorPrecedence.h"
 
-namespace smc {
+namespace cmm {
 
 // Precedence levels (higher binds tighter), matching Parser::parseExpr and
 // docs/spec/grammar.ebnf §9. Level 3 (?:) and the comma are parsed specially
@@ -51,4 +51,4 @@ OperatorInfo getOperatorInfo(TokenType op) {
     }
 }
 
-} // namespace smc
+} // namespace cmm

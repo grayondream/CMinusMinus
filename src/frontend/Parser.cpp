@@ -455,14 +455,14 @@ std::optional<Token> Parser::match(TokenType type) {
 
 // ========== Precedence & Associativity ==========
 
-// Precedence/associativity live in the normative table (smc::getOperatorInfo),
+// Precedence/associativity live in the normative table (cmm::getOperatorInfo),
 // which mirrors docs/spec/grammar.ebnf §9 and is pinned by unit tests.
 int Parser::getPrecedence(TokenType op) const {
-    return smc::getOperatorInfo(op).precedence;
+    return cmm::getOperatorInfo(op).precedence;
 }
 
 bool Parser::isRightAssociative(TokenType op) const {
-    return smc::getOperatorInfo(op).rightAssociative;
+    return cmm::getOperatorInfo(op).rightAssociative;
 }
 
 // ========== Token to Operator Conversion ==========

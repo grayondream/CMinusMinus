@@ -75,7 +75,7 @@ TEST(SpecConformance, NormativeTableMatchesImplementation) {
     ASSERT_FALSE(grammar.empty());
 
     for (const auto& [token, symbol] : infixOperators()) {
-        ASSERT_NE(smc::getOperatorInfo(token).precedence, 0)
+        ASSERT_NE(cmm::getOperatorInfo(token).precedence, 0)
             << "implementation table missing operator " << symbol;
         EXPECT_NE(grammar.find(symbol), std::string::npos)
             << "grammar.ebnf does not mention operator " << symbol;

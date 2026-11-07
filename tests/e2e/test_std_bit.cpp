@@ -44,13 +44,13 @@ protected:
 };
 
 static int runWithImports(const std::string& source, const std::string& filename) {
-    auto ast = smc::parseStdCPrelude(source, filename);
+    auto ast = cmm::parseStdCPrelude(source, filename);
     if (!ast) return -1;
 
-    smc::ModuleSearchPaths paths{{STD_DIR}};
+    cmm::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::string> errors;
-    smc::processImports(*ast, ".", paths, loaded, errors);
+    cmm::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) return -1;
 
     SemanticAnalyzer analyzer;

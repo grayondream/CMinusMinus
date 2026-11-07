@@ -2,7 +2,7 @@
 
 #include "frontend/Token.h"
 
-namespace smc {
+namespace cmm {
 
 // Normative infix-operator precedence table.
 //
@@ -18,4 +18,4 @@ struct OperatorInfo {
 
 OperatorInfo getOperatorInfo(TokenType op);
 
-} // namespace smc
+} // namespace cmm
