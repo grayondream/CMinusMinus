@@ -17,7 +17,7 @@
 - TDD：每任务先写失败测试（RED）→ 实现（GREEN）→ 提交；commit message 引用 TODO ID（如 `feat(LEX-16): ...`）。
 - 语言源码内嵌字符串中类型名用定宽写法（int32/float64 等，无 `int`/`float`/`double`）。
 - 任务开始/结束按 AGENTS.md 更新 `TODO.md`/`Progress.md`（开始读、结束写）。
-- CLI 探测：`./build/bin/my_llvm_c -S file.c`（`-S` 输出到 stdout）；`-fsyntax-only` 已知不跑 sema，探测用 `-S`。
+- CLI 探测：`./build/bin/cmm -S file.c`（`-S` 输出到 stdout）；`-fsyntax-only` 已知不跑 sema，探测用 `-S`。
 - 诊断格式：`file:line:col: error[E####]: msg`；新 E 码须注册进 `src/sema/Diagnostic.cpp` 注册表。
 
 ## Review Focus
@@ -420,7 +420,7 @@ TEST_F(ParserTest, UnknownTypeNotDoubleReported) {
     // Box<int32, nosuchtype> b; → 模板实参失败只报一次（不额外报 unknown type nosuchtype）
 }
 ```
-诊断快照：`tests/diagnostics/snapshots/unknown_type_decl.txt`（若设施支持自动生成，用 `SMC_UPDATE_SNAPSHOTS=1`）。
+诊断快照：`tests/diagnostics/snapshots/unknown_type_decl.txt`（若设施支持自动生成，用 `CMM_UPDATE_SNAPSHOTS=1`）。
 
 - [ ] **Step 2: 运行确认 RED**
 

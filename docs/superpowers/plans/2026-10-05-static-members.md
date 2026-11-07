@@ -55,8 +55,8 @@ TEST(SliceSemTest, SMStaticMethodQualifiedCall) {
 
 TEST(SliceSemTest, SMStaticVarQualifiedAccess) {
     EXPECT_TRUE(analyzeOk(
-        "class SMCtr { public: static int32 count = 0; }; "
-        "int32 main() { SMCtr::count = 5; return SMCtr::count; }"));
+        "class Cmmtr { public: static int32 count = 0; }; "
+        "int32 main() { Cmmtr::count = 5; return Cmmtr::count; }"));
 }
 
 TEST(SliceSemTest, SMPrivateStaticExternalRejected) {
@@ -128,8 +128,8 @@ TEST(SliceSemTest, SMStaticCollisionRejected) {
     // Review Focus 5: hand-written Vec_count collides with the desugared
     // Vec::count — a redefinition error, never silent shadowing.
     EXPECT_FALSE(analyzeOk(
-        "class SMC { public: static int32 v = 0; }; "
-        "int32 SMC_v = 1; int32 main() { return 0; }"));
+        "class Cmm { public: static int32 v = 0; }; "
+        "int32 Cmm_v = 1; int32 main() { return 0; }"));
 }
 ```
 
@@ -203,15 +203,15 @@ git commit -m "feat(AGG-10): static 成员——parser 收集 + sema 去糖注�
 
 ```cpp
 // AGG-10: static members — global storage, class-qualified access.
-TEST_F(<既有类 fixture>, SMCounterPersist) {
+TEST_F(<既有类 fixture>, CmmounterPersist) {
     EXPECT_EQ(runSource(R"(
-        class SMCtr2 {
+        class Cmmtr2 {
             private: static int32 count = 0;
             public: static int32 next() { count = count + 1; return count; }
         };
         int32 main() {
-            SMCtr2::next(); SMCtr2::next();
-            return SMCtr2::next() == 3 ? 0 : 1;
+            Cmmtr2::next(); Cmmtr2::next();
+            return Cmmtr2::next() == 3 ? 0 : 1;
         }
     )", "test_sm_counter.c"), 0);
 }
@@ -256,7 +256,7 @@ TEST_F(<既有类 fixture>, SMStaticAfterForwardDecl) {
 
 - [ ] **Step 2: 跑测试验证失败形态**
 
-Run: `./bin/compiler_tests --gtest_filter='*SMCounterPersist*:*SMStaticFactory*:*SMPrivateInternalUse*:*SMStaticAfterForwardDecl*'`
+Run: `./bin/compiler_tests --gtest_filter='*CmmounterPersist*:*SMStaticFactory*:*SMPrivateInternalUse*:*SMStaticAfterForwardDecl*'`
 Expected: 预判 FAIL（staticMembers 未生成 → JIT/运行期符号缺失或值错误）。SMPrivateInternalUse 可能直接 PASS（sema 改名后 static 方法已随 methods 生成）——若 PASS 则记录偏差为"方法侧已通，仅变量侧缺口"，不改测试。
 
 - [ ] **Step 3: 实现 `StructDeclAST::codegen`**

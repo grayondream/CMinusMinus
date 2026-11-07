@@ -1,4 +1,4 @@
-# SafeModern C 1.0 — 关键字 / 保留字 / 运算符总表
+# Cmm 1.0 — 关键字 / 保留字 / 运算符总表
 
 > 对应 TODO：**INF-11**、**LEX-14**、**DEC-18**
 > 状态图例：`[impl]` 已实现（见 `src/frontend/Lexer.cpp` 关键字表）｜`[plan]` 规划新增｜`[removed]` 已移除（P0-01）｜`[remove]` 计划移除/废弃｜`[decide]` 待决策

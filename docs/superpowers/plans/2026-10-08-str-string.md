@@ -64,7 +64,7 @@ Expected: 前两个 FAIL（`Optional<` 才是类型，`optional` 是未知标识
 
 - [ ] **Step 3: 改 Parser**——`Parser.cpp` 两处条件与文案：`(name == "Optional" || name == "Result")` → `(name == "optional" || name == "result")`，`if (name == "Optional")` → `if (name == "optional")`；错误文案 `'Optional<T>'`→`'optional<T>'`、`'Result<T, E>'`→`'result<T, E>'`；注释同步。`grep -rn '"Optional"\|"Result"' src/` 确认无残留特判。
 
-- [ ] **Step 4: 迁移测试与文档**——用 grep 找到全部 `Optional<`/`Result<` 出现处（上述 Files 清单），SMC 源码片段与文档表格改为小写；`docs/spec/grammar.ebnf` 若有 Optional/Result 拼写一并改。
+- [ ] **Step 4: 迁移测试与文档**——用 grep 找到全部 `Optional<`/`Result<` 出现处（上述 Files 清单），Cmm 源码片段与文档表格改为小写；`docs/spec/grammar.ebnf` 若有 Optional/Result 拼写一并改。
 
 - [ ] **Step 5: 全量绿 + 提交**
 
@@ -165,13 +165,13 @@ git commit -m "feat(types): str/string builtin types; string literals are str (F
 - Modify: `src/ast/Expr.h`：`MethodCallExprAST`（:286）加 `enum class BuiltinMethod { None, StrLen, StrCharCount, StrCharAt, StrCharLenAt, StringNew, StringDestroy, StringAppend, StringPush, StringLen, StringCapacity };` 与成员 `BuiltinMethod builtinMethod = BuiltinMethod::None;`；`CallExprAST` 加 `bool isStrFromC = false;`
 - Modify: `src/sema/SemanticAnalyzer.cpp`：`visit(MethodCallExprAST)` :2382 顶部——(a) 静态构造：object 为 `VariableExprAST` 且 name=="string" 且 `lookup("string")` 非变量 → 仅接受 `new`，1 参、实参 kind==Str（char* 报错并提示 `str_from_c`）；置 `builtinMethod = StringNew`，`node.type = getStringType()`。(b) 实例方法：objType->kind==Str → 方法表（len/0参→usize；char_count/0→usize；char_at/1 参整数→char；char_len_at/1 参整数→usize；其他→E 风格错误 `no member named ... in str`）
 - Modify: `src/sema/SemanticAnalyzer.cpp`：`visit(CallExprAST)` 内建区（:1779 print 先例旁）加 `str_from_c`：1 参 `Pointer(char)`（const 可）；实参为 `StringExprAST` 字面量时静态 UTF-8 验证（复用 T5 `support/Utf8`，先占位声明）；`node.isStrFromC = true; node.type = getStrType()`
-- Modify: `src/codegen/CodegenContext.{h,cpp}`：合成 IR 辅助（缓存成员，internal linkage，跨模块单例名 `smc.utf8.char_count`/`smc.utf8.char_len_at`/`smc.utf8.validate`，签名 `i64(i8*,i64)`/`i64(i8*,i64)`/`i1(i8*,i64)`；循环体按 Global Constraints 的 RFC 3629 规则生成）
-- Modify: `src/ast/Expr.cpp`：`MethodCallExprAST::codegen` :668 顶部按 `builtinMethod` 分派（先于类方法逻辑）：StrLen→extractvalue 1；StrCharCount→call `smc.utf8.char_count`；StrCharAt→GEP+load i8；StrCharLenAt→call `smc.utf8.char_len_at`；对象实参按 rvalue/lvalue 统一 load 成 `"str"` value 后 extractvalue。`CallExprAST::codegen` 加 `isStrFromC` 分支：strlen（或 `smc.utf8.validate`+panic）→ 组装 `"str"` value
+- Modify: `src/codegen/CodegenContext.{h,cpp}`：合成 IR 辅助（缓存成员，internal linkage，跨模块单例名 `cmm.utf8.char_count`/`cmm.utf8.char_len_at`/`cmm.utf8.validate`，签名 `i64(i8*,i64)`/`i64(i8*,i64)`/`i1(i8*,i64)`；循环体按 Global Constraints 的 RFC 3629 规则生成）
+- Modify: `src/ast/Expr.cpp`：`MethodCallExprAST::codegen` :668 顶部按 `builtinMethod` 分派（先于类方法逻辑）：StrLen→extractvalue 1；StrCharCount→call `cmm.utf8.char_count`；StrCharAt→GEP+load i8；StrCharLenAt→call `cmm.utf8.char_len_at`；对象实参按 rvalue/lvalue 统一 load 成 `"str"` value 后 extractvalue。`CallExprAST::codegen` 加 `isStrFromC` 分支：strlen（或 `cmm.utf8.validate`+panic）→ 组装 `"str"` value
 - Test: `tests/e2e/test_string.cpp`、`tests/sema/test_semantic_analyzer.cpp`
 
 **Interfaces:**
 - Consumes: T2 的 `"str"` LLVM 形状、`getStrType()`。
-- Produces: `BuiltinMethod` 枚举（T4 用 `StringNew`/`StringDestroy`/`StringAppend`/`StringPush`/`StringLen`/`StringCapacity`）；`smc.utf8.*` 三个 IR 辅助（T4/T5 复用）；str 方法签名——`len()/char_count()/char_len_at(i) → usize`、`char_at(i) → char`。
+- Produces: `BuiltinMethod` 枚举（T4 用 `StringNew`/`StringDestroy`/`StringAppend`/`StringPush`/`StringLen`/`StringCapacity`）；`cmm.utf8.*` 三个 IR 辅助（T4/T5 复用）；str 方法签名——`len()/char_count()/char_len_at(i) → usize`、`char_at(i) → char`。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -194,7 +194,7 @@ TEST(StrFromC, RejectsStrArg)           // `str_from_c("a")` 传 str 非法？�
 
 - [ ] **Step 2: 跑测试确认失败**（`-R "StringE2E|StrMethods|StrFromC"`，全 FAIL）
 
-- [ ] **Step 3: 实现**——按 Files 清单。`smc.utf8.char_count` 循环 IR：`i=0; n=0; while(i<len){ i+=char_len_at(p,i); n+=1; } return n;`——`char_len_at` 本体：lead=p[i]；lead<0x80→1；0xC0~0xDF→2；0xE0~0xEF→3；0xF0~0xF7→4；否则 0。此处不验证续字节（视图已有 UTF-8 保证，§2.1 注：`char_len_at` 对无效序列返回 0 是防御，正常不可达）。
+- [ ] **Step 3: 实现**——按 Files 清单。`cmm.utf8.char_count` 循环 IR：`i=0; n=0; while(i<len){ i+=char_len_at(p,i); n+=1; } return n;`——`char_len_at` 本体：lead=p[i]；lead<0x80→1；0xC0~0xDF→2；0xE0~0xEF→3；0xF0~0xF7→4；否则 0。此处不验证续字节（视图已有 UTF-8 保证，§2.1 注：`char_len_at` 对无效序列返回 0 是防御，正常不可达）。
 
 - [ ] **Step 4: 跑绿**（新测试 → 全量 ctest）
 
@@ -216,7 +216,7 @@ git commit -m "feat(str): builtin methods (len/char_count/char_at/char_len_at) a
 - Test: `tests/e2e/test_string.cpp`、`tests/sema/test_semantic_analyzer.cpp`
 
 **Interfaces:**
-- Consumes: T3 的 `BuiltinMethod`、`smc.utf8.*` 不需要；`"string"` LLVM 形状（T2）。
+- Consumes: T3 的 `BuiltinMethod`、`cmm.utf8.*` 不需要；`"string"` LLVM 形状（T2）。
 - Produces: 完整方法语义（下表即 spec §2.2 的钉死版，供 T6/T7 引用）：
   - `string.new(s: str) → string`：`cap = max(s.len, 1)`；`ptr = malloc(cap)`；`memcpy(ptr, s.ptr, s.len)`；`len = s.len`
   - `destroy()`：`free(ptr)` 后三字段全部清零（ptr=null, len=0, cap=0）
@@ -265,16 +265,16 @@ git commit -m "feat(string): memory management and mutation methods (FMT-02, DEC
 ### Task 5: UTF-8 验证 + E2015
 
 **Files:**
-- Create: `src/support/Utf8.h` / `src/support/Utf8.cpp`——`namespace smc_utf8 { bool valid(std::string_view s); size_t seqLen(std::string_view s, size_t i); }`（sema 期用；规则 = Global Constraints；与 codegen 期 IR 辅助语义一致）
+- Create: `src/support/Utf8.h` / `src/support/Utf8.cpp`——`namespace cmm_utf8 { bool valid(std::string_view s); size_t seqLen(std::string_view s, size_t i); }`（sema 期用；规则 = Global Constraints；与 codegen 期 IR 辅助语义一致）
 - Modify: `src/sema/Diagnostic.h`：enum 加 `SemInvalidUtf8`（SemAnnotationArgNotConstant 后）
 - Modify: `src/sema/Diagnostic.cpp`：registry 加 `{DiagnosticCode::SemInvalidUtf8, "E2015", "invalid UTF-8 sequence"}`
-- Modify: `src/sema/SemanticAnalyzer.cpp`：`visit(StringExprAST)` 调 `smc_utf8::valid` → 失败 `emitError(DiagnosticCode::SemInvalidUtf8, ...)`（沿用该文件 emitError 带 code 的既有重载；若仅有 message 版则扩展）；Task 3 的 `str_from_c` 静态路径接 `smc_utf8::valid`；非字面量运行时路径接 `smc.utf8.validate`（validate=false → panic，复用 panic 内建 codegen 先例 Expr.cpp:515）
+- Modify: `src/sema/SemanticAnalyzer.cpp`：`visit(StringExprAST)` 调 `cmm_utf8::valid` → 失败 `emitError(DiagnosticCode::SemInvalidUtf8, ...)`（沿用该文件 emitError 带 code 的既有重载；若仅有 message 版则扩展）；Task 3 的 `str_from_c` 静态路径接 `cmm_utf8::valid`；非字面量运行时路径接 `cmm.utf8.validate`（validate=false → panic，复用 panic 内建 codegen 先例 Expr.cpp:515）
 - Modify: `src/CMakeLists.txt`：SOURCES 加 `support/Utf8.cpp`（若该表是显式清单而非 GLOB，核对后决定）
 - Test: `tests/sema/test_semantic_analyzer.cpp`、`tests/e2e/test_string.cpp`
 
 **Interfaces:**
 - Consumes: T3 的 `str_from_c` 骨架（此处补验证）。
-- Produces: E2015 诊断；`smc_utf8::valid`（T6 边界测试复用）。
+- Produces: E2015 诊断；`cmm_utf8::valid`（T6 边界测试复用）。
 
 - [ ] **Step 1: 写失败测试**
 

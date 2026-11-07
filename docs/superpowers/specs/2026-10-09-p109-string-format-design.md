@@ -12,7 +12,7 @@
 | D2 format 架构 | 内建 + 统一 spec 解析器（print/println/format 三者共享），非纯库 varargs |
 | D3 split 返回 | `[]str` 零拷贝视图切片 + `split_destroy` 显式释放（string.new/destroy 同一所有权模式） |
 | D4 可见性 | `format()` 与 print/println 同为无 import 内建；`import std.format` 只引入附加工具与文档（FMT-06 的「纳入体系」钉死为文档归属 + spec 共享，非门控） |
-| D5 分层 | str 内部字段不可从 .smc 触及 → 内建只加 `find`/`sub` 两原语，其余组合进 `.smc` |
+| D5 分层 | str 内部字段不可从 .cmm 触及 → 内建只加 `find`/`sub` 两原语，其余组合进 `.cmm` |
 
 ## §1 术语与不变式
 
@@ -85,9 +85,9 @@ sema 在 visit(CallExprAST) 的 format 内建分支：
 
 - `find`/`sub` 加进 `BuiltinMethod` 枚举，sema 方法表 + codegen 直落；`rfind` 随实现顺带（扫描方向不同，成本极低）。
 
-### §3.2 组合层 `libs/std/string.smc`
+### §3.2 组合层 `libs/std/string.cmm`
 
-`export namespace std { ... }`，自包含 libc extern（io.smc 先例）：
+`export namespace std { ... }`，自包含 libc extern（io.cmm 先例）：
 
 | API | 形式 | 说明 |
 |-----|------|------|
@@ -133,7 +133,7 @@ sema 在 visit(CallExprAST) 的 format 内建分支：
 
 ## §6 测试与验收
 
-- 分层：`tests/frontend/`（spec 解析单元：合法/非法 spec、转义）、`tests/sema/`（E2020~22、to_string 降级、user-defined 优先）、`tests/e2e/`（format 运行时值正确性、print 规格回归、string.smc 全 API、split/join/builder 所有权流）。
+- 分层：`tests/frontend/`（spec 解析单元：合法/非法 spec、转义）、`tests/sema/`（E2020~22、to_string 降级、user-defined 优先）、`tests/e2e/`（format 运行时值正确性、print 规格回归、string.cmm 全 API、split/join/builder 所有权流）。
 - 每任务 TDD（RED 亲见）+ 全量 ctest 绿 + 一提交；全局约束沿用 P1-06（git add 精确清单、`-f` 仅限 superpowers 文档）。
 - 验收基线：全量 1123+ 绿不回退；format/print 规格行为以 e2e 值断言钉死。
 
@@ -143,7 +143,7 @@ sema 在 visit(CallExprAST) 的 format 内建分支：
 - T2 format() 内建（sema 检查 E2020~22 + codegen snprintf 组装 + FMT-11）
 - T3 to_string 降级统一（FMT-10，print/format 共享路径核对）
 - T4 find/rfind/sub 内建原语
-- T5 string.smc 组合库（split/split_destroy/join/concat/repeat/trim*/contains/starts/ends/utf8_sub/StrBuilder）
+- T5 string.cmm 组合库（split/split_destroy/join/concat/repeat/trim*/contains/starts/ends/utf8_sub/StrBuilder）
 - T6 文档/诊断注册核对/TODO 收口（含 Progress.md）
 
 ## §8 明确不做（本轮边界）

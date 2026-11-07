@@ -443,7 +443,7 @@ git commit -m "feat(PAR-24): member-scope using aliases with access control"
 
 **Files:**
 - Modify: `docs/spec/grammar.ebnf`、`docs/spec/keywords.md`、`docs/spec/semantics.md`
-- Modify: `examples/all_features.c`
+- Modify: `examples/all_features.cmm`
 - Modify: `TODO.md`、`Progress.md`
 
 **Interfaces:**
@@ -467,7 +467,7 @@ git commit -m "feat(PAR-24): member-scope using aliases with access control"
 
 - [ ] **Step 3: 示例**
 
-`examples/all_features.c`：
+`examples/all_features.cmm`：
 - 文件作用域（`main` 之前）加：
 ```c
 class AliasHolder { public: using Value = int32; Value get() { return 7; } };
@@ -487,7 +487,7 @@ struct FwdNodeDef { int32 v; };
 
 - [ ] **Step 4: 验证示例与全量**
 
-Run: `cd build && cmake --build . -j$(nproc) && ./bin/my_llvm_c ../examples/all_features.c -o /tmp/all_features && /tmp/all_features | tail -1 && ctest -j8`
+Run: `cd build && cmake --build . -j$(nproc) && ./bin/cmm ../examples/all_features.cmm -o /tmp/all_features && /tmp/all_features | tail -1 && ctest -j8`
 Expected: `ALL FEATURES OK`；全量全绿。
 
 - [ ] **Step 5: TODO / Progress**
@@ -499,6 +499,6 @@ Expected: `ALL FEATURES OK`；全量全绿。
 - [ ] **Step 6: 提交**
 
 ```bash
-git add docs/spec examples/all_features.c TODO.md Progress.md
+git add docs/spec examples/all_features.cmm TODO.md Progress.md
 git commit -m "docs: document scoped using, forward identity, alias deref"
 ```

@@ -65,7 +65,7 @@ int32 read_char() {
 
 // Reads a decimal integer from stdin. Returns the parsed value, or 0 when the
 // input is not a valid integer (mirrors `atoi`; there is no separate error
-// channel because SafeModern C has no exceptions).
+// channel because Cmm has no exceptions).
 int32 read_int() {
     int32 v = 0;
     scanf("%d", &v);

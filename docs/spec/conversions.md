@@ -1,4 +1,4 @@
-# SafeModern C 1.0 — 类型转换规范
+# Cmm 1.0 — 类型转换规范
 
 > 对应 TODO：**TYP-19 ~ TYP-24**、**TYP-20**、**DEC-06/07**
 > 状态：`[impl]` 以 `src/sema/SemanticAnalyzer.cpp`、`src/ast/Symbol.cpp`、`src/codegen/CodegenContext.cpp` 为准；`[plan]` 为目标。

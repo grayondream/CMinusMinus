@@ -2,7 +2,7 @@
 
 ## Overview
 
-Add function overloading (multiple functions with the same name but different parameter types) and operator overloading (custom operators on structs/unions) to the My_LLVM_C compiler.
+Add function overloading (multiple functions with the same name but different parameter types) and operator overloading (custom operators on structs/unions) to the Cmm compiler.
 
 **Key decisions**:
 - Exact-match resolution (no implicit conversions)

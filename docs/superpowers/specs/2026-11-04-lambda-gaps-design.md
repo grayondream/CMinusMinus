@@ -30,7 +30,7 @@
 - `auto` 保存闭包并反复调用；立即调用 `[...](...){...}(args)`。
 - 按值捕获拷贝、按引用捕获写穿原对象。
 
-实测缺口（`build/bin/my_llvm_c`）：
+实测缺口（`build/bin/cmm`）：
 
 - `[&]` 解析直接报 “expected capture name or ']'”。
 - `[=, &b]` 解析报 “expected ']' after '='”。
@@ -198,7 +198,7 @@ struct Capture {
   - 方法内 `[this]` 直接写 `v`；`[=]` 自动捕获 `this`。
   - 嵌套 lambda `[=]` 正常；内层 `[]` 未捕获 → 编译错误而非崩溃。
   - 返回类型推断：`if` 内 return、`switch` 内 return、无 return → void。
-- 全量 `ctest --test-dir build -j8` 无回归；`examples/all_features.c` 仍输出 `ALL FEATURES OK`。
+- 全量 `ctest --test-dir build -j8` 无回归；`examples/all_features.cmm` 仍输出 `ALL FEATURES OK`。
 
 ## 8. 文档
 

@@ -36,7 +36,7 @@
 **Files:**
 - Modify: `src/frontend/Parser.cpp`（`isTypeStart`/`parseBaseType` 类型名特判，:1631 与 :1914 附近，`"str"` → `"string_view"`）
 - Modify: `src/sema/SemanticAnalyzer.cpp:1903,1910`（`"[]str value"` → `"[]string_view value"`）
-- Modify: `libs/std/string.smc`（`str` 类型用法 → `string_view`，约 12 处：contains/starts_with/ends_with/trim*/utf8_sub 签名与局部变量）
+- Modify: `libs/std/string.cmm`（`str` 类型用法 → `string_view`，约 12 处：contains/starts_with/ends_with/trim*/utf8_sub 签名与局部变量）
 - Modify: `tests/`（全库 `str` 类型用法 → `string_view`；`src/` 内 `TypeKind::Str`/`StrType`/`getStrType` 内部名不动）
 - Test: `tests/frontend/test_parser.cpp`、`tests/sema/test_semantic_analyzer.cpp`
 
@@ -47,9 +47,9 @@
 - [x] **Step 1: 写失败测试**（tests/frontend/test_parser.cpp 追加）：`string_view v = "hi";` 解析为 str 类型表达式；`str v2;` 报未知类型诊断（用既有未知类型机制，错误码取现有类型名诊断）。
 - [x] **Step 2: 跑测试确认 RED**。Run: `ctest --test-dir build -R "ParserTest|LexerTest" --output-on-failure`。Expected: 新测试失败；且全库既有 `str` 类型用法全部失败（未知类型）。
 - [x] **Step 3: Parser 改类型名**：`"str"` → `"string_view"`（:1631、:1914）；sema 文案 `[]str` → `[]string_view`（:1903、:1910）。
-- [x] **Step 4: 迁移**：`libs/std/string.smc` 与 `tests/` 全部 `str` 类型用法改 `string_view`（仅类型名；注释/字符串里的 `str` 字样不动）。Run: `grep -rn "\bstr\b" tests libs --include="*.cpp" --include="*.smc" | grep -v string_view` 逐个核对残留。
+- [x] **Step 4: 迁移**：`libs/std/string.cmm` 与 `tests/` 全部 `str` 类型用法改 `string_view`（仅类型名；注释/字符串里的 `str` 字样不动）。Run: `grep -rn "\bstr\b" tests libs --include="*.cpp" --include="*.cmm" | grep -v string_view` 逐个核对残留。
 - [x] **Step 5: 全量回归**。Run: `cmake --build build -j12 && ctest --test-dir build -j8`。Expected: 100% tests passed（1212 基线 + 新测试，2 个 GTEST_SKIP 不变）。
-- [x] **Step 6: 提交**。`git add src/frontend/Parser.cpp src/sema/SemanticAnalyzer.cpp libs/std/string.smc tests/` → `git commit -m "refactor(parser): rename str type to string_view (DEC-18)"`
+- [x] **Step 6: 提交**。`git add src/frontend/Parser.cpp src/sema/SemanticAnalyzer.cpp libs/std/string.cmm tests/` → `git commit -m "refactor(parser): rename str type to string_view (DEC-18)"`
 
 ### Task 2: string 拷贝/赋值 helper + 赋值语义（D7）
 

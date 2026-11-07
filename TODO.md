@@ -1,5 +1,7 @@
-# My_LLVM_C / SafeModern C 1.0 详细待办（工程 backlog）
+# Cmm 1.0 详细待办（工程 backlog）
 
+> **进度快照（2026-11-07，Cmm 硬改名）**：语言正式命名 **Cmm（C minus minus）**，源文件后缀 **`.cmm`**；CLI/CMake 项目/LLVM module/安装路径统一为 `cmm`/`Cmm`，C++ 内部 namespace 统一为 `cmm`，内部 builtin 与 helper 改为 `__cmm_*`/`cmm.*`。公开语言命名空间与标准库模块保持 `std`。旧扩展名输入/导入明确拒绝。全量 **1799/1799** 通过，`examples/all_features.cmm` 输出 `ALL FEATURES OK`。
+>
 > 本文件是唯一的需求与进度追踪清单。每条以稳定 ID 编号，便于 issue/commit 引用。
 >
 > - **状态**：`[ ]` 未开始 ｜ `[~]` 进行中 ｜ `[x]` 已完成 ｜ `[!]` 阻塞
@@ -13,7 +15,7 @@
 
 > **进度快照（2026-10-11）**：**P1-08 内联 `asm` 全链路完成**（LEX-12/PAR-16/CG-10/DEC-09 全部 `[x]`）。词法 `TOKEN_ASM`；解析 `AsmOperand`/`AsmExprAST` + `parseAsmExpr()`（至多三段操作数、模板/约束须字符串字面量）；sema 校验 outputs 左值标量/inputs 标量/约束非空（E2023）+ 模板 `%` 转义（E2024）+ 拒绝内存类输出（C1）；codegen 用 `llvm::InlineAsm`（AD_ATT）——实证 LLVM 21 与 GCC 三处差异并适配：输出映射 call 返回值（单值/struct 逐位回写）、`+r`→`=r`+尾部 tied 约束（编号对齐）、模板翻译 `$`→`$$`/`%%`→`%`/`%N`→`$N`；零输出 asm 隐式 volatile（GCC）。e2e 12 用例 LLJIT 执行通过。**顺带修复既有潜在 bug**：`CodegenContext::takeContext()` 把 context 移给 LLJIT（编译后销毁）后 IRBuilder 的 DebugLoc 悬垂 → 析构 `MetadataTracking::untrack` 间歇 UAF（gdb 关 ASLR 下 `InlineAsmE2E.ReadWriteOperand` 15/15 崩），修复为移出前清 DebugLoc，gdb 20/20 不崩；32 处测试 harness 共用该 API 一并受益。当前全量 **1212** 测试 0 失败（2 个既有 `GTEST_SKIP` 不变）。
 
-> **进度快照（2026-10-11，I4 收口）**：**string 拥有型值语义 + `string_view` 硬改名完成**（终审 I4「string 值拷贝别名双 free」根治）。`str` → `string_view`（DEC-18 硬改名先例，TypeKind::Str 内部名不动）；`string` 升级 C++ `std::string` 式拥有型值——赋值/初始化/传参/返回深拷贝活值、移动新鲜值（`string.new`/返回 string 的调用 rvalue）、赋值自动释放旧缓冲、聚合（struct 含 string 字段）字段感知拷贝；惰性合成 `smc.string.copy`/`smc.string.assign` helper。spec `docs/superpowers/specs/2026-10-11-string-ownership-design.md`，plan `docs/superpowers/plans/2026-10-11-string-ownership.md`。当前全量 **1229** 测试 0 失败（2 个既有 `GTEST_SKIP` 不变）。
+> **进度快照（2026-10-11，I4 收口）**：**string 拥有型值语义 + `string_view` 硬改名完成**（终审 I4「string 值拷贝别名双 free」根治）。`str` → `string_view`（DEC-18 硬改名先例，TypeKind::Str 内部名不动）；`string` 升级 C++ `std::string` 式拥有型值——赋值/初始化/传参/返回深拷贝活值、移动新鲜值（`string.new`/返回 string 的调用 rvalue）、赋值自动释放旧缓冲、聚合（struct 含 string 字段）字段感知拷贝；惰性合成 `cmm.string.copy`/`cmm.string.assign` helper。spec `docs/superpowers/specs/2026-10-11-string-ownership-design.md`，plan `docs/superpowers/plans/2026-10-11-string-ownership.md`。当前全量 **1229** 测试 0 失败（2 个既有 `GTEST_SKIP` 不变）。
 
 > **进度快照（2026-10-12，I4 收口轮 found issues）**：3 项遗留缺陷全部修复——①`true`/`false` 改为 bool 字面量（`BoolLiteralExprAST`，spec keywords.md「布尔字面量」，重载解析可匹配 bool 形参；`isIntegerType` 含 Bool 故算术/赋值零 ripple）；②未初始化 string/含 string 聚合局部零初始化（扩展 TYP-12 D3 slice 先例，D7 fresh 赋值 free 守卫不再见野指针）；③聚合内数组/optional/result 含 string 的字段感知拷贝（`aggregateHasStringField`/`emitAggregateStringCopy` 扩展 Array/Optional/Result）。当前全量 **1236** 测试 0 失败（2 个既有 `GTEST_SKIP` 不变）。新遗留：optional/result 嵌套 brace-init codegen 缺陷、optional/result valid→invalid 赋值旧缓冲泄漏（边缘）。
 
@@ -29,18 +31,18 @@
 
 > **进度快照（2026-10-17，P1-07 lambda 完成）**：**lambda 表达式全链路完成**（PAR-11/CG-11/DEC-10 `[x]`，plan `docs/superpowers/plans/2026-10-17-lambda.md`）。语法 `[captures](params) -> Ret { body }`（`[]`/`[=]`/`[a,&b]`，返回类型显式或推断，表达式起始 `[` 无歧义识别）；**无捕获 → 函数指针**（零开销：可赋 `int32 (*)(int32)`、立即调用、qsort 回调）；**有捕获 → 匿名闭包 struct + 调用函数** `__lambda_<N>__call(Closure*, params...)`（按值捕获拷贝、按引用捕获写穿原对象；语言无 `auto` → 闭包不可命名，实际形态为**立即调用** DEC 裁决）；`[=]` 语句感知捕获扫描。当前全量 **1351** 测试 0 失败（2 个既有 `GTEST_SKIP` 不变）。**P1-07 全部完成**。下一里程碑：P1-09 剩余（std.mem/math/collections）与 P2。
 
-> **进度快照（2026-10-17，P1-09 std.mem 纯函数层完成）**：**std.mem（STD-05 范围 a）完成**（spec `docs/superpowers/specs/2026-10-17-stdmem-design.md`，plan `docs/superpowers/plans/2026-10-17-stdmem.md`）。`libs/std/mem.smc`：`alloc`（malloc）/`alloc_zeroed`（calloc）/`resize`（realloc）/`dealloc`（free）/`align_up`/`align_down`/`is_aligned`（2 的幂位运算）/`aligned_alloc`（posix_memalign 包装，失败 null）/`aligned_free`；`std.c` 与内嵌兜底补 `posix_memalign`。**探查实证**：函数可跨模块导出，但 struct/class/template 不可（parse 期类型名注册先于 import）——Allocator/Arena/Pool 接口草案挂账（stdlib.md §11.1），待语言层「模块导出类型」修复后实现；std.collections（STD-06~08）同受此堵。当前全量 **1358** 测试 0 失败（2 个既有 `GTEST_SKIP` 不变）。P1-09 剩余：std.math/std.bit（STD-13/14）、std.collections（STD-06~08，阻塞于模块导出类型）。
+> **进度快照（2026-10-17，P1-09 std.mem 纯函数层完成）**：**std.mem（STD-05 范围 a）完成**（spec `docs/superpowers/specs/2026-10-17-stdmem-design.md`，plan `docs/superpowers/plans/2026-10-17-stdmem.md`）。`libs/std/mem.cmm`：`alloc`（malloc）/`alloc_zeroed`（calloc）/`resize`（realloc）/`dealloc`（free）/`align_up`/`align_down`/`is_aligned`（2 的幂位运算）/`aligned_alloc`（posix_memalign 包装，失败 null）/`aligned_free`；`std.c` 与内嵌兜底补 `posix_memalign`。**探查实证**：函数可跨模块导出，但 struct/class/template 不可（parse 期类型名注册先于 import）——Allocator/Arena/Pool 接口草案挂账（stdlib.md §11.1），待语言层「模块导出类型」修复后实现；std.collections（STD-06~08）同受此堵。当前全量 **1358** 测试 0 失败（2 个既有 `GTEST_SKIP` 不变）。P1-09 剩余：std.math/std.bit（STD-13/14）、std.collections（STD-06~08，阻塞于模块导出类型）。
 
-> **进度快照（2026-10-17，P1-09 std.math/std.bit 完成）**：**std.math + std.bit 完成**（STD-13/14 `[x]`，spec/plan `docs/superpowers/specs|plans/2026-10-17-stdmath-bit*`）。`libs/std/bit.smc` 纯语言位工具：SWAR popcount（LLVM 可折叠单条 popcnt）、二分 clz/循环 ctz（对 0 返回位宽冻结）、rotl/rotr（n 按位宽取模）、reinterpret_cast bitcast 包装（7 e2e）。`libs/std/math.smc`：18 个 libc 绑定（sqrt…sinf，`-lm` 链接）+ `constexpr PI/E` + 位级 isnan/isinf/is_finite（IEEE754 纯语言，运行时构造掩码绕开超 int64 常量折叠限制）（5 e2e）。**顺带修复语言层缺口**：namespace 内 C-linkage extern 函数被 scopedName 前缀化 → 符号 `std_sqrt_float64` 而非 libm 裸名 `sqrt`（JIT 解析失败）；修复——`visit(FunctionDeclAST)` 对 C 名跳过前缀、`namespaceCandidates` 限定名回退裸 C 名（SemanticAnalyzer.cpp）。当前全量 **1370** 测试 0 失败（2 个既有 `GTEST_SKIP` 不变）。P1-09 剩余：仅 std.collections（STD-06~08，阻塞于模块导出类型）。
+> **进度快照（2026-10-17，P1-09 std.math/std.bit 完成）**：**std.math + std.bit 完成**（STD-13/14 `[x]`，spec/plan `docs/superpowers/specs|plans/2026-10-17-stdmath-bit*`）。`libs/std/bit.cmm` 纯语言位工具：SWAR popcount（LLVM 可折叠单条 popcnt）、二分 clz/循环 ctz（对 0 返回位宽冻结）、rotl/rotr（n 按位宽取模）、reinterpret_cast bitcast 包装（7 e2e）。`libs/std/math.cmm`：18 个 libc 绑定（sqrt…sinf，`-lm` 链接）+ `constexpr PI/E` + 位级 isnan/isinf/is_finite（IEEE754 纯语言，运行时构造掩码绕开超 int64 常量折叠限制）（5 e2e）。**顺带修复语言层缺口**：namespace 内 C-linkage extern 函数被 scopedName 前缀化 → 符号 `std_sqrt_float64` 而非 libm 裸名 `sqrt`（JIT 解析失败）；修复——`visit(FunctionDeclAST)` 对 C 名跳过前缀、`namespaceCandidates` 限定名回退裸 C 名（SemanticAnalyzer.cpp）。当前全量 **1370** 测试 0 失败（2 个既有 `GTEST_SKIP` 不变）。P1-09 剩余：仅 std.collections（STD-06~08，阻塞于模块导出类型）。
 
 > **进度快照（2026-10-20，语法缺口第二轮收口）**：**10 项语法特性完成**（spec/plan `docs/superpowers/{specs,plans}/2026-10-20-syntax-gaps-r2*`）：`f16/f32/f64/f128` 类型关键字（TYP-04）、指针后缀 `restrict`（PAR-06）、`u8/u16/u32` 前缀字面量（TYP-05）、C99 复合字面量与 slice 字面量（PAR-08）、类外方法定义（PAR-03）、一元/二元/`[]`/`()` 运算符重载调用点收敛（SEM-17）、非类型模板参数作值（GEN-02）。虚函数（INH-07）与可变参数模板（GEN-10）经用户确认维持 Non-goal。当前全量 **1470** 测试 0 失败。
 
 > **进度快照（2026-10-22，顶层用户类型声明修复）**：**顶层声明识别用户定义类型**（PAR-05 补丁）。根因：struct/class/union 解析器会消费声明末尾的 `;`，而调用方仍把下一个 token 当作本声明的 attached declarator——`struct S { ... }; S g;` 把下一条声明的 `S` 当成变量名。修复：按记录声明的三种形态分派（`;`=完整声明 / `}`=定义+声明符 / 无 body=前向声明或类型引用），仅 `}` 形态允许 attached declarator；前向声明显式注册占位类型。现在 `S g;`、`S* p;`、`V f()`、`struct V f()`、`class C f()`、`B<int32> g;`、`using W = S;`、`V operator+(...)` 均可用（11 个新 e2e）。当前全量 **1493** 测试 0 失败。新增已知缺口：①`f().field`（struct 返回值成员访问）生成非法 GEP（需 rvalue 临时对象）；②`struct S; S* p; struct S { ... }; p->x` 因前向占位与定义未合并而报无成员。`typedef` 暂保留（用户裁定先不删）。
 
-> **进度快照（2026-10-23，using 别名收口 / PAR-24）**：**删除 `typedef` 与 `type`，`using` 成为唯一类型别名形式**（spec/plan `docs/superpowers/specs|plans/2026-10-23-using-alias*`）。`using` RHS 升级为完整 type-id：固定数组（多维）、抽象函数指针、切片/optional/模板实例、内联/命名聚合；内联 enum 枚举量在别名作用域可见；`deprecated`/`repr` 注解语义对齐。`typedef`/`type` 在顶层、namespace、块、聚合成员体统一硬错误并提示改写；删除 `TypedefDeclAST`/`TypeDeclAST`，保留内部 `TypedefType`。迁移 16 个测试文件与 `examples/all_features.c`。当前全量 **1512** 测试 0 失败（2 个既有 `GTEST_SKIP` 不变）。DEC-16/PAR-24 关闭；块内/类内 `using`、前向别名身份、`*p` 解引用既有缺陷仍挂账。
+> **进度快照（2026-10-23，using 别名收口 / PAR-24）**：**删除 `typedef` 与 `type`，`using` 成为唯一类型别名形式**（spec/plan `docs/superpowers/specs|plans/2026-10-23-using-alias*`）。`using` RHS 升级为完整 type-id：固定数组（多维）、抽象函数指针、切片/optional/模板实例、内联/命名聚合；内联 enum 枚举量在别名作用域可见；`deprecated`/`repr` 注解语义对齐。`typedef`/`type` 在顶层、namespace、块、聚合成员体统一硬错误并提示改写；删除 `TypedefDeclAST`/`TypeDeclAST`，保留内部 `TypedefType`。迁移 16 个测试文件与 `examples/all_features.cmm`。当前全量 **1512** 测试 0 失败（2 个既有 `GTEST_SKIP` 不变）。DEC-16/PAR-24 关闭；块内/类内 `using`、前向别名身份、`*p` 解引用既有缺陷仍挂账。
 
 > **进度快照（2026-10-24，类型解析三缺口收口）**：**块/成员体 `using`、前向类型身份、别名指针解引用完成**（spec/plan `docs/superpowers/{specs,plans}/2026-10-24-type-resolution-gaps*`）。块内 `using` 走 TypeContext 局部别名栈（词法作用域、可遮蔽、块尾失效）；class/struct/union 成员别名以扁平键 + `C::T` 暴露，class 受 E2009 访问控制；struct/union 前向占位与定义合并，`using N = struct Node;` / `struct S; S* p;` 后 `p->x` 可用；`*p` 穿透任意层指针别名。全量 **1534** 测试 0 失败。MOD-03 关闭；剩余：前向类型按值使用诊断、单语句体 `using` 作用域、成员别名继承。
-> **进度快照（2026-10-25，full_feature 验收示例）**：新增 `examples/full_feature.c`（25 节），单文件覆盖 module/import/export、lambda、运算符重载、块/成员 `using`、前向类型与指针别名解引用、u8/u16/u32/raw/multiline、thread_local/static/atomic/volatile/inline 等；编译运行输出 `FULL FEATURE OK`。全量测试仍 **1535/1535**。
+> **进度快照（2026-10-25，full_feature 验收示例）**：新增 `examples/full_feature.cmm`（25 节），单文件覆盖 module/import/export、lambda、运算符重载、块/成员 `using`、前向类型与指针别名解引用、u8/u16/u32/raw/multiline、thread_local/static/atomic/volatile/inline 等；编译运行输出 `FULL FEATURE OK`。全量测试仍 **1535/1535**。
 > **进度快照（2026-10-25，比较结果作 bool 实参）**：`conversionRank` 增加整数 → `bool`（rank 2），比较表达式（`int32`）可直接传 `bool` 形参，同时保留 `int32` 重载优先；`bool → 整数` 仍按拓宽。全量 **1537/1537**；两个示例的 `check` 已改回 `bool` 形参并运行通过。
 > **进度快照（2026-10-26，语法缺口 1–6 收口）**：先修 CG-05（rvalue 聚合成员按值读取，`make().x` 不再产生非法 GEP）与 MOD-03（前向类型按值使用报 incomplete；指针仍允许）。随后：①模块导入改为 parse 前预载，`export struct/class/using/template` 可用；②强制 `module` 首部/唯一/文件名匹配；③函数内 `static`/`thread_local` 静态变量与局部 `struct/union/enum` 定义；④通用括号声明符（函数返回函数指针、函数类型别名、指向数组的指针、函数指针数组）+ 表达式 callee 间接调用；⑤自引用类指针字段爆栈修复、类内/类外成员运算符重载调用；⑥函数体 `compile_time.if` 与嵌套 `offsetof(T, a.b)`/`offsetof(T, arr[i])`。全量 **1559/1559**；两个示例仍输出 `ALL FEATURES OK` / `FULL FEATURE OK`。提交线：a805740、53768f1、3d88e2b、c2d509b、4d77701、8dd88ca、2597f62。
 > **进度快照（2026-10-26，基础 C 声明/语句收口）**：补齐 9 项基础语法：空语句 `;`；聚合成员多声明符 `struct S { int32 a, b; }`；聚合成员直接函数指针字段与指向数组的指针字段；`sizeof`/`alignof` 的完整 type-id（数组/抽象函数指针）；后置限定符 `int32 const`；块内 `extern`；record 定义后的 attached 指针/函数声明符；多声明符中的复杂后继（`int32 (*f)(int), (*g)(int);`）。顺带把带方法的 `struct` 正确路由为 class 类型，并修复布局注解对 `ClassType` 的 UB 强转。全量 **1572/1572**；两个示例仍输出 OK。提交线：0bc3be2、88fca71、b07dc1f、42d3ed1、dfcb9cc、607ff32、dad042d、31a68fb、27a1242。
@@ -48,12 +50,12 @@
 > **进度快照（2026-10-31，P1/P2 语法缺口收口）**：SG-01 ~ SG-07 已全部修复并新增 7 个 `SyntaxGapsE2E` 回归测试；全量 **1611/1611** 通过（2 个既有 `GTEST_SKIP`）。剩余为需要产品裁决的 SG-08 ~ SG-11、SG-20 ~ SG-23，以及非语法的 SG-B01 ~ SG-B06。
 > **进度快照（2026-11-01，compile_time 开发体验）**：CT-15 ~ CT-21 完成——源码位置/诊断断言、类型谓词与数值极限、字段/注解/枚举/类/继承标量查询、目标/构建扩展、`format/to_string`、类型值与模板内省、`compile_time.repeat`；全部标量查询无运行时 IR，`LayoutBuilder` 按 `Type*` 缓存。全量 **1658/1658** 通过（2 个既有 `GTEST_SKIP`）。CT-22（`for_fields`/`for_enum_values`）因需 AST 克隆/codegen 特化留待单独设计。
 > **进度快照（2026-11-01，标准库补全 + mimalloc）**：**std.mem 切换 mimalloc**（静态链接、`MI_OVERRIDE=ON`、JIT/生成程序同后端），新增 Allocator/Arena/Pool 与字节操作；**新增 std.collections**（Vec/Deque/HashMap/HashSet，显式 init/destroy + 回调哈希/相等）及 std.hash/std.sort/std.parse/std.ascii/std.path/std.fs/std.time/std.os/std.testing；`std.c` 不再内嵌，缺失标准库显式报错；驱动补齐 `-l/-L/-lm` 与 mimalloc 链接；`std.io::read_line` 增加 `cap<=0` 守卫。顺带修复模板 `true/false` 克隆丢失、命名空间模板限定名查找、`string` 非 NUL 终止三个阻塞缺陷。全量 **1679/1679** 通过（2 个既有 `GTEST_SKIP`）。
-> **进度快照（2026-11-01，示例收敛）**：删除重复的 `examples/full_feature.c`，仅保留 `examples/all_features.c` 作为唯一验收示例；两者内容高度重叠，维护成本大于收益。全量测试仍 **1679/1679**（2 个既有 `GTEST_SKIP`）。
+> **进度快照（2026-11-01，示例收敛）**：删除重复的 `examples/full_feature.cmm`，仅保留 `examples/all_features.cmm` 作为唯一验收示例；两者内容高度重叠，维护成本大于收益。全量测试仍 **1679/1679**（2 个既有 `GTEST_SKIP`）。
 > **进度快照（2026-11-01，移除 libsafec）**：删除 `src/libsafec/` 与 `tests/libsafec/`，移除 CMake 的 `safec` 目标及其测试链接。该实现只被自身测试引用，编译器/JIT/`libs/std` 均不依赖，且与 mimalloc + `std.mem` 重复。全量 **1657/1657** 通过（2 个既有 `GTEST_SKIP`）。
-> **进度快照（2026-11-01，容器文件拆分）**：`std.collections` 按容器拆为 `libs/std/collections/{vec,deque,hashmap,hashset}.smc` 独立模块（`std.collections.vec` 等可直接导入）；`libs/std/collections.smc` 保留为汇总入口，既有 `import std.collections;` 用法不变。新增直接导入测试。全量 **1658/1658** 通过（2 个既有 `GTEST_SKIP`）。**后续拍平**：文件移至 `libs/std/{vec,deque,hashmap,hashset}.smc`，模块名改为 `std.vec` 等，汇总模块移除。
+> **进度快照（2026-11-01，容器文件拆分）**：`std.collections` 按容器拆为 `libs/std/collections/{vec,deque,hashmap,hashset}.cmm` 独立模块（`std.collections.vec` 等可直接导入）；`libs/std/collections.cmm` 保留为汇总入口，既有 `import std.collections;` 用法不变。新增直接导入测试。全量 **1658/1658** 通过（2 个既有 `GTEST_SKIP`）。**后续拍平**：文件移至 `libs/std/{vec,deque,hashmap,hashset}.cmm`，模块名改为 `std.vec` 等，汇总模块移除。
 > **进度快照（2026-11-01，constexpr 容器）**：`constexpr` 求值器可执行 `Vec`/`Deque`/`HashMap`/`HashSet`（循环/赋值/`&out`/标量与 `string_view` 元素），`constexpr` 容器变量物化为只读常量数组 + 常量结构体（含 HashMap/HashSet 的开放寻址表与回调函数指针）；物化表禁止修改/可变拷贝。顺带修复 `typeToMangled` 缺失 `Str`/`String` 与模板函数类型内 `TypeVar` 未替换两个阻塞缺陷。全量 **1699/1699** 通过（2 个既有 `GTEST_SKIP`）。
-> **进度快照（2026-11-01，容器模块拍平）**：容器实现从 `libs/std/collections/` 移至 `libs/std/{vec,deque,hashmap,hashset}.smc`，模块名改为 `std.vec` / `std.deque` / `std.hashmap` / `std.hashset`；移除 `libs/std/collections.smc` 汇总入口，`import std.collections;` 不再提供。测试与 `docs/spec/{stdlib,compile_time}.md` 同步为扁平导入。全量 **1699/1699** 通过（2 个既有 `GTEST_SKIP`），`examples/all_features.c` 输出 `ALL FEATURES OK`。
-> **进度快照（2026-11-01，std.atomic / std.thread）**：新增 `libs/std/atomic.smc`（`Atomic<T>`、`MemoryOrder*`、per-order 自由函数、显式 CAS、fence）与 `libs/std/thread.smc`（pthread `Thread` 生命周期、`hardware_concurrency`、`this_thread_*`、`thread_equal`）。编译器新增内部 `__smc_atomic_*` 内建（LLVM 整数 carrier：bool i8、float/pointer/enum bitcast，自然对齐）并修复模板 `atomic T`、i64 字段对齐、bool `atomic i1`；支持关键字模块路径分量 `std.atomic`。v1 限制：1/2/4/8 字节标量/指针/float16/32/64/enum，无 16 字节/聚合；线程仅 Linux x86-64 pthread，无 mutex/condvar。新增 27 个测试；全量 **1726/1726** 通过（2 个既有 `GTEST_SKIP`），`examples/all_features.c` 输出 `ALL FEATURES OK`。评审收口：relaxed fence 合法化、Consume 分派、模板/union/typedef/16 字节 atomic 编译期拒绝。
+> **进度快照（2026-11-01，容器模块拍平）**：容器实现从 `libs/std/collections/` 移至 `libs/std/{vec,deque,hashmap,hashset}.cmm`，模块名改为 `std.vec` / `std.deque` / `std.hashmap` / `std.hashset`；移除 `libs/std/collections.cmm` 汇总入口，`import std.collections;` 不再提供。测试与 `docs/spec/{stdlib,compile_time}.md` 同步为扁平导入。全量 **1699/1699** 通过（2 个既有 `GTEST_SKIP`），`examples/all_features.cmm` 输出 `ALL FEATURES OK`。
+> **进度快照（2026-11-01，std.atomic / std.thread）**：新增 `libs/std/atomic.cmm`（`Atomic<T>`、`MemoryOrder*`、per-order 自由函数、显式 CAS、fence）与 `libs/std/thread.cmm`（pthread `Thread` 生命周期、`hardware_concurrency`、`this_thread_*`、`thread_equal`）。编译器新增内部 `__cmm_atomic_*` 内建（LLVM 整数 carrier：bool i8、float/pointer/enum bitcast，自然对齐）并修复模板 `atomic T`、i64 字段对齐、bool `atomic i1`；支持关键字模块路径分量 `std.atomic`。v1 限制：1/2/4/8 字节标量/指针/float16/32/64/enum，无 16 字节/聚合；线程仅 Linux x86-64 pthread，无 mutex/condvar。新增 27 个测试；全量 **1726/1726** 通过（2 个既有 `GTEST_SKIP`），`examples/all_features.cmm` 输出 `ALL FEATURES OK`。评审收口：relaxed fence 合法化、Consume 分派、模板/union/typedef/16 字节 atomic 编译期拒绝。
 >
 > **进度快照（2026-10-27，语法缺口补充审计）**：在 §24 基础上继续补漏，新增 **§25**（SG-12 ~ SG-23、SG-B07 ~ SG-B09），覆盖数组/位域常量表达式、声明符递归与函数类型形参、静态成员类外定义、C 字面量、asm、模块/控制流/类模板扩展。新补项中 P1 为 SG-12、SG-14；SG-12、SG-13、SG-14、SG-15、SG-16、SG-17 与 SG-B07、SG-B09 已修复（SG-15 于 2026-10-28）；SG-18、SG-19 已全部修复；SG-20 ~ SG-23 仍挂账（SG-B07 ~ SG-B09 已全部修复）。
 
@@ -71,7 +73,7 @@
 - `[x]` **BASE-05** 语义：作用域/符号表、函数重载（`OverloadSet`）、运算符重载（`operator`）、左值/右值、隐式类型转换（整数提升 + 常规算术转换，TYP-22）、常量折叠 `constexpr`、`print/println` 内建与 `to_string` 分派。
 - `[x]` **BASE-06** 代码生成：基础类型/指针/数组/struct/class/union/enum/函数指针、全局变量、字符串字面量、指针算术（GEP）、负浮点（fneg）、非 void 函数补 `unreachable`。
 - `[x]` **BASE-07** 驱动：`-c/-o/-S/-M/-O/-g/-v/-Wall/-Werror/-std/-fsyntax-only/-l/-L`、JIT、`cc` 链接系统 libc。（`-E/-I/-D` 已按 TOOL-02 移除；模块搜索路径改用 `-M/--module-path`）
-- `[x]` **BASE-08** 标准库基线。早期自包含 `libsafec`（`src/libsafec/`）已于 2026-11-01 删除：它只被自身测试使用，功能与真正的 `libs/std` 重复；现行标准库为 `libs/std/*.smc`（mimalloc 后端）。
+- `[x]` **BASE-08** 标准库基线。早期自包含 `libsafec`（`src/libsafec/`）已于 2026-11-01 删除：它只被自身测试使用，功能与真正的 `libs/std` 重复；现行标准库为 `libs/std/*.cmm`（mimalloc 后端）。
 - `[x]` **BASE-09** `resources/main.c` 可完整编译运行。全量测试通过（当前 **683** 项）。
 - `[x]` **BASE-10** `(新)` 历史：`libsafec` 曾使用 `namespace safec`，暴露语言层 `namespace` 缺口（见 PAR-22/MOD-12）。该实现已删除；`namespace`（值 + 类型）由 `libs/std` 与测试覆盖。
 
@@ -86,12 +88,12 @@
 - `[ ]` **INF-05** CI：Linux/macOS/Windows 矩阵、交叉编译、ABI 测试、性能基准。（外围仅限构建/测试，不含 LSP/包管理）
 - `[x]` **INF-06** 文档系统：语言规范（EBNF 语法）、类型/ABI 文档、`compile_time` API 文档。（**提前到 P0**，见 P0-07；`docs/spec/` 六分册 + 一致性测试已建）
 - `[x]` **INF-09** `(新)` **规范性文法（EBNF）**：完整产生式覆盖声明/类型/表达式/语句/注解/模块/`namespace`；作为规范唯一权威来源。（`docs/spec/grammar.ebnf`；ABI/转换/语义分册见 `docs/spec/`；一致性由 `test_spec_conformance` 绑定）
-- `[x]` **INF-10** `(新)` **运算符优先级/结合性总表**：表驱动，并与解析器实现绑定一致性测试。（表在 `docs/spec/grammar.ebnf` §9，实现于 `smc::getOperatorInfo`；`tests/frontend/test_operator_precedence.cpp` 10 项）
+- `[x]` **INF-10** `(新)` **运算符优先级/结合性总表**：表驱动，并与解析器实现绑定一致性测试。（表在 `docs/spec/grammar.ebnf` §9，实现于 `cmm::getOperatorInfo`；`tests/frontend/test_operator_precedence.cpp` 10 项）
 - `[x]` **INF-11** `(新)` **关键字与保留字总表**：数据类型/存储类/控制流/模块/注解/限定符；区分已用与保留未用。（见 `docs/spec/keywords.md`；DEC-18 已冻结，`goto`/`#` 标记为已移除）
 - `[ ]` **INF-12** `(新)` **语言版本标识**：`-std=` 取值、默认版本、特性门控（不含 edition，见 NG-06）。
 - `[~]` **INF-13** `(新)` **诊断格式规范**：错误码命名、位置格式、严重级别、稳定输出（配合 INF-03、TOOL-09）。注册表（E0xxx/E1xxx/E2xxx/W3xxx）与 `file:line:col: severity[CODE]: msg` 格式已落地。
 - `[ ]` **INF-07** 可复现构建：确定性输出、路径无关、固定优化流程。
-- `[ ]` **INF-08** 最小命令行驱动保留：`smc check/build/run/test`（不含 fmt/doc/lsp，见 Non-goals）。
+- `[ ]` **INF-08** 最小命令行驱动保留：`cmm check/build/run/test`（不含 fmt/doc/lsp，见 Non-goals）。
 
 ---
 
@@ -142,7 +144,7 @@
 - `[ ]` **PAR-20** 语法错误恢复与高质量诊断。
 - `[x]` **PAR-21** `(新)` 模板声明语法（2026-10-06）。函数/struct/class/别名模板；union/enum 拒绝；`class T` 参数诊断提示 typename；非类型参数仅整数。
 - `[x]` **PAR-22** `(新)` `namespace` 声明与限定名 `ns::name` 语法。历史需求来源为 `libsafec` 的 `namespace safec`（该实现已删除）；函数/变量成员、嵌套命名空间、限定类型名（struct/class/union/enum/typedef）均已实现。
-- `[x]` **PAR-23** `(新)` 运算符优先级/结合性在解析器中的显式实现与表驱动测试（配合 INF-10）。`smc::getOperatorInfo` 表驱动 + `test_operator_precedence` + `test_spec_conformance`。
+- `[x]` **PAR-23** `(新)` 运算符优先级/结合性在解析器中的显式实现与表驱动测试（配合 INF-10）。`cmm::getOperatorInfo` 表驱动 + `test_operator_precedence` + `test_spec_conformance`。
 - `[x]` **PAR-24** `(新)` 别名声明规范形式收敛：**已收口（2026-10-23）**——删除 `typedef`/`type`，只留 `using`；`using` RHS = 完整 type-id（固定数组、函数指针、内联 enum、聚合定义）；删除 `TypedefDeclAST`/`TypeDeclAST`，保留内部 `TypedefType`。 **2026-10-24 补丁**：块/成员体作用域别名、前向占位合并、`*p` 穿透指针别名（MOD-03 关闭）。
 
 ---
@@ -157,7 +159,7 @@
 - `[x]` **MOD-06** 模块可见性与 `public/private`。每模块私有作用域 + `export` 提升到全局；顶层 `public` 与 `export` 同义（类成员访问级别仍待 PAR-04）。类型名可见性见 `docs/spec/modules.md` §11 限制。
 - `[x]` **MOD-07** 模块循环依赖检测。`ModuleLoader` DFS `active` 栈检出导入环并报错（列出环路径）；`loaded` 去重支持菱形依赖。
 - `[ ]` **MOD-08** 名称修饰：C ABI 符号、class 方法、**模板单态化符号**、`static` 成员。
-- `[x]` **MOD-09** `(改)` **C 互操作（无预处理器方案）**：不解析真实 C 头文件，改用 `extern` 声明 + `std.c` 绑定层。绑定层已文件化到 `libs/std/c.smc`（`src/driver/StdPrelude.*` 优先读文件、内嵌兜底；`--no-prelude` 关闭）；`void*` 形参、函数指针形参与嵌套回调（`int (*cb)(int,int)`）均已支持；回调 API `qsort/bsearch/atexit` 已入库（P0-02 / MEM-10）。
+- `[x]` **MOD-09** `(改)` **C 互操作（无预处理器方案）**：不解析真实 C 头文件，改用 `extern` 声明 + `std.c` 绑定层。绑定层已文件化到 `libs/std/c.cmm`（`src/driver/StdPrelude.*` 优先读文件、内嵌兜底；`--no-prelude` 关闭）；`void*` 形参、函数指针形参与嵌套回调（`int (*cb)(int,int)`）均已支持；回调 API `qsort/bsearch/atexit` 已入库（P0-02 / MEM-10）。
 - `[ ]` **MOD-10** 增量编译：模块/AST/类型/IR 缓存与失效策略（内容哈希）。
 - `[x]` **MOD-11** 导入符号访问语法待定并实现：**直接非限定访问**（DEC-02 冻结）；限定名由模块内 `namespace` 提供。
 - `[x]` **MOD-12** `(新)` `namespace` 语义：嵌套/开放命名空间、限定查找、与模块的关系（DEC-17 已冻结：正交）。（嵌套查找 + 名称隔离 + 限定类型名已实现；规范见 `docs/spec/modules.md`）
@@ -370,7 +372,7 @@
 - `[x]` **FMT-01** `str`：UTF-8、不拥有、视图语义。完成（2026-10-08，随 P1-06）：`TypeKind::Str`，canonical LLVM named struct `"str" {ptr, i64}`；内建方法 `len()/char_count()/char_at(i)/char_len_at(i)`（MethodCall 机制）；`==`/`!=` 字节比较（长度优先，免越界读）。
 - `[x]` **FMT-02** `String`：动态字符串、长度/容量、**C 语义内存管理（显式 `new/destroy`，无析构）**。完成（2026-10-08）：类型名钉死小写 `string`；`string.new(str)`/`destroy()`/`append(str)`/`push(char)`/`len()`/`capacity()`/`s[i]`；增长策略 `cap' = max(cap*2, need)`；`destroy` 清零三字段；无 SSO。
 - `[x]` **FMT-03** 字符串字面量类型与 `char*` 互操作。完成（2026-10-08）：字面量重定型为 `str`；`str → char*` 隐式（`typesCompatible`/`checkAssignmentTypes`/`conversionRank`/`castValue` 四点同步）；`char* → str` 仅经内建 `str_from_c`（char 数组实参衰减）；print/println 的 str 实参走 `%.*s`。
-- `[x]` **FMT-04** UTF-8 验证与遍历；`str`↔`String` 互转。完成（2026-10-08）：验证点 = 字面量与 `str_from_c` 字面量（sema 期，`support/Utf8`，E2015）+ 运行时缓冲（codegen 合成 IR `smc.utf8.validate`，失败 panic）；遍历 = `char_count`/`char_len_at` 步进 API（IR 辅助 `smc.utf8.*`），无 for-in 语法；`string → str` 隐式视图、`str → string` 显式 `string.new`。
+- `[x]` **FMT-04** UTF-8 验证与遍历；`str`↔`String` 互转。完成（2026-10-08）：验证点 = 字面量与 `str_from_c` 字面量（sema 期，`support/Utf8`，E2015）+ 运行时缓冲（codegen 合成 IR `cmm.utf8.validate`，失败 panic）；遍历 = `char_count`/`char_len_at` 步进 API（IR 辅助 `cmm.utf8.*`），无 for-in 语法；`string → str` 隐式视图、`str → string` 显式 `string.new`。
 - `[~]` **FMT-05** 切片、连接、比较、查找、替换。部分（2026-10-08）：`==`/`!=` 完成；`str + str` 不提供（拼接 = `string.new(a).append(b)`，CT-06 字面量 `+` 一并移除）。（2026-10-09）查找/分割完成：`find`/`rfind`/`sub`/`split` 内建（见 stdlib.md §9.1）；`replace` 未做。
 
 ### format
@@ -389,7 +391,7 @@
 ## 15. 并发（CON）
 
 - `[x]` **CON-01** `atomic` 类型限定符：`atomic i32 count;`（见 DEC-11）。**完成**（2026-10-19，最小范围）：整型标量限定符（克隆类型不污染单例）+ 原子 load/store（seq_cst）+ 复合赋值/`++`/`--` 经 `atomicrmw`（add/sub/and/or/xor）；`* / % << >>` 与浮点/指针拒绝（需 cmpxchg，属 CON-02 边界）。
-- `[x]` **CON-02** 原子 load/store、CAS、fence。**完成**（2026-11-01）：编译器内部 `__smc_atomic_*` 直降 LLVM atomic load/store/atomicrmw/cmpxchg/fence；`libs/std/atomic.smc` 提供 `Atomic<T>`、CAS、fence 与显式序 API；`tests/e2e/test_atomic.cpp` + `test_std_atomic.cpp` 覆盖。
+- `[x]` **CON-02** 原子 load/store、CAS、fence。**完成**（2026-11-01）：编译器内部 `__cmm_atomic_*` 直降 LLVM atomic load/store/atomicrmw/cmpxchg/fence；`libs/std/atomic.cmm` 提供 `Atomic<T>`、CAS、fence 与显式序 API；`tests/e2e/test_atomic.cpp` + `test_std_atomic.cpp` 覆盖。
 - `[x]` **CON-03** 内存序：relaxed/consume/acquire/release/acq_rel/seq_cst。**完成**（2026-11-01）：`MemoryOrder*`；load/store/CAS failure 的合法性在 sema 校验，`_order` 运行时非法组合 panic；consume 映射 acquire。
 - `[x]` **CON-04** `thread_local`：存储类语法（见 DEC-12）。**完成**（2026-10-19）：`thread_local T name;` 语法 + 存储（LLVM thread-local 全局，每线程副本）；函数上 thread_local 拒绝（E2028）；完整初始化/销毁模型属 CON-10。
 - `[x]` **CON-05** `std.thread`：线程创建/join/分离（C 语义，显式管理）。**完成**（2026-11-01）：pthread 后端 `Thread` 状态机 + `hardware_concurrency`/`this_thread_*`/`thread_equal`；驱动自动 `-l pthread`；v1 无 mutex/condvar。
@@ -406,32 +408,32 @@
 > 容器采用 **C 语义**：显式 `new/destroy`，不自动释放元素；泛型容器通过扩展点 `to_hash`/`equals`/`to_string` 适配用户类型（无 trait）。
 
 ### std.core
-- `[x]` **STD-01** 基础类型导出；`panic/assert/abort`。`libs/std/core.smc` 已建（`min/max/clamp`）。`panic`/`assert` 实现为**语言内建**（需调用点编译期信息，无预处理器；见 `docs/spec/stdlib.md`）：`assert(cond)` 失败打印 `file:line: assertion failed` 后 `abort()`，`panic(msg)` 打印 `file:line: panic: <msg>` 后 `abort()`；`abort` 由 `std.c` 绑定层暴露。
+- `[x]` **STD-01** 基础类型导出；`panic/assert/abort`。`libs/std/core.cmm` 已建（`min/max/clamp`）。`panic`/`assert` 实现为**语言内建**（需调用点编译期信息，无预处理器；见 `docs/spec/stdlib.md`）：`assert(cond)` 失败打印 `file:line: assertion failed` 后 `abort()`，`panic(msg)` 打印 `file:line: panic: <msg>` 后 `abort()`；`abort` 由 `std.c` 绑定层暴露。
 - `[x]` **STD-02** `Optional<T>`、`Result<T,E>`（显式访问访问器）。由语言内建承载（2026-10-06）：伪字段即访问器（`.valid/.value`、`.ok/.value/.error`），无 trait/泛型前 stdlib 不设包装函数；见 `docs/spec/stdlib.md` §6。
 - `[x]` **STD-03** 内存操作：`memcpy/memset/memmove/memcmp`。**完成**：`std.mem::bytes_copy/bytes_move/bytes_set/bytes_compare` 包装。
 - `[ ]` **STD-04** 整数运算与溢出辅助。
 
 ### std.mem
-- `[x]` **STD-05** `malloc/calloc/realloc/free` 包装；Allocator 接口；Arena/Pool；placement 分配；对齐工具。**完成**（2026-11-01）：后端切换 mimalloc（`mi_*`，静态链接 + override）；`libs/std/mem.smc` 提供 `alloc/alloc_zeroed/resize/dealloc/bytes_*/align_*/aligned_*` + `Allocator`/`Arena`/`Pool`（模块导出类型已可用）。placement 分配仍属后续。
+- `[x]` **STD-05** `malloc/calloc/realloc/free` 包装；Allocator 接口；Arena/Pool；placement 分配；对齐工具。**完成**（2026-11-01）：后端切换 mimalloc（`mi_*`，静态链接 + override）；`libs/std/mem.cmm` 提供 `alloc/alloc_zeroed/resize/dealloc/bytes_*/align_*/aligned_*` + `Allocator`/`Arena`/`Pool`（模块导出类型已可用）。placement 分配仍属后续。
 
 ### 容器库 `std.vec` / `std.deque` / `std.hashmap` / `std.hashset` 〔新〕
 - `[x]` **STD-06** `Vec`/`ArrayList`（增长、容量、索引、迭代）。**完成**：`std::Vec<T>`（`import std.vec;`；reserve/push/pop/get/get_ptr/insert/remove/contains/index_of）；可在 `constexpr` 求值器中执行并物化为只读常量表。
 - `[x]` **STD-07** `HashMap`/`HashSet`（依赖 `to_hash`/`equals`）。**完成**：开放寻址 + 墓碑 + 0.7 负载；哈希/相等通过函数指针注入，`std.hash` 提供适配器；`constexpr` 求值与常量表物化已支持。
-- `[~]` **STD-08** `Deque`、`List`、`BTree`（可选）。`Deque<T>` 环形缓冲完成；容器已拍平为 `libs/std/{vec,deque,hashmap,hashset}.smc` 独立模块（`std.vec` 等直接导入），不再保留汇总模块；`List`/`BTree` 暂未实现。
+- `[~]` **STD-08** `Deque`、`List`、`BTree`（可选）。`Deque<T>` 环形缓冲完成；容器已拍平为 `libs/std/{vec,deque,hashmap,hashset}.cmm` 独立模块（`std.vec` 等直接导入），不再保留汇总模块；`List`/`BTree` 暂未实现。
 - `[x]` **STD-09** 扩展点约定文档：`to_string`/`to_hash`/`equals`。`to_string` 为 print/format 降级路径；`std.hash::hash_key_*`/`equal_*` 提供 HashMap/HashSet 回调约定。
 
 ### std.string
-- `[~]` **STD-10** `string_view`（原 `str`）、`String`、UTF-8 工具、字符串构建器、比较/查找/分割/拼接。核心完成（2026-10-09）：内建原语 find/rfind/sub/split/split_destroy + `libs/std/string.smc`（contains/starts_with/ends_with/trim*/join/concat/repeat/utf8_sub），文档 stdlib.md §9。I4 收口（2026-10-11）：`str` 硬改名 `string_view`、`string` 拥有型值语义（见 P1-09）。字典序 `<`/`>`、`replace` 不做（spec §8）；ASCII 大小写由 std.ascii 提供；独立 StrBuilder 可选（string 自身即 builder；模块导出类型已可用）。
+- `[~]` **STD-10** `string_view`（原 `str`）、`String`、UTF-8 工具、字符串构建器、比较/查找/分割/拼接。核心完成（2026-10-09）：内建原语 find/rfind/sub/split/split_destroy + `libs/std/string.cmm`（contains/starts_with/ends_with/trim*/join/concat/repeat/utf8_sub），文档 stdlib.md §9。I4 收口（2026-10-11）：`str` 硬改名 `string_view`、`string` 拥有型值语义（见 P1-09）。字典序 `<`/`>`、`replace` 不做（spec §8）；ASCII 大小写由 std.ascii 提供；独立 StrBuilder 可选（string 自身即 builder；模块导出类型已可用）。
 
 ### std.format
 - `[~]` **STD-11** `format`、`print`、格式说明解析、编译期检查接口、自定义格式化。核心完成（2026-10-09）：format 内建 + FMT-08 规格集 + E2020~22 + to_string 降级 + 动态格式串契约，文档 stdlib.md §10。挂账：`import std.format` 体系（D4 裁决暂不引入）、自定义格式化钩子（Weight 之外的扩展点）、`printf` 关系统一（FMT-13）。
 
 ### std.io
-- `[x]` **STD-12** `print`、`read`、stdout/stderr、文件读写、缓冲 I/O。`libs/std/io.smc` 已提供 `print_*`、`print_err_*`（stderr，经 `dprintf`）、`read_char/read_int/read_line`、`file_open/close/read/write`、`file_read_line/read_char/write_char/write_str`；基于 libc。
+- `[x]` **STD-12** `print`、`read`、stdout/stderr、文件读写、缓冲 I/O。`libs/std/io.cmm` 已提供 `print_*`、`print_err_*`（stderr，经 `dprintf`）、`read_char/read_int/read_line`、`file_open/close/read/write`、`file_read_line/read_char/write_char/write_str`；基于 libc。
 
 ### std.math / std.bit
-- `[x]` **STD-13** `sqrt` 等基础数学；浮点分类/舍入/常量；整数数学工具。**完成**（2026-10-17）：`libs/std/math.smc`——libc 绑定 18 个（sqrt/sqrtf/fabs/fabsf/floor/floorf/ceil/ceilf/round/roundf/trunc/truncf/pow/powf/cos/cosf/sin/sinf，`-lm` 链接）+ `constexpr float64 PI/E` + 位级 isnan/isinf/is_finite（IEEE754，不依赖 libc 分类宏）；5 e2e。
-- `[x]` **STD-14** `std.bit`：popcount/clz/ctz/rotl/rotr/bitcast。**完成**（2026-10-17）：`libs/std/bit.smc` 纯语言实现——SWAR popcount、二分 clz/循环 ctz（对 0 返回位宽，冻结）、移位+或 rotl/rotr（n 按位宽取模）、reinterpret_cast bitcast 包装；7 e2e。
+- `[x]` **STD-13** `sqrt` 等基础数学；浮点分类/舍入/常量；整数数学工具。**完成**（2026-10-17）：`libs/std/math.cmm`——libc 绑定 18 个（sqrt/sqrtf/fabs/fabsf/floor/floorf/ceil/ceilf/round/roundf/trunc/truncf/pow/powf/cos/cosf/sin/sinf，`-lm` 链接）+ `constexpr float64 PI/E` + 位级 isnan/isinf/is_finite（IEEE754，不依赖 libc 分类宏）；5 e2e。
+- `[x]` **STD-14** `std.bit`：popcount/clz/ctz/rotl/rotr/bitcast。**完成**（2026-10-17）：`libs/std/bit.cmm` 纯语言实现——SWAR popcount、二分 clz/循环 ctz（对 0 返回位宽，冻结）、移位+或 rotl/rotr（n 按位宽取模）、reinterpret_cast bitcast 包装；7 e2e。
 
 ### std 其他 〔新〕
 - `[x]` **STD-15** `std.parse`/`std.convert`：字符串↔数字、进制转换。**完成**：`parse_i32/i64/u64/float64/bool` + `to_string_i64/u64/i32/float64`，支持 2..36 进制及 `0x/0b/0o` 前缀。
@@ -441,8 +443,8 @@
 - `[~]` **STD-19** `std.fs`（文件系统）。基础 `exists/is_file/file_size/read_file/write_file/append_file/remove_file/rename_path/create_dir/current_dir` 完成；目录遍历/stat 元数据待补。
 - `[x]` **STD-20** `std.time`。`unix_seconds/unix_millis/process_ticks/process_seconds/sleep_ms` 完成。
 - `[~]` **STD-21** `std.os`（进程/env/args/syscall 封装）。`env_get/env_set/env_unset/run/pid` 完成；argv/进程控制待补。
-- `[~]` **STD-22** `std.testing`（语言内断言/测试；runner 由 `smc test` 提供）。运行时 `fail/expect/expect_eq_*` 完成；`smc test` runner 待补。
-- `[x]` **STD-23** `std.c`：手写 libc 绑定层（配合 MOD-09）。`libs/std/c.smc`（内嵌兜底）已扩展：`abort`、`dprintf`（stderr，fd=2）、`fopen/fclose/fread/fwrite/fgets/fputs/fgetc/fputc/fprintf`、`scanf`。
+- `[~]` **STD-22** `std.testing`（语言内断言/测试；runner 由 `cmm test` 提供）。运行时 `fail/expect/expect_eq_*` 完成；`cmm test` runner 待补。
+- `[x]` **STD-23** `std.c`：手写 libc 绑定层（配合 MOD-09）。`libs/std/c.cmm`（内嵌兜底）已扩展：`abort`、`dprintf`（stderr，fd=2）、`fopen/fclose/fread/fwrite/fgets/fputs/fgetc/fputc/fprintf`、`scanf`。
 
 ### std.atomic / std.thread
 - `[x]` **STD-24** 原子类型封装、load/store/CAS/fence、内存序常量。**完成**（2026-11-01）：`std::Atomic<T>` + per-order 自由函数 + 显式 CAS；类型/对齐限制见 `docs/spec/stdlib.md` §18。
@@ -477,13 +479,13 @@
 
 ## 18. 工具链与驱动（TOOL）
 
-- `[ ]` **TOOL-01** `(已实现)` 编译器 CLI：`check/build/run`；补 `smc test` runner（STD-22）。
+- `[ ]` **TOOL-01** `(已实现)` 编译器 CLI：`check/build/run`；补 `cmm test` runner（STD-22）。
 - `[x]` **TOOL-02** `(改)` 移除 C 预处理器相关：`-E/-I/-D`、`src/preprocessor/`、`MacroTable` 及测试（Non-goals）。已删除源码与测试；`-I` 由 `-M/--module-path` 取代。
 - `[ ]` **TOOL-03** 调试器集成：DWARF、断点、变量查看。
 - `[ ]` **TOOL-04** 交叉编译工具链配置。
 - `[ ]` **TOOL-05** 构建系统集成：Make/Ninja/CMake。
-- `[ ]` **TOOL-06** 迁移工具：C → SafeModern C 渐进迁移（注意：无 `#include`/goto，需说明限制）。
-- `[ ]` **TOOL-07** **不做**（Non-goals）：`smc fmt`、`smc doc`、LSP、包管理器、依赖解析、registry、manifest。
+- `[ ]` **TOOL-06** 迁移工具：C → Cmm 渐进迁移（注意：无 `#include`/goto，需说明限制）。
+- `[ ]` **TOOL-07** **不做**（Non-goals）：`cmm fmt`、`cmm doc`、LSP、包管理器、依赖解析、registry、manifest。
 - `[ ]` **TOOL-08** `(新)` `-std=`/语言版本标志与默认版本（实现 INF-12）。
 - `[ ]` **TOOL-09** `(新)` 诊断输出格式与错误码注册表（实现 INF-13）。
 
@@ -541,7 +543,7 @@
 - `[ ]` **NG-05** 错误传播算子 `?`（Result/Optional 一律显式判断）。
 - `[ ]` **NG-06** 版本管理 / edition。
 - `[ ]` **NG-07** 包管理器、依赖解析、registry、manifest。
-- `[ ]` **NG-08** LSP、`smc fmt`、`smc doc`（保留 `smc test`）。
+- `[ ]` **NG-08** LSP、`cmm fmt`、`cmm doc`（保留 `cmm test`）。
 - `[ ]` **NG-09** 多继承 / 虚继承 / 菱形继承 / 虚函数 / vtable / RTTI / 构造析构 / GC。
 - `[ ]` **NG-10** 模板特化/偏特化、SFINAE、可变参数模板、模板模板参数、concepts、默认模板实参。
 - `[ ]` **NG-11** `fn` 关键字与 Rust 风格命名（统一 C 风格声明）。
@@ -554,7 +556,7 @@
 
 ### P0：最小可用编译器（已有大量基础，补齐缺口）
 - `[x]` **P0-01** 清理与决策一致的冲突：移除预处理器、goto/label、`-E/-I/-D`（NG-01/02/TOOL-02）。已完成；`-I` 由 `-M/--module-path` 取代。
-- `[x]` **P0-02** C 互操作绑定层（MOD-09/STD-23）——无预处理器后的刚需。文件化 `libs/std/c.smc` + `extern` 已可用；函数指针形参/嵌套回调、C 风格指针转换、`qsort/bsearch/atexit` 已补齐（MEM-10）。
+- `[x]` **P0-02** C 互操作绑定层（MOD-09/STD-23）——无预处理器后的刚需。文件化 `libs/std/c.cmm` + `extern` 已可用；函数指针形参/嵌套回调、C 风格指针转换、`qsort/bsearch/atexit` 已补齐（MEM-10）。
 - `[x]` **P0-03** 变量初始化检查（SEM-01/02）。已实现（W3001，含分支合并/循环；`-Werror` 可将警告变失败）。
 - `[x]` **P0-04** module/import/export（MOD-04~07）。源文件 `import`（搜索路径/点分名/循环报错）、`module` 文件绑定与校验、`export` 可见性、每模块私有作用域均已实现。
 - `[x]` **P0-05** 最小 `std.core` / `std.io`（STD-01/12）。`std::min/max/clamp`、`std::print_*`、`std::read_*`、`std::file_*` 可用；`assert`/`panic` 内建、`abort` 经 `std.c`；规范 `docs/spec/stdlib.md`。
@@ -571,7 +573,7 @@
 - `[x]` **P1-06** str / String / format（FMT、STD-10/11）。核心纵向完成（2026-10-08）：FMT-01/02/03/04 + FMT-05 比较 + TYP-26/DEC-20 + 内建类型小写化（`optional`/`result`，DEC-18 先例）；E2015 新诊断；`grammar.ebnf` 同步。format（FMT-06~09）与 STD-10 高层操作另轮。spec `docs/superpowers/specs/2026-10-08-str-string-design.md`，plan `docs/superpowers/plans/2026-10-08-str-string.md`。挂账：`string` 不参与 constexpr；CT `+` 已移除；SSO 不做。
 - `[x]` **P1-07** 位域、匿名类型、指定初始化器、lambda（AGG-03~06、PAR-10~13）。**位域全链路已完成**（2026-10-15：PAR-10/SEM-12/AGG-06/CG-09/DEC-08）；**指定初始化器与柔性数组已完成**（2026-10-16：PAR-13/AGG-04/05）；**匿名类型定义已完成**（2026-10-17：PAR-12）；**lambda 已完成**（2026-10-17：PAR-11/CG-11/DEC-10，plan `docs/superpowers/plans/2026-10-17-lambda.md`，全量 1351 绿）。**P1-07 全部完成**。
 - `[x]` **P1-08** `static_cast` / 内联 `asm`（PAR-18、CG-10）。`static_cast`/`reinterpret_cast` 已完成（LEX-11/PAR-18）；内联 `asm` 全链路完成（2026-10-11）：LEX-12/PAR-16/CG-10/DEC-09，spec `docs/superpowers/specs/2026-10-10-p108-inline-asm-design.md`，plan `docs/superpowers/plans/2026-10-10-p108-inline-asm.md`，e2e 6 用例 LLJIT 执行通过（全量 1203 绿）。
-- `[x]` **P1-09** std.mem / std.string / std.format / std.math / **std.collections**（STD-05~14）。字符串库 + format 体系完成（2026-10-09）：FMT-06~11 全落地、FMT-12 单缓冲、STD-10 组合库、STD-11 核心；E2020~22 新诊断；顺带修复既有编译器 bug 两枚——`&&`/`||` 按位降级（真值截断 + 无短路）与派生→基类赋值整结构 store 溢出（潜在栈腐败）。spec `docs/superpowers/specs/2026-10-09-p109-string-format-design.md`，plan `docs/superpowers/plans/2026-10-09-p109-string-format.md`。模块导出类型/模板已可用；独立 StrBuilder 为可选优化；`replace`/字典序不做（ASCII 大小写已由 std.ascii 提供）；std.mem/math/collections 已补齐。**终审 I4（string 值拷贝别名双 free）已收口**（2026-10-11）：string 拥有型值语义 + string_view 硬改名，spec `docs/superpowers/specs/2026-10-11-string-ownership-design.md`，plan `docs/superpowers/plans/2026-10-11-string-ownership.md`，e2e 16 用例（全量 1229 绿）。**std.mem 纯函数层完成**（2026-10-17，STD-05 范围 a：alloc/alloc_zeroed/resize/dealloc/align_up/align_down/is_aligned/aligned_alloc/aligned_free，7 e2e，全量 1358 绿；Allocator/Arena/Pool 接口草案挂账于「模块导出类型」语言缺口，见 stdlib.md §11.1）。**std.math/std.bit 完成**（2026-10-17，STD-13/14：libs/std/bit.smc 纯语言位工具 7 e2e + libs/std/math.smc libc 绑定/常量/位级分类 5 e2e，顺带修复 namespace 内 C 名 extern 符号前缀化缺口，全量 1370 绿；spec/plan `docs/superpowers/specs|plans/2026-10-17-stdmath-bit*`）。**std.collections/扩展库完成**（2026-11-01）：Vec/Deque/HashMap/HashSet + hash/sort/parse/ascii/path/fs/time/os/testing；mem 切 mimalloc + Allocator/Arena/Pool；全量 1657/1657（2 个既有 Skip；移除 `libsafec` 自身测试后）。
+- `[x]` **P1-09** std.mem / std.string / std.format / std.math / **std.collections**（STD-05~14）。字符串库 + format 体系完成（2026-10-09）：FMT-06~11 全落地、FMT-12 单缓冲、STD-10 组合库、STD-11 核心；E2020~22 新诊断；顺带修复既有编译器 bug 两枚——`&&`/`||` 按位降级（真值截断 + 无短路）与派生→基类赋值整结构 store 溢出（潜在栈腐败）。spec `docs/superpowers/specs/2026-10-09-p109-string-format-design.md`，plan `docs/superpowers/plans/2026-10-09-p109-string-format.md`。模块导出类型/模板已可用；独立 StrBuilder 为可选优化；`replace`/字典序不做（ASCII 大小写已由 std.ascii 提供）；std.mem/math/collections 已补齐。**终审 I4（string 值拷贝别名双 free）已收口**（2026-10-11）：string 拥有型值语义 + string_view 硬改名，spec `docs/superpowers/specs/2026-10-11-string-ownership-design.md`，plan `docs/superpowers/plans/2026-10-11-string-ownership.md`，e2e 16 用例（全量 1229 绿）。**std.mem 纯函数层完成**（2026-10-17，STD-05 范围 a：alloc/alloc_zeroed/resize/dealloc/align_up/align_down/is_aligned/aligned_alloc/aligned_free，7 e2e，全量 1358 绿；Allocator/Arena/Pool 接口草案挂账于「模块导出类型」语言缺口，见 stdlib.md §11.1）。**std.math/std.bit 完成**（2026-10-17，STD-13/14：libs/std/bit.cmm 纯语言位工具 7 e2e + libs/std/math.cmm libc 绑定/常量/位级分类 5 e2e，顺带修复 namespace 内 C 名 extern 符号前缀化缺口，全量 1370 绿；spec/plan `docs/superpowers/specs|plans/2026-10-17-stdmath-bit*`）。**std.collections/扩展库完成**（2026-11-01）：Vec/Deque/HashMap/HashSet + hash/sort/parse/ascii/path/fs/time/os/testing；mem 切 mimalloc + Allocator/Arena/Pool；全量 1657/1657（2 个既有 Skip；移除 `libsafec` 自身测试后）。
 
 ### P2：工程化与并发
 - `[x]` **P2-01** atomic / thread_local / std.thread（CON、STD-24/25）。**完成**（2026-11-01）：std.atomic/std.thread v1；mutex/condvar、跨平台后端与 16 字节原子留待后续。
@@ -605,7 +607,7 @@
 ## 24. 语法缺口审计（2026-10-27，第三轮后）
 
 > 范围：仅列**语法/解析层**尚未覆盖、或只覆盖简化形式的能力；语义/ABI/codegen 边界见 §24.4。
-> 方法：对照 `docs/spec/grammar.ebnf`、本文件，并用 `build/bin/my_llvm_c` 对每个例子做 `-fsyntax-only` 与完整编译探测。
+> 方法：对照 `docs/spec/grammar.ebnf`、本文件，并用 `build/bin/cmm` 对每个例子做 `-fsyntax-only` 与完整编译探测。
 > 基线：基础 C 声明/语句 9 项收口后，全量 **1572/1572**，两个示例 OK；本轮只做审计，未改代码。
 > 结论：基础 C 主干已基本收口；剩余集中在模板常量实参、块内函数声明、C 声明符完整性，以及规范未覆盖的现代语法扩展。
 
@@ -807,14 +809,14 @@ class C { public: template<typename T> T id(T x); }; // 成员模板
 3. **先裁决再实现**：SG-08 namespace using、SG-09 lambda 扩展、SG-10 注解扩展、SG-11 class 扩展。
 4. **独立排期**：§24.4 的 sema/codegen/ABI 边界，不与 parser 修复混做。
 
-每项落地时：先补 RED 测试（至少 parser + e2e 各一条），再改实现；全量 `ctest -j8`；同步 `grammar.ebnf` 与本文件状态；涉及公开语法时更新 `examples/all_features.c` 或新增示例节。
+每项落地时：先补 RED 测试（至少 parser + e2e 各一条），再改实现；全量 `ctest -j8`；同步 `grammar.ebnf` 与本文件状态；涉及公开语法时更新 `examples/all_features.cmm` 或新增示例节。
 
 > 第二轮补充项（SG-12 ~ SG-23）的优先级与并入顺序见 **§25.5**。
 
 ### 24.7 审计证据
 
-- 审计基线：全量 **1572/1572** 通过（2 个既有 `GTEST_SKIP`）；`examples/all_features.c` → `ALL FEATURES OK`，`examples/full_feature.c` → `FULL FEATURE OK`。
-- 每个 `[gap]` 例子均已用 `build/bin/my_llvm_c -fsyntax-only` 复现解析失败；涉及 sema/codegen 的 `[boundary]` 例子额外做了完整编译。
+- 审计基线：全量 **1572/1572** 通过（2 个既有 `GTEST_SKIP`）；`examples/all_features.cmm` → `ALL FEATURES OK`，`examples/full_feature.cmm` → `FULL FEATURE OK`。
+- 每个 `[gap]` 例子均已用 `build/bin/cmm -fsyntax-only` 复现解析失败；涉及 sema/codegen 的 `[boundary]` 例子额外做了完整编译。
 - 本文档只记录现状与建议，不改动代码；新增语法前仍需按 §21 的 DEC/Non-goal 规则裁决。
 - 第二轮补充审计（SG-12 ~ SG-23、SG-B07 ~ SG-B09）见 **§25**。
 
@@ -823,7 +825,7 @@ class C { public: template<typename T> T id(T x); }; // 成员模板
 ## 25. 语法缺口补充审计（2026-10-27，第二轮）
 
 > 范围：§24 之后的补漏，只列**语法/解析层**尚未覆盖、或规范已承诺但只实现简化形式的能力；语义/ABI/codegen 边界见 §25.4。
-> 方法：对照 `docs/spec/grammar.ebnf`、§24，并用 `build/bin/my_llvm_c -fsyntax-only` 与完整编译逐例复核；每个例子都给出当前失败形态。
+> 方法：对照 `docs/spec/grammar.ebnf`、§24，并用 `build/bin/cmm -fsyntax-only` 与完整编译逐例复核；每个例子都给出当前失败形态。
 > 基线：沿用 §24 的 **1572/1572**（2 个既有 `GTEST_SKIP`）与两个示例 OK；本轮只改文档，未改代码。
 > 结论：§24 的 11 项之外，仍有一批“规范承诺未贯通、C 声明符/字面量兼容、规范未覆盖扩展”的缺口。真正需要优先补的 **SG-12 数组常量维度**、**SG-14 显式转换完整 type-id** 已于 2026-10-27 修复；其余按 §25.5 推进。
 
@@ -1024,11 +1026,11 @@ template<typename T> T V<T>::f() { return this->x; }  // 解析失败
 4. **先裁决再实现**：SG-20 模块扩展、SG-21 控制流扩展、SG-22 struct/class 成员扩展、SG-23 模板类成员。**2026-10-28 裁决：本轮暂不扩展，保留为后续产品决策项。**
 5. **边界单列（已全部修复）**：SG-B07 类外静态方法、SG-B08 成员运算符调用、SG-B09 全局 `string_view` 字面量崩溃均已修复。
 
-每项落地时：先补 RED 测试（至少 parser + e2e 各一条），再改实现；全量 `ctest --test-dir build -j8`；同步 `grammar.ebnf` 与 `TODO.md`；涉及公开语法时更新 `examples/all_features.c` 或新增示例节。
+每项落地时：先补 RED 测试（至少 parser + e2e 各一条），再改实现；全量 `ctest --test-dir build -j8`；同步 `grammar.ebnf` 与 `TODO.md`；涉及公开语法时更新 `examples/all_features.cmm` 或新增示例节。
 
 ### 25.6 审计证据
 
-- 基线与 §24 相同：全量 **1572/1572**（2 个既有 `GTEST_SKIP`）；`examples/all_features.c` → `ALL FEATURES OK`，`examples/full_feature.c` → `FULL FEATURE OK`。
-- 所有 `[gap]` 例子均已用 `build/bin/my_llvm_c -fsyntax-only` 复现；SG-B07/SG-B08/SG-B09 额外用 `-c` 复现 sema/codegen 失败。
+- 基线与 §24 相同：全量 **1572/1572**（2 个既有 `GTEST_SKIP`）；`examples/all_features.cmm` → `ALL FEATURES OK`，`examples/full_feature.cmm` → `FULL FEATURE OK`。
+- 所有 `[gap]` 例子均已用 `build/bin/cmm -fsyntax-only` 复现；SG-B07/SG-B08/SG-B09 额外用 `-c` 复现 sema/codegen 失败。
 - 对照通过项：`int32 (*p)[3]`、`sizeof(int32(*)(int32))`、`struct U { int32 c : 1 + 1; }`、`extern "C"` 均完整编译通过；`class` 成员运算符至少解析通过（`operator+` 的类内按值返回仍受 incomplete 边界限制），避免把已支持能力误列为缺口。
 - 本轮只记录现状与建议，不改代码；新增语法前仍按 §21 的 DEC/Non-goal 规则裁决。

@@ -20,7 +20,7 @@
 - 全局/函数内 static/thread_local/块级 extern 不进入闭包字段（c++ 语义；修当前 `[=]` 复制全局的 bug）。
 - 按值捕获写入继续写闭包副本；本轮不引入 `mutable`，也不新增只读诊断。
 - 有捕获闭包逃逸（函数返回、struct 字段、数组元素、普通函数参数）仍是非目标。
-- 工作区已有未提交的容器迁移改动（`Progress.md`、`TODO.md`、`libs/std/{vec,deque,hashmap,hashset}.smc` 等）；提交时只 `git add` 本计划涉及的文件，绝不 stage 这些既有改动。
+- 工作区已有未提交的容器迁移改动（`Progress.md`、`TODO.md`、`libs/std/{vec,deque,hashmap,hashset}.cmm` 等）；提交时只 `git add` 本计划涉及的文件，绝不 stage 这些既有改动。
 - 每任务先写失败测试，RED→GREEN，再提交；提交信息引用 `PAR-11`。
 
 ## Review Focus
@@ -613,7 +613,7 @@ Run:
 ```bash
 cmake --build build -j$(nproc)
 ctest --test-dir build -j8
-build/bin/my_llvm_c examples/all_features.c -o /tmp/all_features && /tmp/all_features
+build/bin/cmm examples/all_features.cmm -o /tmp/all_features && /tmp/all_features
 ```
 
 Expected: 全量测试 0 失败（当前仓库无 `GTEST_SKIP`；历史计划中的 2 个已在 2026-11-01 constexpr 容器收口时移除）；示例输出 `ALL FEATURES OK`。

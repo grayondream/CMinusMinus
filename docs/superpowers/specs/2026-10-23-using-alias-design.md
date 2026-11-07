@@ -88,7 +88,7 @@
 | namespace 内 typedef | namespace 内 using |
 | `type Name = T;` | `using Name = T;` |
 
-迁移清单（16 个测试文件，47 处含注释；另加 `examples/all_features.c`）：
+迁移清单（16 个测试文件，47 处含注释；另加 `examples/all_features.cmm`）：
 - e2e：`test_demo_regressions`（数组/函数指针）、`test_enum_underlying`、`test_generics`、`test_namespace`、`test_optional_result`、`test_anon_type`、`test_designated_init`、`test_union`、`test_atomic`。
 - 单元：`test_parser`（6 处，typedef 语法断言改 using，新增硬错误断言）、`test_semantic_analyzer`（2）、`test_annotation_semantics`（1）、`test_compile_time`（1，死分支毒化用例）、`test_decl_nodes`（TypedefDeclAST 节点测试删除或改 UsingDeclAST）、`test_codegen_context`（1，改 UsingDeclAST 或删）。
 - `test_type_nodes` 的 `TypedefType` 测试保留（内部类型仍存在）。
@@ -111,7 +111,7 @@
 11. 重复别名后者覆盖。
 12. `[[deprecated]] using` 使用时告警；`[[repr(C)]] using` 报 “not valid on using”。
 13. `typedef int32 T;` 与 `type T = int32;`（顶层与块内）→ 报错且消息含 `using` 提示。
-14. 全量 `ctest` 通过（基线 1493）；`tests/`、`examples/`、`libs/` 下的 `.c`/`.smc` 语言源与 `docs/spec/` 现行规范中不再有 `typedef` / `type Name =` 用法（历史 docs 除外）。
+14. 全量 `ctest` 通过（基线 1493）；`tests/`、`examples/`、`libs/` 下的 `.c`/`.cmm` 语言源与 `docs/spec/` 现行规范中不再有 `typedef` / `type Name =` 用法（历史 docs 除外）。
 
 ## 6. 非目标
 
@@ -144,10 +144,10 @@
 
 独立 builder 审阅后提出的问题，逐条落定：
 
-1. **`type Name = T;`（TypeDeclAST）**——**已裁定：一并删除，只留 `using`**（选项 A）。`type` 与 `typedef` 都变硬错误；`examples/all_features.c` 的 `type Speed = float64;` 迁移为 `using Speed = float64;`；DEC-16/PAR-24 标记为“删除，只留 using”。
+1. **`type Name = T;`（TypeDeclAST）**——**已裁定：一并删除，只留 `using`**（选项 A）。`type` 与 `typedef` 都变硬错误；`examples/all_features.cmm` 的 `type Speed = float64;` 迁移为 `using Speed = float64;`；DEC-16/PAR-24 标记为“删除，只留 using”。
 2. **成员体内的 `typedef`**——硬错误覆盖所有位置：顶层、namespace、块、struct/class/union 成员体。class 体当前“静默忽略”的洞必须堵上；成员循环遇到 `TOKEN_TYPEDEF` 报同一提示并跳到 `;`。
-3. **示例与资源**——`examples/all_features.c` 纳入迁移（第 2 节全是 typedef/using/type），并加一次“示例可编译”验证。`resources/main.c` 不纳入：它不被测试/构建消费，且含 `unsigned long` 等本语言不支持的写法（C 展示稿）。
-4. **“无 typedef”验证口径**——检查范围：`tests/`、`examples/`、`libs/` 下的 `.c`/`.smc` 语言源，以及 `docs/spec/` 现行规范。豁免：`src/frontend/Lexer.cpp` 的 `"typedef"→TOKEN_TYPEDEF` 映射、`Token.*` 名称、`Parser.cpp` 的诊断文案（硬错误需要识别该 token）。
+3. **示例与资源**——`examples/all_features.cmm` 纳入迁移（第 2 节全是 typedef/using/type），并加一次“示例可编译”验证。`resources/main.c` 不纳入：它不被测试/构建消费，且含 `unsigned long` 等本语言不支持的写法（C 展示稿）。
+4. **“无 typedef”验证口径**——检查范围：`tests/`、`examples/`、`libs/` 下的 `.c`/`.cmm` 语言源，以及 `docs/spec/` 现行规范。豁免：`src/frontend/Lexer.cpp` 的 `"typedef"→TOKEN_TYPEDEF` 映射、`Token.*` 名称、`Parser.cpp` 的诊断文案（硬错误需要识别该 token）。
 5. **块/类内 `using` 诊断**——仍是非目标，但不再留“expected expression”级联：语句入口与成员循环识别 `using IDENT =` 形态，报“`using` alias declarations are only allowed at namespace scope”，跳到 `;`。加 parser 测试。
 
 ## 10. 任务拆分（修订）
@@ -155,6 +155,6 @@
 1. `using` type-id：固定数组（1D/多维/数组指针）。
 2. `using` type-id：函数指针与组合。
 3. `using` 内联 enum 枚举量 + 注解/deprecated 对齐。
-4. 迁移测试与 `examples/all_features.c` 到 `using`（保持全量绿）。
+4. 迁移测试与 `examples/all_features.cmm` 到 `using`（保持全量绿）。
 5. `typedef` / `type` 硬错误（含成员体）+ 删除 `TypedefDeclAST` / `TypeDeclAST`；块/类内 `using` 定向诊断。
 6. 文档（grammar/keywords/semantics/abi/conversions/fixed-width-types）+ TODO/Progress（DEC-16/PAR-24 关闭）。

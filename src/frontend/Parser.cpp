@@ -1663,7 +1663,7 @@ std::unique_ptr<CompoundStmtAST> Parser::parseCompoundStmt() {
 bool Parser::rejectPreprocessorDirective() {
     if (!check(TokenType::TOKEN_HASH)) return false;
     auto hash = advance();
-    error("preprocessor directives are not supported (SafeModern C has no preprocessor)", *hash);
+    error("preprocessor directives are not supported (Cmm has no preprocessor)", *hash);
     // Skip the remainder of the directive line to avoid cascading errors.
     while (peek() && peek()->type != TokenType::TOKEN_EOS && peek()->line == hash->line) {
         advance();

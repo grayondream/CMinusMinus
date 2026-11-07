@@ -8,7 +8,7 @@
 
 前轮完成 P1-09 std.mem/std.bit/std.math 后，用户要求**暂停标准库**，改为从语法层面
 审计语言缺口。审计基于 `docs/spec/grammar.ebnf` 的 `[plan]` 标记、`docs/spec/keywords.md`
-的 `[plan]` 标记，并对实际编译器（`build/bin/my_llvm_c`）逐项实测。
+的 `[plan]` 标记，并对实际编译器（`build/bin/cmm`）逐项实测。
 
 实测发现两类问题：
 

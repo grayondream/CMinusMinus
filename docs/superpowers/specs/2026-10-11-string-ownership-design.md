@@ -113,7 +113,7 @@
 ## §6 重命名迁移（str → string_view，D3）
 
 - 量：50 文件 / ~551 处（src 140、tests/docs/libs 411）。
-- 顺序：`src/`（类型定义、sema、codegen、AST）→ `libs/std/*.smc` → `tests/` → `docs/`。
+- 顺序：`src/`（类型定义、sema、codegen、AST）→ `libs/std/*.cmm` → `tests/` → `docs/`。
 - 机制：`StrType` → `string_view` 类型名注册（Parser `isTypeStart`/`parseBaseType` 名字特判，与 P1-06 小写化同路径）；`TypeKind::Str` 保留内部名。
 - DEC-18 先例：旧名成为未知标识符（`Optional→optional` 同款，量级更大）。`str_from_c` 函数名保留（参数/返回类型改 `string_view`）。
 - `[]str`（split 返回）→ `[]string_view`；`split_destroy` 签名不变。
@@ -138,7 +138,7 @@
 - 拷贝/移动语义：`CopyModifyOriginalUnaffected`、`MoveFromNewNoLeak`、`MoveFromCallNoLeak`、`MovedFromIsEmpty`、`DestroyMovedFromSafe`、`ReturnMovesLocal`（含 `defer destroy; return`）、`ConditionalReturnCopiesOperands`、`AssignFreesOldBuffer`、`SelfAssignSafe`。
 - 聚合：`StructWithStringCopyDeep`、`StructWithStringAssignFreesOld`。
 - 迁移：全量无 `str` 标识符残留（grep 断言）；`string_view` 全 API 回归（原 str 用例改名）。
-- 回归：现有 string/format/split/split_destroy/string.smc 全部用例；全量 `ctest` 绿。
+- 回归：现有 string/format/split/split_destroy/string.cmm 全部用例；全量 `ctest` 绿。
 
 ## §10 已定案与留给 builder 的点
 

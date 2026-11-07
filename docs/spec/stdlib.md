@@ -31,10 +31,10 @@ P0-05（STD-01 / STD-12 / STD-23 / STD-27）与 DEC-21。
 - 无 `NDEBUG` 概念（无预处理器），断言**始终启用**。
 - 类型为 `void`。
 
-```smc
+```cmm
 int32 main() {
     int32 x = compute();
-    assert(x > 0);   // 失败: foo.smc:3: assertion failed
+    assert(x > 0);   // 失败: foo.cmm:3: assertion failed
     return x;
 }
 ```
@@ -48,11 +48,11 @@ int32 main() {
 ## 4. `abort` `[impl]`
 
 `abort` 是 **C 绑定层**（§5）暴露的 libc 符号，全局可用；`panic`/`assert` 内部即调用
-它。它**不**放在 `namespace std` 下：SafeModern C 的非限定名解析优先匹配外层
+它。它**不**放在 `namespace std` 下：Cmm 的非限定名解析优先匹配外层
 namespace 前缀，`namespace std { void abort() { abort(); } }` 会自递归，故 `abort`
 作为 C 绑定保留在全局作用域。
 
-## 5. `std.c` 绑定层（`libs/std/c.smc`）`[impl]`
+## 5. `std.c` 绑定层（`libs/std/c.cmm`）`[impl]`
 
 无预处理器下访问 libc 的方式：`extern` 声明 + 链接期解析（MOD-09 / STD-23）。该文件
 是权威来源，编译器内嵌同文本作为兜底；默认预置于每个编译单元，`--no-prelude` 关闭。
@@ -98,7 +98,7 @@ namespace 前缀，`namespace std { void abort() { abort(); } }` 会自递归，
 | stdin | `std::read_char` / `std::read_int` / `std::read_line` | `int32 ()` / `int32 ()` / `int32 (char*, int32)` |
 | 文件 | `std::file_open` / `std::file_close` | `void* (const char*, const char*)` / `int32 (void*)` |
 | 文件 | `std::file_read` / `std::file_write` | `usize (void*, void*, usize)` |
-| 文件 | `std::file_read_line` / `std::file_read_char` / `std::file_write_char` / `std::file_write_str` | 见 `libs/std/io.smc` |
+| 文件 | `std::file_read_line` / `std::file_read_char` / `std::file_write_char` / `std::file_write_str` | 见 `libs/std/io.cmm` |
 
 - `read_int` 返回解析值，输入非法时返回 `0`（类似 `atoi`；无异常通道）。
 - `read_line`/`file_read_line` 读入缓冲区并保证 NUL 结尾，不含换行。
@@ -114,8 +114,8 @@ namespace 前缀，`namespace std { void abort() { abort(); } }` 会自递归，
 
 ## 9. `std.string`（P1-09 / STD-10）`[impl]`
 
-**分层**：原语（内建，无需 import）+ 组合（`libs/std/string.smc`，`import std.string;`）。
-原语之所以是内建：`.smc` 层无法触达 `string_view` 内部字段、也无法从 `ptr+len` 构造切片值。
+**分层**：原语（内建，无需 import）+ 组合（`libs/std/string.cmm`，`import std.string;`）。
+原语之所以是内建：`.cmm` 层无法触达 `string_view` 内部字段、也无法从 `ptr+len` 构造切片值。
 `string_view`/字符串字面量只隐式转换为 `const char*`；可变 `char*` 需显式转换。
 
 ### 9.1 内建原语 `[impl]`
@@ -191,7 +191,7 @@ type  := 'x' | 'X' | 'o' | 'b' | 'f' | 'e' | 's'
 仍无可行转换 → 编译期错误 `cannot format value of type ...`。
 
 ### 10.4 动态格式串契约（非字面量 fmt）`[impl]`
-编译期**只检查实参可格式化**，不解析规格。运行时（`smc.format.dyn`）：
+编译期**只检查实参可格式化**，不解析规格。运行时（`cmm.format.dyn`）：
 `{{`/`}}` 转义；`{...}` 消费下一实参并按其静态类型**默认转换**（规格文本被忽略）；
 占位符多于实参 → 多余忽略；少于 → 缺位读空串即停；未终止 `{` → 扫描即止。
 以上动态行为**不做检查不 panic**，格式串自担（stdlib 边界，spec §2.3.3）。
@@ -220,9 +220,9 @@ type  := 'x' | 'X' | 'o' | 'b' | 'f' | 'e' | 's'
 
 ### 11.1 Allocator / Arena / Pool `[impl]`
 
-`libs/std/mem.smc` 导出以下类型（模块导出类型已可用）：
+`libs/std/mem.cmm` 导出以下类型（模块导出类型已可用）：
 
-```smc
+```cmm
 struct Allocator {
     void* (*alloc_fn)(void* ctx, usize size);
     void* (*resize_fn)(void* ctx, void* p, usize size);
@@ -296,7 +296,7 @@ JIT 经进程符号解析）+ `constexpr` 常量 + 位级浮点分类。
 
 ## 14. 容器库 `std.vec` / `std.deque` / `std.hashmap` / `std.hashset`（STD-06~08）`[impl]`
 
-容器全部实现在 `libs/std/{vec,deque,hashmap,hashset}.smc`，**不在编译器内**；
+容器全部实现在 `libs/std/{vec,deque,hashmap,hashset}.cmm`，**不在编译器内**；
 每个容器是独立模块，按需导入：
 
 - `import std.vec;` → `std::Vec<T>`
@@ -363,7 +363,7 @@ JIT 经进程符号解析）+ `constexpr` 常量 + 位级浮点分类。
 
 ### 18.1 内存序与 API
 
-```smc
+```cmm
 enum MemoryOrder : int32 {
     MemoryOrderRelaxed, MemoryOrderConsume, MemoryOrderAcquire,
     MemoryOrderRelease, MemoryOrderAcqRel, MemoryOrderSeqCst
@@ -401,7 +401,7 @@ enum MemoryOrder : int32 {
 - 现有 `atomic T` 限定符保持不变（整数标量、seq_cst load/store 与
   atomicrmw 子集）；本模块提供显式序和 CAS/fence。
 
-```smc
+```cmm
 import std.atomic;
 std::Atomic<int64> counter = {0};
 int32 main() {
@@ -448,8 +448,8 @@ detach 后 `join` 均返回 `false` 并写 `last_error`。`Thread` 无析构函�
 - `print`/`println`/`format`/`assert`/`panic` 仍是**语言内建**：它们需要调用点
   的格式串/源码位置，且无预处理器；用户同名声明优先。
 - `string`/`string_view`/`optional`/`result`/`slice` 是**语言类型**，其底层表示与
-  所有权规则由编译器维护；高层组合 API 在 `libs/std/string.smc`。
-- `std.c` 已完全移至 `libs/std/c.smc`，编译器**不再内嵌** std.c 文本；缺失标准库
+  所有权规则由编译器维护；高层组合 API 在 `libs/std/string.cmm`。
+- `std.c` 已完全移至 `libs/std/c.cmm`，编译器**不再内嵌** std.c 文本；缺失标准库
   安装时驱动会显式报错（`--no-prelude` 可关闭注入）。
 - 容器、哈希、排序、解析、路径、文件、时间、环境、测试辅助全部在 `libs/std/`。
 
@@ -459,7 +459,7 @@ detach 后 `join` 均返回 `false` 并写 `last_error`。`Thread` 无析构函�
 - `std.vec` / `std.deque` / `std.hashmap` / `std.hashset`：`List`/`BTree`、`Vec::shrink_to_fit`、元素析构/清理辅助。
 - `std.unicode`、完整 `std.string` 字典序/`replace`、`std.path::normalize`。
 - `std.fs`：目录遍历、`stat` 元数据、原子写入；`std.os`：argv/进程控制。
-- `std.testing` + `smc test` runner（TOOL-01）。
+- `std.testing` + `cmm test` runner（TOOL-01）。
 - `std.atomic`：16 字节/`int128`/`float128`、聚合原子、`atomic_ref`/`atomic_flag`、
   constexpr atomic 语义；任意 CAS 组合的可读模板常量写法。
 - `std.thread`：mutex/condition_variable、跨平台线程后端、`jthread`/取消、

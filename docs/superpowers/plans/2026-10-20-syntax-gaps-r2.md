@@ -6,7 +6,7 @@
 
 **Architecture:** 各特性分别触及 Lexer/Parser/AST/sema/codegen 五层，但相互独立——每 Task 一个特性、独立 RED→GREEN→commit。语义决策以设计文档 `2026-10-20-syntax-gaps-r2-design.md` 为权威。
 
-**Tech Stack:** C++17, LLVM 21, CMake, GTest, `build/bin/my_llvm_c`（CLI 探测）。
+**Tech Stack:** C++17, LLVM 21, CMake, GTest, `build/bin/cmm`（CLI 探测）。
 
 **Spec:** `docs/superpowers/specs/2026-10-20-syntax-gaps-r2-design.md`（已批准，commit `510edfb`）
 
@@ -14,7 +14,7 @@
 
 - 全量回归：`cd build && cmake --build . -j$(nproc) && ctest -j8` 无失败；SpecConformance 12/12；工作区 clean。
 - 测试自动收集：`tests/CMakeLists.txt` 用 GLOB，新测试文件需重新 configure（新增文件后重跑 cmake）。
-- CLI 探测：`./build/bin/my_llvm_c -S file.c`（`-S` 输出 stdout、走 sema；`-fsyntax-only` 不跑 sema）。
+- CLI 探测：`./build/bin/cmm -S file.c`（`-S` 输出 stdout、走 sema；`-fsyntax-only` 不跑 sema）。
 - 每 Task：先写失败测试（RED），实现后转绿（GREEN），独立 commit 引用 TODO ID。
 - commit 直接 master（项目既有约定）。
 - 语言内嵌字符串类型 `string_view`（getStrType()，原名 `str`）；无 `int`/`float`/`double`，用定宽 int32/float64。

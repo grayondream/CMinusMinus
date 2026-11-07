@@ -6,7 +6,7 @@
 
 ## 1. 背景与目标
 
-SafeModern C 1.0 已有 slice 的**骨架**：语法 `T[]`（grammar `slice-suffix`，Parser.cpp:1731）、
+Cmm 1.0 已有 slice 的**骨架**：语法 `T[]`（grammar `slice-suffix`，Parser.cpp:1731）、
 `SliceType{elementType}`（Type.h:130）、LLVM 表示 `{ptr, i64}`（CodegenContext.cpp:478）。
 实证现状（2026-09-30 探查）：
 

@@ -76,7 +76,7 @@ Expected: 两项 FAIL（现状 sema 接受悬垂返回；快照文件不存在�
 
 - [ ] **Step 4: 跑测试确认通过 + 全量**
 
-`ctest` Expected: 774/774（快照文件 `tests/diagnostics/snapshots/local_array_return_dangling.txt` 用 `SMC_UPDATE_SNAPSHOTS=1` 生成后确认内容含错误行）。
+`ctest` Expected: 774/774（快照文件 `tests/diagnostics/snapshots/local_array_return_dangling.txt` 用 `CMM_UPDATE_SNAPSHOTS=1` 生成后确认内容含错误行）。
 
 - [ ] **Step 5: 提交**
 
@@ -133,7 +133,7 @@ TEST(SliceSemTest, UnnamedArrayParamRejected) {
 - [ ] **Step 2: 跑测试确认失败**
 
 `./bin/compiler_tests --gtest_filter='SliceSemTest.ArrayParamAccepted:SliceSemTest.CrossElementArrayParamRejected:SliceSemTest.FunctionPointerArrayParamDesugared:SliceSemTest.MultiDimArrayParamRejected:SliceSemTest.UnnamedArrayParamRejected'`
-Expected: `ArrayParamAccepted`/`CrossElementArrayParamRejected`/`FunctionPointerArrayParamDesugared` FAIL（现状 `[2]` 解析报错被 analyzeOk 忽略 → 实为 parse 失败；若意外 PASS 用 CLI `./build/bin/my_llvm_c` 复核 parse 层）；`MultiDimArrayParamRejected`/`UnnamedArrayParamRejected` PASS（现状即报错，钉住）。
+Expected: `ArrayParamAccepted`/`CrossElementArrayParamRejected`/`FunctionPointerArrayParamDesugared` FAIL（现状 `[2]` 解析报错被 analyzeOk 忽略 → 实为 parse 失败；若意外 PASS 用 CLI `./build/bin/cmm` 复核 parse 层）；`MultiDimArrayParamRejected`/`UnnamedArrayParamRejected` PASS（现状即报错，钉住）。
 
 - [ ] **Step 3: 实现去糖**（`parseParamDecl`，仅在有标识符时）
 

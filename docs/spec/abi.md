@@ -1,4 +1,4 @@
-# SafeModern C 1.0 — ABI / 类型布局规范
+# Cmm 1.0 — ABI / 类型布局规范
 
 > 对应 TODO：**TYP-27**、**MEM-14/15/16**、**MOD-15**、**CG-01/18**
 > 状态：`[impl]` 以 `src/codegen/CodegenContext.cpp`、`src/ast/Mangle.cpp` 为准；`[plan]` 为目标，可能随 DEC 调整。
