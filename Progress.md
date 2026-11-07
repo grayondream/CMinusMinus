@@ -1249,4 +1249,4 @@
 - 兼容：硬切换，不保留旧扩展名别名；命令行旧扩展名输入和旧扩展名导入均报明确的迁移错误。
 - 内部命名：C++ 内部命名空间、UTF-8 辅助命名空间、内部 builtin 与 helper 统一为 `cmm` / `cmm_utf8` / `__cmm_*` / `cmm.*`；快照环境变量统一为 `CMM_UPDATE_SNAPSHOTS`。
 - 文档：新增根 `README.md`（英文主文 + 中文简介）；`docs/spec/` 全部标题改为 `Cmm 1.0`，路径/代码围栏/工具命令同步；历史 TODO/Progress/设计计划中的旧产品名机械归一化。
-- 验证：`cmake -S . -B build && cmake --build build -j$(nproc)` 成功；`ctest --test-dir build -j8` **1799/1799** 通过；`build/bin/cmm examples/all_features.cmm` 输出 `ALL FEATURES OK`；安装布局包含 `bin/cmm` 与 `share/cmm/libs/c.cmm`。
+- 验证：`cmake -S . -B build && cmake --build build -j$(nproc)` 成功；`ctest --test-dir build -j8` **1799/1799** 通过；`build/bin/cmm examples/all_features.cmm` 输出 `ALL FEATURES OK`；安装布局包含 `bin/cmm` 与 `share/cmm/libs/std/c.cmm`。

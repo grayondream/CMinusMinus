@@ -116,7 +116,7 @@ sema（test_semantic_analyzer.cpp）：
 
 e2e（test_agg.cpp 或新文件）：
 
-9. `CmmounterPersist`——static 计数器跨调用持久（三次调用后 `r == 3`）；
+9. `SMCounterPersist`——static 计数器跨调用持久（三次调用后 `r == 3`）；
 10. `SMFactoryMethod`——static 工厂返回对象并可用；
 11. `SMPrivateInternalUse`——private static 成员经 public 方法内部使用
     （完全限定书写）。
