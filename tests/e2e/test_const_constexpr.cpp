@@ -127,7 +127,7 @@ TEST_F(ConstConstexprE2E, ConstFromResourceFile) {
 TEST_F(ConstConstexprE2E, DriverBasicUsage) {
     CompilerDriver driver;
     std::string testFile = std::string(E2E_RESOURCE_DIR) + "/test_const.c";
-    const char* argv[] = {"my_llvm_c", "-o", "test_const_e2e", testFile.c_str()};
+    const char* argv[] = {"cmm", "-o", "test_const_e2e", testFile.c_str()};
     ASSERT_TRUE(driver.parseArguments(4, argv));
     EXPECT_EQ(driver.run(), 0);
     EXPECT_EQ(system("./test_const_e2e"), 0);

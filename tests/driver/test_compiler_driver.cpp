@@ -30,26 +30,26 @@ protected:
 };
 
 TEST_F(CompilerDriverTest, ParseCompileOnlyFlag) {
-    const char* argv[] = {"my_llvm_c", "-c", "test.c"};
+    const char* argv[] = {"cmm", "-c", "test.c"};
     ASSERT_TRUE(driver.parseArguments(3, argv));
     EXPECT_TRUE(driver.getCompileOnly());
 }
 
 TEST_F(CompilerDriverTest, ParseOutputFlag) {
-    const char* argv[] = {"my_llvm_c", "-o", "out.o", "test.c"};
+    const char* argv[] = {"cmm", "-o", "out.o", "test.c"};
     ASSERT_TRUE(driver.parseArguments(4, argv));
     EXPECT_EQ(driver.getOutputFile(), "out.o");
 }
 
 TEST_F(CompilerDriverTest, ParseSingleModulePath) {
-    const char* argv[] = {"my_llvm_c", "-M", "libs", "test.c"};
+    const char* argv[] = {"cmm", "-M", "libs", "test.c"};
     ASSERT_TRUE(driver.parseArguments(4, argv));
     ASSERT_EQ(driver.getModulePaths().size(), 1u);
     EXPECT_EQ(driver.getModulePaths()[0], "libs");
 }
 
 TEST_F(CompilerDriverTest, ParseMultipleModulePaths) {
-    const char* argv[] = {"my_llvm_c", "-M", "libs", "-M", "vendored", "test.c"};
+    const char* argv[] = {"cmm", "-M", "libs", "-M", "vendored", "test.c"};
     ASSERT_TRUE(driver.parseArguments(6, argv));
     ASSERT_EQ(driver.getModulePaths().size(), 2u);
     EXPECT_EQ(driver.getModulePaths()[0], "libs");
@@ -57,14 +57,14 @@ TEST_F(CompilerDriverTest, ParseMultipleModulePaths) {
 }
 
 TEST_F(CompilerDriverTest, DefaultBehaviorIsJitMode) {
-    const char* argv[] = {"my_llvm_c"};
+    const char* argv[] = {"cmm"};
     ASSERT_TRUE(driver.parseArguments(1, argv));
     EXPECT_TRUE(driver.getJitMode());
     EXPECT_TRUE(driver.getInputFiles().empty());
 }
 
 TEST_F(CompilerDriverTest, ParseInputFile) {
-    const char* argv[] = {"my_llvm_c", "test.c"};
+    const char* argv[] = {"cmm", "test.c"};
     ASSERT_TRUE(driver.parseArguments(2, argv));
     ASSERT_EQ(driver.getInputFiles().size(), 1u);
     EXPECT_EQ(driver.getInputFiles()[0], "test.c");
@@ -72,7 +72,7 @@ TEST_F(CompilerDriverTest, ParseInputFile) {
 }
 
 TEST_F(CompilerDriverTest, ParseMultipleInputFiles) {
-    const char* argv[] = {"my_llvm_c", "a.c", "b.c"};
+    const char* argv[] = {"cmm", "a.c", "b.c"};
     ASSERT_TRUE(driver.parseArguments(3, argv));
     ASSERT_EQ(driver.getInputFiles().size(), 2u);
     EXPECT_EQ(driver.getInputFiles()[0], "a.c");
@@ -80,76 +80,76 @@ TEST_F(CompilerDriverTest, ParseMultipleInputFiles) {
 }
 
 TEST_F(CompilerDriverTest, ParseEmitIR) {
-    const char* argv[] = {"my_llvm_c", "-S", "test.c"};
+    const char* argv[] = {"cmm", "-S", "test.c"};
     ASSERT_TRUE(driver.parseArguments(3, argv));
     EXPECT_TRUE(driver.getEmitIR());
 }
 
 TEST_F(CompilerDriverTest, ParseSyntaxOnly) {
-    const char* argv[] = {"my_llvm_c", "-fsyntax-only", "test.c"};
+    const char* argv[] = {"cmm", "-fsyntax-only", "test.c"};
     ASSERT_TRUE(driver.parseArguments(3, argv));
     EXPECT_TRUE(driver.getSyntaxOnly());
 }
 
 TEST_F(CompilerDriverTest, ParseWall) {
-    const char* argv[] = {"my_llvm_c", "-Wall", "test.c"};
+    const char* argv[] = {"cmm", "-Wall", "test.c"};
     ASSERT_TRUE(driver.parseArguments(3, argv));
     EXPECT_TRUE(driver.getWall());
 }
 
 TEST_F(CompilerDriverTest, ParseWerror) {
-    const char* argv[] = {"my_llvm_c", "-Werror", "test.c"};
+    const char* argv[] = {"cmm", "-Werror", "test.c"};
     ASSERT_TRUE(driver.parseArguments(3, argv));
     EXPECT_TRUE(driver.getWerror());
 }
 
 TEST_F(CompilerDriverTest, ParseStdStandard) {
-    const char* argv[] = {"my_llvm_c", "-std", "c11", "test.c"};
+    const char* argv[] = {"cmm", "-std", "c11", "test.c"};
     ASSERT_TRUE(driver.parseArguments(4, argv));
     EXPECT_EQ(driver.getStdStandard(), "c11");
 }
 
 TEST_F(CompilerDriverTest, ParseOptLevels) {
     {
-        const char* argv[] = {"my_llvm_c", "-O", "0", "test.c"};
+        const char* argv[] = {"cmm", "-O", "0", "test.c"};
         ASSERT_TRUE(driver.parseArguments(4, argv));
         EXPECT_EQ(driver.getOptLevel(), 0);
     }
     {
         CompilerDriver d;
-        const char* argv[] = {"my_llvm_c", "-O", "2", "test.c"};
+        const char* argv[] = {"cmm", "-O", "2", "test.c"};
         ASSERT_TRUE(d.parseArguments(4, argv));
         EXPECT_EQ(d.getOptLevel(), 2);
     }
     {
         CompilerDriver d;
-        const char* argv[] = {"my_llvm_c", "-O", "3", "test.c"};
+        const char* argv[] = {"cmm", "-O", "3", "test.c"};
         ASSERT_TRUE(d.parseArguments(4, argv));
         EXPECT_EQ(d.getOptLevel(), 3);
     }
 }
 
 TEST_F(CompilerDriverTest, ParseDebugFlag) {
-    const char* argv[] = {"my_llvm_c", "-g", "test.c"};
+    const char* argv[] = {"cmm", "-g", "test.c"};
     ASSERT_TRUE(driver.parseArguments(3, argv));
     EXPECT_TRUE(driver.getIncludeDebug());
 }
 
 TEST_F(CompilerDriverTest, ParseVerboseFlag) {
-    const char* argv[] = {"my_llvm_c", "-v", "test.c"};
+    const char* argv[] = {"cmm", "-v", "test.c"};
     ASSERT_TRUE(driver.parseArguments(3, argv));
     EXPECT_TRUE(driver.getVerbose());
 }
 
 TEST_F(CompilerDriverTest, ParseLib) {
-    const char* argv[] = {"my_llvm_c", "-l", "m", "test.c"};
+    const char* argv[] = {"cmm", "-l", "m", "test.c"};
     ASSERT_TRUE(driver.parseArguments(4, argv));
     ASSERT_EQ(driver.getLibs().size(), 1u);
     EXPECT_EQ(driver.getLibs()[0], "m");
 }
 
 TEST_F(CompilerDriverTest, ParseMultipleLibs) {
-    const char* argv[] = {"my_llvm_c", "-l", "m", "-l", "pthread", "test.c"};
+    const char* argv[] = {"cmm", "-l", "m", "-l", "pthread", "test.c"};
     ASSERT_TRUE(driver.parseArguments(6, argv));
     ASSERT_EQ(driver.getLibs().size(), 2u);
     EXPECT_EQ(driver.getLibs()[0], "m");
@@ -157,14 +157,14 @@ TEST_F(CompilerDriverTest, ParseMultipleLibs) {
 }
 
 TEST_F(CompilerDriverTest, ParseLibPath) {
-    const char* argv[] = {"my_llvm_c", "-L", "/usr/lib", "test.c"};
+    const char* argv[] = {"cmm", "-L", "/usr/lib", "test.c"};
     ASSERT_TRUE(driver.parseArguments(4, argv));
     ASSERT_EQ(driver.getLibPaths().size(), 1u);
     EXPECT_EQ(driver.getLibPaths()[0], "/usr/lib");
 }
 
 TEST_F(CompilerDriverTest, ParseMultipleLibPaths) {
-    const char* argv[] = {"my_llvm_c", "-L", "/usr/lib", "-L", "/usr/local/lib", "test.c"};
+    const char* argv[] = {"cmm", "-L", "/usr/lib", "-L", "/usr/local/lib", "test.c"};
     ASSERT_TRUE(driver.parseArguments(6, argv));
     ASSERT_EQ(driver.getLibPaths().size(), 2u);
     EXPECT_EQ(driver.getLibPaths()[0], "/usr/lib");
@@ -172,7 +172,7 @@ TEST_F(CompilerDriverTest, ParseMultipleLibPaths) {
 }
 
 TEST_F(CompilerDriverTest, ParseCombinedFlags) {
-    const char* argv[] = {"my_llvm_c", "-c", "-g", "-O", "2", "-M", "libs", "-o", "out.o", "test.c"};
+    const char* argv[] = {"cmm", "-c", "-g", "-O", "2", "-M", "libs", "-o", "out.o", "test.c"};
     ASSERT_TRUE(driver.parseArguments(10, argv));
     EXPECT_TRUE(driver.getCompileOnly());
     EXPECT_TRUE(driver.getIncludeDebug());
@@ -185,31 +185,38 @@ TEST_F(CompilerDriverTest, ParseCombinedFlags) {
 }
 
 TEST_F(CompilerDriverTest, UnknownOptionFails) {
-    const char* argv[] = {"my_llvm_c", "--unknown", "test.c"};
+    const char* argv[] = {"cmm", "--unknown", "test.c"};
     EXPECT_FALSE(driver.parseArguments(3, argv));
 }
 
 TEST_F(CompilerDriverTest, MissingOutputArgumentFails) {
-    const char* argv[] = {"my_llvm_c", "-o"};
+    const char* argv[] = {"cmm", "-o"};
     EXPECT_FALSE(driver.parseArguments(2, argv));
 }
 
 TEST_F(CompilerDriverTest, RunReturnsZero) {
-    const char* argv[] = {"my_llvm_c"};
+    const char* argv[] = {"cmm"};
     ASSERT_TRUE(driver.parseArguments(1, argv));
     EXPECT_EQ(driver.run(), 0);
 }
 
 TEST_F(CompilerDriverTest, RunJitModeReturnsZero) {
-    const char* argv[] = {"my_llvm_c"};
+    const char* argv[] = {"cmm"};
     ASSERT_TRUE(driver.parseArguments(1, argv));
     EXPECT_EQ(driver.run(), 0);
 }
 
 TEST_F(CompilerDriverTest, DefaultOutputIsAOut) {
-    const char* argv[] = {"my_llvm_c", "test.c"};
+    const char* argv[] = {"cmm", "test.c"};
     ASSERT_TRUE(driver.parseArguments(2, argv));
     EXPECT_EQ(driver.getOutputFile(), "a.out");
+}
+
+TEST_F(CompilerDriverTest, PrintHelpUsesCmm) {
+    testing::internal::CaptureStdout();
+    driver.printHelp();
+    const std::string out = testing::internal::GetCapturedStdout();
+    EXPECT_NE(out.find("Usage: cmm"), std::string::npos);
 }
 
 namespace {
@@ -225,7 +232,7 @@ TEST_F(CompilerDriverTest, LexSyntaxOnlySucceedsForValidSource) {
     const std::filesystem::path p =
         writeTempSource("smc_driver_valid.c", "int32 main() { return 0; }\n");
     const std::string path = p.string();
-    const char* argv[] = {"my_llvm_c", "-fsyntax-only", path.c_str()};
+    const char* argv[] = {"cmm", "-fsyntax-only", path.c_str()};
     ASSERT_TRUE(driver.parseArguments(3, argv));
     EXPECT_EQ(driver.run(), 0);
     std::filesystem::remove(p);
@@ -235,7 +242,7 @@ TEST_F(CompilerDriverTest, InvalidCharacterFailsCompilation) {
     // LEX-13: the driver must surface lexer diagnostics and fail the build.
     const std::filesystem::path p = writeTempSource("smc_driver_badlex.c", "int32 @ x;\n");
     const std::string path = p.string();
-    const char* argv[] = {"my_llvm_c", "-fsyntax-only", path.c_str()};
+    const char* argv[] = {"cmm", "-fsyntax-only", path.c_str()};
     ASSERT_TRUE(driver.parseArguments(3, argv));
     EXPECT_EQ(driver.run(), 1);
     std::filesystem::remove(p);
@@ -265,7 +272,7 @@ TEST_F(CompilerDriverTest, ThreadProgramLinksAndRuns) {
     }
     const std::string srcPath = src.string();
     const std::string outPath = out.string();
-    const char* argv[] = {"my_llvm_c", "-M", STD_DIR, srcPath.c_str(),
+    const char* argv[] = {"cmm", "-M", STD_DIR, srcPath.c_str(),
                           "-o", outPath.c_str()};
     ASSERT_TRUE(driver.parseArguments(6, argv));
     EXPECT_EQ(driver.run(), 0);

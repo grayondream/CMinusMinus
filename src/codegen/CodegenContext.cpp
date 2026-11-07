@@ -28,7 +28,7 @@ static bool bitFieldIsUnsigned(Type* t) {
 CodegenContext::CodegenContext()
     : context(std::make_unique<llvm::LLVMContext>()),
       builder(*context),
-      module(std::make_unique<llvm::Module>("my_llvm_c", *context)),
+      module(std::make_unique<llvm::Module>("cmm", *context)),
       diBuilder(std::make_unique<llvm::DIBuilder>(*module)) {
     pushScope();
 }
@@ -37,7 +37,7 @@ void CodegenContext::setSourceFile(const std::string& file) {
     sourceFileName = file;
     diFile = diBuilder->createFile(file, ".");
     diCompileUnit = diBuilder->createCompileUnit(
-        llvm::dwarf::DW_LANG_C, diFile, "My_LLVM_C Compiler",
+        llvm::dwarf::DW_LANG_C, diFile, "Cmm Compiler",
         false, "", 0);
     diCurrentScope = diFile;
 }

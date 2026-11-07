@@ -30,7 +30,7 @@ target_compile_definitions(compiler_tests PRIVATE
 
 target_link_libraries(compiler_tests
     PRIVATE
-        my_llvm_c_lib
+        cmm_lib
         GTest::gtest_main
 )
 

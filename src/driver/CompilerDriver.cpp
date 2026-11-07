@@ -40,12 +40,12 @@ static void appendStdLibDirs(std::vector<std::string>& dirs) {
         }
         dirs.push_back(std::move(s));
     };
-    if (const char* env = std::getenv("SMC_STD_DIR")) add(env);
+    if (const char* env = std::getenv("CMM_STD_DIR")) add(env);
 #ifdef STD_DIR
     add(STD_DIR);
 #endif
-#ifdef SMC_INSTALL_STD_DIR
-    add(SMC_INSTALL_STD_DIR);
+#ifdef CMM_INSTALL_STD_DIR
+    add(CMM_INSTALL_STD_DIR);
 #endif
     std::error_code ec;
     auto exe = std::filesystem::read_symlink("/proc/self/exe", ec);
@@ -158,14 +158,14 @@ bool CompilerDriver::parseArguments(int argc, const char* argv[]) {
     }
 
     std::vector<const char*> cArgs;
-    cArgs.push_back("my_llvm_c");
+    cArgs.push_back("cmm");
     for (const auto& a : args) {
         cArgs.push_back(a.c_str());
     }
     int newArgc = static_cast<int>(cArgs.size());
     const char** newArgv = cArgs.data();
 
-    cxxopts::Options options("my_llvm_c", "A C11 subset compiler built with LLVM");
+    cxxopts::Options options("cmm", "The Cmm compiler (C minus minus)");
     
     options.add_options()
         ("c", "Compile only, do not link")
@@ -473,8 +473,8 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
 #ifdef MIMALLOC_LIB_DIR
     haveMimalloc = addMimalloc(MIMALLOC_LIB_DIR);
 #endif
-#ifdef SMC_INSTALL_MIMALLOC_DIR
-    if (!haveMimalloc) haveMimalloc = addMimalloc(SMC_INSTALL_MIMALLOC_DIR);
+#ifdef CMM_INSTALL_MIMALLOC_DIR
+    if (!haveMimalloc) haveMimalloc = addMimalloc(CMM_INSTALL_MIMALLOC_DIR);
 #endif
     if (!haveMimalloc) {
         std::error_code ec;
@@ -505,7 +505,7 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
 }
 
 void CompilerDriver::printHelp() const {
-    std::cout << "Usage: my_llvm_c [options] <input files>\n"
+    std::cout << "Usage: cmm [options] <input files>\n"
               << "\n"
               << "Options:\n"
               << "  -c              Compile only, do not link\n"

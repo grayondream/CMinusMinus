@@ -369,7 +369,7 @@ CompileTimeEvaluator::evalCTMemberChain(MemberAccessExprAST& node, ASTNode& at) 
         }
         if (m == "compiler") {
             cv.type = ConstValue::STR;
-            cv.strVal = "my_llvm_c";
+            cv.strVal = "cmm";
             return cv;
         }
         if (m == "host_os") {

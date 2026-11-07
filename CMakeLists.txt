@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(My_LLVM_C LANGUAGES C CXX)
+project(Cmm LANGUAGES C CXX)
 
 include(GNUInstallDirs)
 
@@ -74,8 +74,8 @@ endif()
 
 # Stdlib and allocator are installed as data/runtime dependencies, not baked
 # into the compiler binary.
-install(TARGETS my_llvm_c mimalloc-static
+install(TARGETS cmm mimalloc-static
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(DIRECTORY libs/ DESTINATION ${CMAKE_INSTALL_DATADIR}/smc/libs
+install(DIRECTORY libs/ DESTINATION ${CMAKE_INSTALL_DATADIR}/cmm/libs
         FILES_MATCHING PATTERN "*.smc")
