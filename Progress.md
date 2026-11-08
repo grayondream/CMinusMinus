@@ -1248,5 +1248,7 @@
 - 源文件迁移：22 个标准库源文件统一为 `.cmm`；`examples/all_features.cmm`、`resources/main_min.cmm`、测试 fixture 同步改名；模块加载器、预置层、测试合成文件名和 CTest 输入全部改用 `.cmm`。
 - 兼容：硬切换，不保留旧扩展名别名；命令行旧扩展名输入和旧扩展名导入均报明确的迁移错误。
 - 内部命名：C++ 内部命名空间、UTF-8 辅助命名空间、内部 builtin 与 helper 统一为 `cmm` / `cmm_utf8` / `__cmm_*` / `cmm.*`；快照环境变量统一为 `CMM_UPDATE_SNAPSHOTS`。
-- 文档：新增根 `README.md`（英文主文 + 中文简介）；`docs/spec/` 全部标题改为 `Cmm 1.0`，路径/代码围栏/工具命令同步；历史 TODO/Progress/设计计划中的旧产品名机械归一化。
-- 验证：`cmake -S . -B build && cmake --build build -j$(nproc)` 成功；`ctest --test-dir build -j8` **1799/1799** 通过；`build/bin/cmm examples/all_features.cmm` 输出 `ALL FEATURES OK`；安装布局包含 `bin/cmm` 与 `share/cmm/libs/std/c.cmm`。
+- 文档：新增根 `README.md`（英文主文 + 中文简介）；`docs/spec/` 全部标题统一为 `Cmm 1.0`，路径/代码围栏/工具命令同步；历史 TODO/Progress/设计计划中的旧产品名机械归一化。
+- 提交：`46803c1`（构建身份）、`0074103`（`.cmm` 迁移与旧扩展名拒绝）、`ca7f098`（内部命名）、`51ba350`（文档/README）、`c511006`（终审修正）。
+- 验证：`cmake -S . -B build && cmake --build build -j$(nproc)` 成功；`ctest --test-dir build -j8` **1802/1802** 通过；`build/bin/cmm examples/all_features.cmm` 输出 `ALL FEATURES OK`；安装布局包含 `bin/cmm` 与 `share/cmm/libs/std/c.cmm`。
+- 评审修复（2026-11-08）：命令行输入名为 `.smc` 的隐藏文件时改按后缀拒绝（`path::extension()` 对其返回空）；嵌套旧扩展名导入诊断补上导入者路径与 specifier；裸文件名输入现在按当前目录搜索同级导入；恢复 static-member 测试 fixture 的原名；统一两个 spec 分册标题；模块后缀长度改为显式常量并清理过期注释。新增 3 个回归测试（隐藏 `.smc`、嵌套诊断上下文、裸文件名同级导入）。

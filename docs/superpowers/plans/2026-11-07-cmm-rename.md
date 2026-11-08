@@ -395,7 +395,7 @@ git grep -n -E 'SafeModern|my_llvm_c|namespace smc|smc::|__smc_|SMC_|\.smc|share
   ':!docs/superpowers/plans/2026-11-07-cmm-rename.md'
 ```
 
-Expected: only the intentional legacy `.smc` rejection diagnostic/tests and the README migration note. Separately inspect `git grep -n 'My_LLVM_C'`; only the absolute workspace path may remain. Verify public modules are still `std`: `git grep -n 'module std\.' -- libs/std`.
+Expected: only the intentional legacy `.smc` rejection diagnostic/tests, the README migration note, and historical static-member fixture identifiers such as `SMC_v` (test identifiers, not product names). Separately inspect `git grep -n 'My_LLVM_C'`; only the absolute workspace path may remain. Verify public modules are still `std`: `git grep -n 'module std\.' -- libs/std`.
 
 - [ ] **Step 5: Commit**
 

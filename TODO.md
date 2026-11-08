@@ -1,6 +1,6 @@
 # Cmm 1.0 详细待办（工程 backlog）
 
-> **进度快照（2026-11-07，Cmm 硬改名）**：语言正式命名 **Cmm（C minus minus）**，源文件后缀 **`.cmm`**；CLI/CMake 项目/LLVM module/安装路径统一为 `cmm`/`Cmm`，C++ 内部 namespace 统一为 `cmm`，内部 builtin 与 helper 改为 `__cmm_*`/`cmm.*`。公开语言命名空间与标准库模块保持 `std`。旧扩展名输入/导入明确拒绝。全量 **1799/1799** 通过，`examples/all_features.cmm` 输出 `ALL FEATURES OK`。
+> **进度快照（2026-11-07，Cmm 硬改名）**：语言正式命名 **Cmm（C minus minus）**，源文件后缀 **`.cmm`**；CLI/CMake 项目/LLVM module/安装路径统一为 `cmm`/`Cmm`，C++ 内部 namespace 统一为 `cmm`，内部 builtin 与 helper 改为 `__cmm_*`/`cmm.*`。公开语言命名空间与标准库模块保持 `std`。旧扩展名输入/导入明确拒绝。全量 **1802/1802** 通过，`examples/all_features.cmm` 输出 `ALL FEATURES OK`。
 >
 > 本文件是唯一的需求与进度追踪清单。每条以稳定 ID 编号，便于 issue/commit 引用。
 >

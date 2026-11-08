@@ -143,7 +143,7 @@ namespace std { ... }
    - `my_llvm_c` / `My_LLVM_C`（工作区绝对路径中的目录名除外）
    - `namespace smc` / `smc::`
    - `__smc_`
-   - `SMC_`
+   - `SMC_`（历史 static-member fixture 的 `SMC_v` / `SMCtr` 等测试标识符不属于产品名，保留）
    - `.smc`（仅允许出现在“旧 `.smc` 已不支持”的拒绝诊断/对应测试、README 的迁移说明，以及本改名设计/计划记录中）
    - 旧安装路径 `share/smc` / `lib/smc`
    验收不检查 `build/`、`.git/`、未跟踪的忽略文件，也不要求重命名工作区根目录。
