@@ -41,6 +41,9 @@ bool endsWith(const std::string& s, const std::string& suffix) {
            s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
+const std::string kCmmExtension = ".cmm";
+const std::string kLegacySmcExtension = ".smc";
+
 std::string canonicalPath(const std::string& path) {
     std::error_code ec;
     fs::path canonical = fs::weakly_canonical(fs::path(path), ec);
@@ -60,7 +63,7 @@ bool readFile(const std::string& path, std::string& out) {
 std::vector<std::string> importCandidates(const std::string& specifier) {
     std::vector<std::string> candidates;
     // Explicit path (has a separator or the module extension): use as-is.
-    if (specifier.find('/') != std::string::npos || endsWith(specifier, ".cmm")) {
+    if (specifier.find('/') != std::string::npos || endsWith(specifier, kCmmExtension)) {
         candidates.push_back(specifier);
         return candidates;
     }
@@ -69,9 +72,9 @@ std::vector<std::string> importCandidates(const std::string& specifier) {
     for (char& c : dotted) {
         if (c == '.') c = '/';
     }
-    candidates.push_back(dotted + ".cmm");
+    candidates.push_back(dotted + kCmmExtension);
     candidates.push_back(dotted);
-    candidates.push_back(specifier + ".cmm");
+    candidates.push_back(specifier + kCmmExtension);
     candidates.push_back(specifier);
     return candidates;
 }
@@ -79,7 +82,9 @@ std::vector<std::string> importCandidates(const std::string& specifier) {
 // `std.c` / `std/c.cmm` / `std/c` -> `std.c` (MOD-13 file <-> module mapping).
 std::string specifierToModuleName(const std::string& specifier) {
     std::string name = specifier;
-    if (endsWith(name, ".cmm")) name = name.substr(0, name.size() - 4);
+    if (endsWith(name, kCmmExtension)) {
+        name.resize(name.size() - kCmmExtension.size());
+    }
     for (char& c : name) {
         if (c == '/' || c == '\\') c = '.';
     }
@@ -91,7 +96,7 @@ std::string specifierToModuleName(const std::string& specifier) {
 bool isDottedSpecifier(const std::string& specifier) {
     return specifier.find('/') == std::string::npos &&
            specifier.find('\\') == std::string::npos &&
-           !endsWith(specifier, ".cmm");
+           !endsWith(specifier, kCmmExtension);
 }
 
 void tagModuleDecls(std::vector<std::unique_ptr<DeclAST>>& decls,
@@ -101,11 +106,26 @@ void tagModuleDecls(std::vector<std::unique_ptr<DeclAST>>& decls,
     }
 }
 
-constexpr const char* kLegacySmcMessage =
-    "legacy .smc source is not supported; rename it to .cmm";
+const std::string kLegacySmcMessage =
+    "legacy " + kLegacySmcExtension +
+    " source is not supported; rename it to " + kCmmExtension;
+
+std::string legacyImportError(const std::string& specifier,
+                              const std::string& importer = "") {
+    std::string message;
+    if (!importer.empty()) {
+        message += importer;
+        message += ": ";
+    }
+    message += kLegacySmcMessage;
+    message += " (import '";
+    message += specifier;
+    message += "')";
+    return message;
+}
 
 bool isLegacySmcSpecifier(const std::string& specifier) {
-    return endsWith(specifier, ".smc");
+    return endsWith(specifier, kLegacySmcExtension);
 }
 
 } // namespace
@@ -164,7 +184,7 @@ void preloadImports(const std::vector<std::string>& specifiers,
     std::vector<std::string> active;
     for (const std::string& spec : specifiers) {
         if (isLegacySmcSpecifier(spec)) {
-            errors.push_back(kLegacySmcMessage);
+            errors.push_back(legacyImportError(spec));
             continue;
         }
         std::string resolved = resolveImport(spec, localPaths);
@@ -260,7 +280,7 @@ void loadModuleFile(const std::string& path,
                            canonicalPath(fs::path(canonical).parent_path().string()));
     for (const std::string& spec : ast->imports) {
         if (isLegacySmcSpecifier(spec)) {
-            errors.push_back(kLegacySmcMessage);
+            errors.push_back(legacyImportError(spec, canonical));
             continue;
         }
         std::string resolved = resolveImport(spec, childPaths);
@@ -293,7 +313,7 @@ void processImports(TranslationUnitAST& tu,
     std::vector<std::string> active;
     for (const std::string& spec : tu.imports) {
         if (isLegacySmcSpecifier(spec)) {
-            errors.push_back(kLegacySmcMessage);
+            errors.push_back(legacyImportError(spec));
             continue;
         }
         std::string resolved = resolveImport(spec, localPaths);

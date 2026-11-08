@@ -241,6 +241,53 @@ TEST_F(CompilerDriverTest, RejectsLegacySmcInput) {
     std::filesystem::remove(p);
 }
 
+TEST_F(CompilerDriverTest, BareInputSearchesItsDirectory) {
+    const std::filesystem::path dir =
+        std::filesystem::temp_directory_path() /
+        ("cmm_driver_bare_input_" + std::to_string(::getpid()));
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    {
+        std::ofstream out(dir / "util.cmm");
+        out << "module util;\nexport int32 helper() { return 5; }\n";
+    }
+    {
+        std::ofstream out(dir / "main.cmm");
+        out << "module main;\nimport util;\n"
+               "int32 main() { return helper(); }\n";
+    }
+    const std::filesystem::path old = std::filesystem::current_path();
+    std::filesystem::current_path(dir);
+    const char* argv[] = {"cmm", "-fsyntax-only", "main.cmm"};
+    const bool parsed = driver.parseArguments(3, argv);
+    const int result = parsed ? driver.run() : -1;
+    std::filesystem::current_path(old);
+    ASSERT_TRUE(parsed);
+    EXPECT_EQ(result, 0);
+    std::filesystem::remove_all(dir);
+}
+
+TEST_F(CompilerDriverTest, RejectsLegacySmcHiddenFile) {
+    const std::filesystem::path dir =
+        std::filesystem::temp_directory_path() /
+        ("cmm_driver_hidden_smc_" + std::to_string(::getpid()));
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    const std::filesystem::path p = dir / ".smc";
+    {
+        std::ofstream out(p);
+        out << "int32 main() { return 0; }\n";
+    }
+    const std::string path = p.string();
+    const char* argv[] = {"cmm", "-fsyntax-only", path.c_str()};
+    ASSERT_TRUE(driver.parseArguments(3, argv));
+    testing::internal::CaptureStderr();
+    EXPECT_EQ(driver.run(), 1);
+    const std::string err = testing::internal::GetCapturedStderr();
+    EXPECT_NE(err.find("legacy .smc source is not supported"), std::string::npos);
+    std::filesystem::remove_all(dir);
+}
+
 TEST_F(CompilerDriverTest, LexSyntaxOnlySucceedsForValidSource) {
     const std::filesystem::path p =
         writeTempSource("cmm_driver_valid.cmm", "int32 main() { return 0; }\n");

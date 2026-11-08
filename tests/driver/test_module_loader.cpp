@@ -224,6 +224,30 @@ TEST_F(ModuleLoaderTest, ExportedTypesVisibleBeforeParsingImporter) {
     fs::remove_all(dir);
 }
 
+TEST_F(ModuleLoaderTest, RejectsNestedLegacySmcImportWithContext) {
+    const fs::path dir = fs::temp_directory_path() / "cmm_legacy_nested_test";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    {
+        std::ofstream out(dir / "a.cmm");
+        out << "module a;\nimport x.smc;\n"
+               "export int32 fa() { return 1; }\n";
+    }
+    auto ast = cmm::parseStdCPrelude(
+        "import a;\nint32 main() { return 0; }\n",
+        (dir / "main.cmm").string());
+    ASSERT_NE(ast, nullptr);
+    std::set<std::string> loaded;
+    std::vector<std::string> errors;
+    cmm::processImports(*ast, dir.string(), {}, loaded, errors);
+    ASSERT_FALSE(errors.empty());
+    EXPECT_NE(errors[0].find("legacy .smc source is not supported"),
+              std::string::npos);
+    EXPECT_NE(errors[0].find("x.smc"), std::string::npos);
+    EXPECT_NE(errors[0].find("a.cmm"), std::string::npos);
+    fs::remove_all(dir);
+}
+
 TEST_F(ModuleLoaderTest, RejectsLegacySmcImport) {
     const fs::path dir = fs::temp_directory_path() / "cmm_legacy_import_test";
     fs::remove_all(dir);

@@ -1,4 +1,4 @@
-// 演示文件 examples/all_features.c 建设期间发现并修复的编译器 bug 回归测试：
+// 演示文件 examples/all_features.cmm 建设期间发现并修复的编译器 bug 回归测试：
 //  - Bug A: CompileTimeEvaluator::toLLVMType 对 Class 用 static_cast<StructType*>
 //    读 isPacked（跨类 UB，读垃圾值）→ 布局损坏，size_of(派生类) 非确定性
 //    "Invalid size request on a scalable vector" 崩溃。

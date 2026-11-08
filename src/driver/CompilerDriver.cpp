@@ -240,7 +240,12 @@ int CompilerDriver::run() {
 }
 
 int CompilerDriver::compileFile(const std::string& inputFile) {
-    if (std::filesystem::path(inputFile).extension() == ".smc") {
+    // Match the loader's suffix test rather than path::extension(), which
+    // treats a bare ".smc" filename as a basename with no extension.
+    const std::string inputName =
+        std::filesystem::path(inputFile).filename().string();
+    if (inputName.size() >= 4 &&
+        inputName.compare(inputName.size() - 4, 4, ".smc") == 0) {
         std::cerr << "legacy .smc source is not supported; rename it to .cmm\n";
         return 1;
     }
@@ -293,6 +298,13 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
     std::vector<std::string> importErrors;
     std::string importerDir =
         std::filesystem::path(inputFile).parent_path().string();
+    if (importerDir.empty()) {
+        // A bare input name has an empty parent_path(); its directory is the
+        // current directory, which module imports search by default.
+        std::error_code cwdEc;
+        auto cwd = std::filesystem::current_path(cwdEc);
+        if (!cwdEc) importerDir = cwd.string();
+    }
     {
         std::error_code canonEc;
         loadedModules.insert(
