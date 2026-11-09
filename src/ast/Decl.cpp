@@ -1547,6 +1547,12 @@ llvm::Value* MultiVarDeclAST::codegen(CodegenContext& ctx) {
 }
 
 llvm::Value* StructDeclAST::codegen(CodegenContext& ctx) {
+    // Forward declarations do not own layout, fields, methods, or variables.
+    // Creating an empty named LLVM struct here would poison the later
+    // definition's getTypeByName path (and can drop attachedVars entirely).
+    // Let the first real definition / type use materialize the type instead.
+    if (isForwardDecl) return nullptr;
+
     // Reuse existing struct type if one with this name already exists
     if (auto* existing = llvm::StructType::getTypeByName(ctx.getContext(), name)) {
         // AGG-11: nested types must still be generated on this path — the
@@ -1564,6 +1570,9 @@ llvm::Value* StructDeclAST::codegen(CodegenContext& ctx) {
                 method->codegen(ctx);
             }
         }
+        if (attachedVars) {
+            attachedVars->codegen(ctx);
+        }
         return nullptr;
     }
 
@@ -1573,7 +1582,13 @@ llvm::Value* StructDeclAST::codegen(CodegenContext& ctx) {
     // P1-05 评审 I1: 按注册对象实际 kind 探测（带基类 struct 注册为
     // StructType，isClass 门控会误走 getClass 拿到 null → 回退丢注解）。
     (void)isClass;
-    Type* aggType = TypeContext::instance().getStruct(name);
+    // PAR-05: a class-like struct may still have a stale StructType forward
+    // placeholder under the same name. Prefer the ClassType that owns the
+    // fields/methods so the LLVM body is not built from the empty placeholder.
+    Type* aggType = isClassLikeRecord(*this)
+                        ? static_cast<Type*>(TypeContext::instance().getClass(name))
+                        : static_cast<Type*>(TypeContext::instance().getStruct(name));
+    if (!aggType) aggType = TypeContext::instance().getStruct(name);
     if (!aggType) aggType = TypeContext::instance().getClass(name);
     std::vector<llvm::Type*> fieldTypes;
     bool isPacked = false;

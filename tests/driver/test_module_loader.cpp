@@ -263,3 +263,10 @@ TEST_F(ModuleLoaderTest, RejectsLegacySmcImport) {
     EXPECT_NE(errors[0].find("legacy .smc source is not supported"), std::string::npos);
     fs::remove_all(dir);
 }
+
+TEST_F(ModuleLoaderTest, CollectImportSpecifiersSkipsColonColon) {
+    Lexer lexer("main.cmm", "import a::b;\nint32 main() { return 0; }\n");
+    auto tokens = lexer.tokenize();
+    ASSERT_TRUE(lexer.getDiagnostics().empty());
+    EXPECT_TRUE(cmm::collectImportSpecifiers(tokens).empty());
+}

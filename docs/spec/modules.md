@@ -8,7 +8,7 @@
 
 | 语法 | 解析结果 | 状态 |
 |---|---|---|
-| `module a.b;` | `TranslationUnitAST::moduleName`（+ `ModuleDeclAST`） | `[impl]` 点分/`::` 名；驱动校验文件↔模块名（MOD-04/13） |
+| `module a.b;` | `TranslationUnitAST::moduleName`（+ `ModuleDeclAST`） | `[impl]` 点分名（`::` 拒绝）；驱动校验文件↔模块名（MOD-04/13） |
 | `import a.b;` / `import "dir/f.cmm";` | 记入 `TranslationUnitAST::imports` | 驱动 `ModuleLoader` 解析并**前插**声明（MOD-04/14） |
 | `export decl` / `export namespace A { … }` | 置 `DeclAST::isExported` | `[impl]` 参与模块的默认私有，导出者进全局（MOD-05/06） |
 | `namespace A { ... }` | `NamespaceDeclAST` | 名称修饰 + 限定/非限定查找（PAR-22/MOD-12） |
@@ -75,7 +75,6 @@ import math;            // 形式 1：引入模块的导出符号
   - `namespace` 内的 `export` 声明：导入后必须限定访问（`std::min(...)`）。
   - 因此 `import std.vec;` 的 API 是 `std::Vec`，不是 `Vec`，也不是
     `std.vec::Vec`。模块是物理边界，namespace 是逻辑名字边界（DEC-17）。
-- 形式 2/3（选择性导入、别名）仍为提案，未实现。
 
 ### 4.2 可见性 `[impl]`
 

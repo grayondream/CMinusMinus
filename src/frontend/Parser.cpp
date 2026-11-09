@@ -2199,7 +2199,7 @@ std::unique_ptr<TranslationUnitAST> Parser::parse() {
             continue;
         }
 
-        // 检查模块声明：`module a.b.c;`（点分或 `::` 连接）
+        // 检查模块声明：`module a.b.c;`（module 只用点分路径）
         if (check(TokenType::TOKEN_MODULE)) {
             auto moduleTok = peek();
             advance(); // 消耗 "module"
@@ -2633,11 +2633,15 @@ Type* Parser::parseBaseType() {
                 return structType;
             }
 
-            // Reference to an existing struct (qualified or, inside a
-            // namespace, the global name).
+            // Reference to an existing record (qualified or, inside a
+            // namespace, the global name). PAR-05: a class-like struct is
+            // registered as ClassType, so `struct S` must consult both maps;
+            // ClassType wins over a stale StructType forward placeholder.
             if (!name.empty()) {
+                if (auto* existing = TypeContext::instance().getClass(key)) return existing;
                 if (auto* existing = TypeContext::instance().getStruct(key)) return existing;
                 if (key != name) {
+                    if (auto* existing = TypeContext::instance().getClass(name)) return existing;
                     if (auto* existing = TypeContext::instance().getStruct(name)) return existing;
                 }
             }
@@ -3364,9 +3368,7 @@ std::unique_ptr<DeclAST> Parser::parseDeclarationImpl() {
         // type declarations (AGG-11: a nested-only struct still names a type).
         if (!structDecl->fields.empty() || !structDecl->nestedTypes.empty() ||
             !structDecl->methods.empty() || structDecl->hasAccessSections) {
-            const bool isClassRecord = structDecl->isClassDecl ||
-                                       !structDecl->methods.empty() ||
-                                       structDecl->hasAccessSections;
+            const bool isClassRecord = isClassLikeRecord(*structDecl);
             if (isClassRecord) {
                 // A `struct` with member functions or access sections routes
                 // through the class type (same layout, methods, access).
@@ -3429,9 +3431,7 @@ std::unique_ptr<DeclAST> Parser::parseDeclarationImpl() {
         if (!consumedSemicolon &&
             (check(TokenType::TOKEN_IDENTIFIER) || check(TokenType::TOKEN_STAR) ||
              check(TokenType::TOKEN_LPAREN))) {
-            const bool isClassRecord = structDecl->isClassDecl ||
-                                       !structDecl->methods.empty() ||
-                                       structDecl->hasAccessSections;
+            const bool isClassRecord = isClassLikeRecord(*structDecl);
             Type* type = nullptr;
             if (isClassRecord) {
                 type = TypeContext::instance().getClass(structDecl->name);
@@ -4860,7 +4860,7 @@ std::unique_ptr<StructDeclAST> Parser::parseStructDecl() {
 void Parser::registerNestedDeclType(DeclAST* decl) {
     auto& tc = TypeContext::instance();
     if (auto* sd = dynamic_cast<StructDeclAST*>(decl)) {
-        if (sd->isClassDecl || !sd->methods.empty() || sd->hasAccessSections) {
+        if (isClassLikeRecord(*sd)) {
             if (!tc.getClass(sd->name)) {
                 auto* classType = new ClassType(sd->name);
                 for (auto& f : sd->fields) {
@@ -4935,6 +4935,59 @@ size_t Parser::balancedBraceEnd(size_t lbracePos) const {
         }
     }
     return lbracePos;
+}
+
+bool Parser::recordBodyLooksClassLike() const {
+    if (m_currentTokenPos >= m_tokens.size() ||
+        m_tokens[m_currentTokenPos].type != TokenType::TOKEN_LBRACE) {
+        return false;
+    }
+    const size_t end = balancedBraceEnd(m_currentTokenPos);
+    if (end <= m_currentTokenPos) return false;
+
+    int depth = 0;
+    for (size_t i = m_currentTokenPos + 1; i < end; ++i) {
+        const TokenType type = m_tokens[i].type;
+        if (type == TokenType::TOKEN_LBRACE) {
+            ++depth;
+            continue;
+        }
+        if (type == TokenType::TOKEN_RBRACE) {
+            if (depth > 0) --depth;
+            continue;
+        }
+        if (depth != 0) continue;
+
+        // Skip member annotations (`[[align(16)]]`): the identifier inside the
+        // attribute is followed by '(' and would otherwise look like a method.
+        if (type == TokenType::TOKEN_LBRACKET && i + 1 < end &&
+            m_tokens[i + 1].type == TokenType::TOKEN_LBRACKET) {
+            i += 2;
+            while (i + 1 < end &&
+                   !(m_tokens[i].type == TokenType::TOKEN_RBRACKET &&
+                     m_tokens[i + 1].type == TokenType::TOKEN_RBRACKET)) {
+                ++i;
+            }
+            if (i + 1 < end) ++i; // consume the closing ']]'
+            continue;
+        }
+
+        if (type == TokenType::TOKEN_PUBLIC || type == TokenType::TOKEN_PRIVATE) {
+            return true;
+        }
+        if (type == TokenType::TOKEN_IDENTIFIER && m_tokens[i].lexeme == "protected" &&
+            i + 1 < end && m_tokens[i + 1].type == TokenType::TOKEN_COLON) {
+            return true;
+        }
+        if (type == TokenType::TOKEN_OPERATOR) return true;
+        // A method declaration is `type identifier '(' ...`; function-pointer
+        // fields put '(' before the identifier, so they do not match.
+        if (type == TokenType::TOKEN_IDENTIFIER && i + 1 < end &&
+            m_tokens[i + 1].type == TokenType::TOKEN_LPAREN) {
+            return true;
+        }
+    }
+    return false;
 }
 
 std::unique_ptr<StructDeclAST> Parser::parseClassDecl() {
@@ -5029,12 +5082,26 @@ std::unique_ptr<StructDeclAST> Parser::parseRecordDecl(bool isClass) {
         return decl;
     }
 
-    // PAR-17: 自引用签名（`A* self()`）——class 体 parse 前先注册占位
-    // ClassType，parseDeclarationImpl 的注册路径对已存在者幂等复用。
-    // struct 保留既有行为：解析完后再由 parseDeclaration/registerNestedDeclType
-    // 决定它需要 StructType 还是 ClassType（带方法/访问段时）。
-    if (isClass && !TypeContext::instance().getClass(name)) {
-        TypeContext::instance().addClass(name, new ClassType(name));
+    // PAR-17 / PAR-05: seed the body's self-type before parsing members.
+    // Classes are always ClassType. Structs are scanned for methods/operators/
+    // access sections so `S* self()`, `operator+(S)`, and `Node* next` resolve
+    // in any declaration order; pure data structs stay StructType.
+    if (isClass) {
+        if (!TypeContext::instance().getClass(name)) {
+            TypeContext::instance().addClass(name, new ClassType(name));
+        }
+    } else {
+        const bool classLike = recordBodyLooksClassLike();
+        if (classLike) {
+            if (!TypeContext::instance().getClass(name)) {
+                TypeContext::instance().addClass(name, new ClassType(name));
+            }
+            // A forward declaration may have left a StructType placeholder;
+            // ClassType is the authoritative identity from here on.
+            TypeContext::instance().removeStruct(name);
+        } else if (!TypeContext::instance().getStruct(name)) {
+            TypeContext::instance().addStruct(name, new StructType(name));
+        }
     }
 
     advance(); // consume '{'

@@ -164,6 +164,12 @@ std::vector<std::string> collectImportSpecifiers(const std::vector<Token>& token
                 name += "." + tokens[j + 1].lexeme;
                 j += 2;
             }
+            // `import a::b` is a namespace-style spelling, not a module path.
+            // Do not preload the partial module `a`; leave the diagnostic to
+            // the parser (which also consumes the malformed suffix).
+            if (j < tokens.size() && tokens[j].type == TokenType::TOKEN_COLON_COLON) {
+                name.clear();
+            }
         }
         if (!name.empty()) imports.push_back(name);
     }

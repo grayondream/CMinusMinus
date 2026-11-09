@@ -223,6 +223,15 @@ public:
     void emitStaticMembers(CodegenContext& ctx);
 };
 
+// PAR-05: one predicate for "this record needs class semantics". A `struct`
+// with methods or explicit access sections shares ClassType with `class`, while
+// a pure data struct stays StructType. Use this everywhere instead of repeating
+// the three-way condition (parser registration, sema routing, dead-branch
+// cleanup) so the identity decision cannot drift.
+inline bool isClassLikeRecord(const StructDeclAST& decl) {
+    return decl.isClassDecl || !decl.methods.empty() || decl.hasAccessSections;
+}
+
 class UnionDeclAST : public DeclAST {
 public:
     std::string name;

@@ -181,6 +181,12 @@ private:
     // keyword and the default member access (class=private, struct=public).
     std::unique_ptr<StructDeclAST> parseRecordDecl(bool isClass);
 
+    // PAR-05: look ahead over the current record body to decide whether a
+    // `struct` needs a ClassType placeholder before its members are parsed
+    // (methods/operators/access sections). Needed for self-referential
+    // signatures such as `S* self()` and `operator+(S)`.
+    bool recordBodyLooksClassLike() const;
+
     std::unique_ptr<UnionDeclAST> parseUnionDecl();
 
     std::unique_ptr<EnumDeclAST> parseEnumDecl();

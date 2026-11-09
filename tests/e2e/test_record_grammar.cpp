@@ -99,6 +99,61 @@ TEST_F(RecordGrammarE2E, StructAttachedVariableKeepsMethods) {
     )", "record_attached.cmm"), 0);
 }
 
+TEST_F(RecordGrammarE2E, StructMethodUsesOwnType) {
+    EXPECT_EQ(runSource(R"(
+        struct S { int32 x; S* self() { return this; } };
+        int32 main() { S s; s.x = 5; return s.self()->x - 5; }
+    )", "record_self_method.cmm"), 0);
+}
+
+TEST_F(RecordGrammarE2E, StructSelfReferentialFieldFirst) {
+    EXPECT_EQ(runSource(R"(
+        struct Node { Node* next; int32 value; };
+        int32 main() { Node n; n.value = 6; return n.value - 6; }
+    )", "record_self_field.cmm"), 0);
+}
+
+TEST_F(RecordGrammarE2E, ElaboratedStructReferenceUsesClassLikeType) {
+    EXPECT_EQ(runSource(R"(
+        struct S { private: int32 hidden; public: int32 open; };
+        int32 main() { struct S s; s.open = 3; return s.open - 3; }
+    )", "record_elaborated.cmm"), 0);
+}
+
+TEST_F(RecordGrammarE2E, ForwardDeclarationThenAttachedStruct) {
+    EXPECT_EQ(runSource(R"(
+        struct S;
+        S* g;
+        struct S { int32 x; int32 get() { return this->x; } } s;
+        int32 main() { s.x = 4; return s.get() - 4; }
+    )", "record_forward_attached.cmm"), 0);
+}
+
+TEST_F(RecordGrammarE2E, StructWithMethodsInheritsPlainStruct) {
+    EXPECT_EQ(runSource(R"(
+        struct B { int32 x; };
+        struct D : B { int32 y; int32 sum() { return this->x + this->y; } };
+        int32 main() { D d; d.x = 1; d.y = 2; return d.sum() - 3; }
+    )", "record_inherit_plain.cmm"), 0);
+}
+
+TEST_F(RecordGrammarE2E, PlainStructInheritsClassLikeStruct) {
+    EXPECT_EQ(runSource(R"(
+        struct B { int32 x; int32 get() { return this->x; } };
+        struct D : B { int32 y; };
+        int32 main() { D d; d.x = 1; d.y = 2; return d.x + d.y - 3; }
+    )", "record_inherit_classlike.cmm"), 0);
+}
+
+TEST_F(RecordGrammarE2E, CompileTimeDeadBranchRejectsClassLikeStruct) {
+    EXPECT_EQ(runSource(R"(
+        compile_time.if (1 == 2) {
+            struct Ghost { private: int32 x; }
+        }
+        int32 main() { Ghost g; return 0; }
+    )", "record_dead_branch.cmm"), -1);
+}
+
 TEST_F(RecordGrammarE2E, StructAndClassLayoutSame) {
     EXPECT_EQ(runSource(R"(
         struct S { int32 x; int32 y; };

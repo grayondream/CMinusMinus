@@ -1265,7 +1265,11 @@
   - `parseStructDecl`/`parseClassDecl` 合并为 `parseRecordDecl(bool isClass)`；两者共用访问段、字段、方法、运算符、静态成员、嵌套类型、`using`、匿名成员和 attached declarator 解析。
   - `struct` 默认 public，`class` 默认 private；`StructDeclAST` 新增 `hasAccessSections`；带方法/访问段的 struct 注册为 `ClassType`，纯数据 struct 仍为 `StructType`；`union` 模型不变。
   - 修复 struct + attached variable 丢方法/字段的问题；class 默认/前向声明与 `repr(C)` 规则保持。
-  - 新增 parser 测试 4 项、sema 访问测试 5 项、e2e 4 项（访问段、仅访问段、attached variable、struct/class 布局一致）。
+  - 新增 parser 测试 4 项、module/driver 测试 4 项、sema 访问测试 6 项、e2e 11 项（访问段、仅访问段、attached variable、self 类型、elaborated struct、前向+定义、交叉继承、struct/class 布局一致、compile_time 死分支）。
 - 文档：`docs/spec/grammar.ebnf`（module-name、record-decl/record-member/access-section）、`docs/spec/modules.md`（职责、拼写、DEC-02 根导出/namespace 限定）、`TODO.md`（PAR-05/PAR-22/TYP-07/TYP-08/MOD-04/05/11/12/13/DEC-02/17 + 快照）。
 - 提交：`259a355`（module/namespace 拼写）、`754ab70`（record parser 统一）、`019057f`（record 语义路由/访问控制）。
-- 验证：`ctest --test-dir build -j8` **1821/1821** 通过；`build/bin/cmm examples/all_features.cmm -o /tmp/opencode/all_features` 编译成功（仅既有 W3001/W3002 警告），运行输出包含 `ALL FEATURES OK`，退出码 0。
+- 终审补丁（review fix pass）：
+  - **Critical**：`struct S` 的 elaborated 引用现在优先查 `ClassType`（不再被前向 `StructType` 占位遮蔽）；前向声明不再 codegen 空 LLVM 类型；`StructDeclAST::codegen` 的既有类型路径补发 attachedVars，且 class-like struct 优先用 `ClassType` 建布局。
+  - **Important**：`collectImportSpecifiers` 不再把 `import a::b` 预加载成部分模块 `a`；`compile_time.if` 死分支用统一 `isClassLikeRecord` 毒化/移除 class-like struct；struct 解析前按方法/访问段预注册 self 类型占位；`struct`/`class` 交叉继承（含字段查找/访问级别）已支持。
+  - **Deferred**：局部作用域内带方法的 record（`int32 main(){ struct S{...} s; }`）仍会崩溃；class 等价写法同样崩溃，属既有独立缺陷，不在本轮 record 文法范围内。
+- 验证：`ctest --test-dir build -j8` **1829/1829** 通过；`build/bin/cmm examples/all_features.cmm -o /tmp/opencode/all_features` 编译成功（仅既有 W3001/W3002 警告），运行输出包含 `ALL FEATURES OK`，退出码 0。

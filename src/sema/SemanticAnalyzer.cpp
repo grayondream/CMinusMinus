@@ -5368,6 +5368,43 @@ void SemanticAnalyzer::visit(MemberAccessExprAST& node) {
             if (++walkDepth > 64) break;
         }
         if (definingStruct) return;
+        // PAR-05: a plain struct may inherit a class-like struct. Search the
+        // class base chain and enforce its access levels.
+        if (structType->base && structType->base->kind == TypeKind::Class) {
+            ClassType* baseClass = static_cast<ClassType*>(structType->base);
+            int depth = 0;
+            while (baseClass) {
+                const auto& lookupFields = !baseClass->semanticFields.empty()
+                                               ? baseClass->semanticFields : baseClass->fields;
+                for (auto& field : lookupFields) {
+                    if (field.name == node.memberName) {
+                        AccessLevel level = baseClass->memberAccessLevel(field.name);
+                        if (!canAccessMember(baseClass, level)) {
+                            emitError(DiagnosticCode::SemPrivateMemberAccess,
+                                      "cannot access " +
+                                          std::string(level == AccessLevel::Private ? "private" : "protected") +
+                                          " member '" + node.memberName + "' of class '" + baseClass->name +
+                                          "' outside the class; make it public or add an accessor",
+                                      node);
+                            node.type = nullptr;
+                            node.isLValue = false;
+                            return;
+                        }
+                        node.type = field.type;
+                        node.isLValue = memberLValue;
+                        node.isBitField = field.bitWidth > 0;
+                        node.bitWidth = static_cast<uint32_t>(
+                            field.bitWidth > 0 ? field.bitWidth : 0);
+                        return;
+                    }
+                }
+                if (!baseClass->base || baseClass->base->kind != TypeKind::Class ||
+                    ++depth > 64) {
+                    break;
+                }
+                baseClass = static_cast<ClassType*>(baseClass->base);
+            }
+        }
         emitError("no member named '" + node.memberName + "' in struct '" + structType->name + "'", node);
     } else if (memberBaseType->kind == TypeKind::Class) {
         auto* classType = static_cast<ClassType*>(memberBaseType);
@@ -5413,6 +5450,28 @@ void SemanticAnalyzer::visit(MemberAccessExprAST& node) {
                 node.isLValue = false;
             }
             return;
+        }
+        // PAR-05: class-like struct inheriting a plain StructType. Struct
+        // fields are public, so inherited fields are directly readable.
+        if (classType && classType->base && classType->base->kind == TypeKind::Struct) {
+            StructType* baseStruct = static_cast<StructType*>(classType->base);
+            while (baseStruct) {
+                for (auto& field : baseStruct->fields) {
+                    if (field.name == node.memberName) {
+                        node.type = field.type;
+                        node.isLValue = memberLValue;
+                        node.isBitField = field.bitWidth > 0;
+                        node.bitWidth = static_cast<uint32_t>(
+                            field.bitWidth > 0 ? field.bitWidth : 0);
+                        return;
+                    }
+                }
+                if (baseStruct->baseClass.empty() || !baseStruct->base ||
+                    baseStruct->base->kind != TypeKind::Struct) {
+                    break;
+                }
+                baseStruct = static_cast<StructType*>(baseStruct->base);
+            }
         }
         emitError("no member named '" + node.memberName + "' in class '" + className + "'", node);
     } else if (memberBaseType->kind == TypeKind::Union) {
@@ -7640,8 +7699,7 @@ void SemanticAnalyzer::visitStructDeclImpl(StructDeclAST& node) {
     // ClassType semantics (memberAccess, methods); a pure data struct stays a
     // StructType. `isClassDecl` still records the keyword for annotation rules
     // such as repr(C), which remains valid on `struct`.
-    bool isClass =
-        node.isClassDecl || !node.methods.empty() || node.hasAccessSections;
+    bool isClass = isClassLikeRecord(node);
 
     // P1-05 / ANN-06: struct/class 与字段注解验证——class 的 repr(C) 目标
     // 不符（spec：仅 struct/union）。
@@ -7753,12 +7811,20 @@ void SemanticAnalyzer::visitStructDeclImpl(StructDeclAST& node) {
         }
 
         if (!node.baseClass.empty()) {
-            auto* baseType = typeCtx->getClass(node.baseClass);
+            // PAR-05: a class-like struct may inherit a plain StructType and
+            // vice versa; look through both record maps for the base.
+            Type* baseType = typeCtx->getClass(node.baseClass);
+            if (!baseType) baseType = typeCtx->getStruct(node.baseClass);
+            const bool baseComplete =
+                baseType && ((baseType->kind == TypeKind::Class &&
+                              static_cast<ClassType*>(baseType)->isComplete) ||
+                             (baseType->kind == TypeKind::Struct &&
+                              static_cast<StructType*>(baseType)->isComplete));
             if (!baseType) {
                 emitError("base class '" + node.baseClass + "' of class '" + node.name + "' not found", node);
             } else if (hasCircularInheritance(node.name, node.baseClass)) {
                 emitError("circular inheritance detected involving class '" + node.name + "'", node);
-            } else if (!baseType->isComplete) {
+            } else if (!baseComplete) {
                 // INH-01: a forward-declared (placeholder) base has no
                 // definition yet — deriving from it is rejected, mirroring
                 // C++'s incomplete-type rule.
@@ -7908,12 +7974,20 @@ void SemanticAnalyzer::visitStructDeclImpl(StructDeclAST& node) {
             structType->isComplete = true;
         }
         if (!node.baseClass.empty()) {
-            auto* baseType = typeCtx->getStruct(node.baseClass);
+            // PAR-05: a plain struct may inherit a class-like struct; look
+            // through both record maps, like the class branch above.
+            Type* baseType = typeCtx->getStruct(node.baseClass);
+            if (!baseType) baseType = typeCtx->getClass(node.baseClass);
+            const bool baseComplete =
+                baseType && ((baseType->kind == TypeKind::Struct &&
+                              static_cast<StructType*>(baseType)->isComplete) ||
+                             (baseType->kind == TypeKind::Class &&
+                              static_cast<ClassType*>(baseType)->isComplete));
             if (!baseType) {
                 emitError("base struct '" + node.baseClass + "' of struct '" + node.name + "' not found", node);
             } else if (hasCircularInheritance(node.name, node.baseClass)) {
                 emitError("circular inheritance detected involving struct '" + node.name + "'", node);
-            } else if (!baseType->isComplete) {
+            } else if (!baseComplete) {
                 emitError("base struct '" + node.baseClass + "' of struct '" + node.name +
                               "' is incomplete; define it before deriving from it",
                           node);
@@ -8420,12 +8494,19 @@ void SemanticAnalyzer::visit(CompileTimeIfDeclAST& node) {
     for (auto& d : deadDecls) {
         if (auto* s = dynamic_cast<StructDeclAST*>(d.get())) {
             TypeContext& tc = TypeContext::instance();
-            Type* poison = s->isClassDecl
+            const bool classLike = isClassLikeRecord(*s);
+            Type* poison = classLike
                 ? static_cast<Type*>(tc.getClass(s->name))
                 : static_cast<Type*>(tc.getStruct(s->name));
             if (!liveNames.count(s->name)) {
-                if (s->isClassDecl) tc.removeClass(s->name);
-                else tc.removeStruct(s->name);
+                // A forward placeholder may be StructType even when the
+                // definition routes to ClassType; remove both spellings.
+                if (classLike) {
+                    tc.removeClass(s->name);
+                    tc.removeStruct(s->name);
+                } else {
+                    tc.removeStruct(s->name);
+                }
             }
             if (poison) poison->ctDeadBranch = true;
         } else if (auto* u = dynamic_cast<UnionDeclAST*>(d.get())) {
