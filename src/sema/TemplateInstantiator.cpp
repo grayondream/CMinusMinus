@@ -522,6 +522,7 @@ std::unique_ptr<DeclAST> TemplateInstantiator::cloneDeclInternal(const DeclAST& 
         cloned->bareName = st->bareName;
         cloned->baseClass = st->baseClass;
         cloned->memberAccess = st->memberAccess;
+        cloned->hasAccessSections = st->hasAccessSections;
         cloned->isForwardDecl = st->isForwardDecl;
         cloned->isClassDecl = st->isClassDecl;
         copyLoc(cloned, *st);

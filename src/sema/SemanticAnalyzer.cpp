@@ -7636,9 +7636,12 @@ void SemanticAnalyzer::visitStructDeclImpl(StructDeclAST& node) {
     checkInstanceFieldComplete(node);
     // PAR-04/DEC-01: `class` declarations are classes even without methods —
     // their members default to private and carry access levels.
-    // INH-01: struct declarations with a base stay structs — only classes
-    // (isClassDecl) or method-bearing declarations route to the class branch.
-    bool isClass = node.isClassDecl || !node.methods.empty();
+    // PAR-05: a struct with methods or explicit access sections needs the same
+    // ClassType semantics (memberAccess, methods); a pure data struct stays a
+    // StructType. `isClassDecl` still records the keyword for annotation rules
+    // such as repr(C), which remains valid on `struct`.
+    bool isClass =
+        node.isClassDecl || !node.methods.empty() || node.hasAccessSections;
 
     // P1-05 / ANN-06: struct/class 与字段注解验证——class 的 repr(C) 目标
     // 不符（spec：仅 struct/union）。

@@ -887,6 +887,39 @@ TEST(SemanticAnalyzerAccessTest, StructFieldsDefaultPublic) {
         "struct SE { int32 v; }; int32 main() { SE s; s.v = 1; return 0; }"));
 }
 
+// PAR-05: access sections work in structs exactly as in classes.
+TEST(SemanticAnalyzerAccessTest, StructPrivateSectionDeniedOutside) {
+    EXPECT_FALSE(analyzeOk(
+        "struct S { private: int32 x; public: int32 get() { return this->x; } }; "
+        "int32 main() { S s; return s.x; }"));
+}
+
+TEST(SemanticAnalyzerAccessTest, StructPrivateAccessibleInsideMethod) {
+    EXPECT_TRUE(analyzeOk(
+        "struct S { private: int32 x; public: int32 get() { return this->x; } }; "
+        "int32 main() { S s; return s.get(); }"));
+}
+
+TEST(SemanticAnalyzerAccessTest, StructPublicSectionAfterPrivate) {
+    EXPECT_TRUE(analyzeOk(
+        "struct S { private: int32 hidden; public: int32 open; }; "
+        "int32 main() { S s; s.open = 1; return s.open; }"));
+}
+
+// Access sections alone (no methods) must still route through ClassType;
+// otherwise a StructType would treat every field as public.
+TEST(SemanticAnalyzerAccessTest, StructAccessSectionWithoutMethodsDeniedOutside) {
+    EXPECT_FALSE(analyzeOk(
+        "struct S { private: int32 hidden; public: int32 open; }; "
+        "int32 main() { S s; return s.hidden; }"));
+}
+
+TEST(SemanticAnalyzerAccessTest, StructWithMethodsKeepsReprC) {
+    EXPECT_TRUE(analyzeOk(
+        "[[repr(C)]] struct S { int32 x; int32 get() { return this->x; } }; "
+        "int32 main() { S s; s.x = 1; return s.get(); }"));
+}
+
 // TYP-12 Task 2: subscript on slice yields the element type and is an lvalue.
 TEST(SliceSemTest, SubscriptOnSliceAccepted) {
     EXPECT_TRUE(analyzeOk(

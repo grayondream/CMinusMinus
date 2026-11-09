@@ -3363,11 +3363,13 @@ std::unique_ptr<DeclAST> Parser::parseDeclarationImpl() {
         // Register struct type in TypeContext if it has fields or nested
         // type declarations (AGG-11: a nested-only struct still names a type).
         if (!structDecl->fields.empty() || !structDecl->nestedTypes.empty() ||
-            !structDecl->methods.empty()) {
-            if (structDecl->isClassDecl || !structDecl->methods.empty()) {
-                // A `struct` with member functions routes through the class
-                // type (same layout, methods); fields remain public because
-                // the parser recorded no access sections.
+            !structDecl->methods.empty() || structDecl->hasAccessSections) {
+            const bool isClassRecord = structDecl->isClassDecl ||
+                                       !structDecl->methods.empty() ||
+                                       structDecl->hasAccessSections;
+            if (isClassRecord) {
+                // A `struct` with member functions or access sections routes
+                // through the class type (same layout, methods, access).
                 ClassType* classType = TypeContext::instance().getClass(structDecl->name);
                 if (!classType) {
                     classType = new ClassType(structDecl->name);
@@ -3427,10 +3429,33 @@ std::unique_ptr<DeclAST> Parser::parseDeclarationImpl() {
         if (!consumedSemicolon &&
             (check(TokenType::TOKEN_IDENTIFIER) || check(TokenType::TOKEN_STAR) ||
              check(TokenType::TOKEN_LPAREN))) {
-            auto type = TypeContext::instance().getStruct(structDecl->name);
-            if (!type) {
-                type = new StructType(structDecl->name);
-                TypeContext::instance().addStruct(structDecl->name, static_cast<StructType*>(type));
+            const bool isClassRecord = structDecl->isClassDecl ||
+                                       !structDecl->methods.empty() ||
+                                       structDecl->hasAccessSections;
+            Type* type = nullptr;
+            if (isClassRecord) {
+                type = TypeContext::instance().getClass(structDecl->name);
+                if (!type) {
+                    auto* classType = new ClassType(structDecl->name);
+                    TypeContext::instance().addClass(structDecl->name, classType);
+                    type = classType;
+                }
+            } else {
+                type = TypeContext::instance().getStruct(structDecl->name);
+                if (!type) {
+                    auto* structType = new StructType(structDecl->name);
+                    TypeContext::instance().addStruct(structDecl->name, structType);
+                    type = structType;
+                }
+            }
+            // Pure data structs keep the historic shape: the record AST is
+            // consumed at parse time and the returned node is the variable.
+            // Class-like structs (methods/access sections) must keep the type
+            // definition on the same AST node so sema registers fields/methods/
+            // access before the attached variable sees the type.
+            if (isClassRecord) {
+                structDecl->attachedVars = parseDeclarationFromBaseType(type);
+                return structDecl;
             }
             return parseDeclarationFromBaseType(type);
         }
@@ -4835,7 +4860,7 @@ std::unique_ptr<StructDeclAST> Parser::parseStructDecl() {
 void Parser::registerNestedDeclType(DeclAST* decl) {
     auto& tc = TypeContext::instance();
     if (auto* sd = dynamic_cast<StructDeclAST*>(decl)) {
-        if (sd->isClassDecl || !sd->methods.empty()) {
+        if (sd->isClassDecl || !sd->methods.empty() || sd->hasAccessSections) {
             if (!tc.getClass(sd->name)) {
                 auto* classType = new ClassType(sd->name);
                 for (auto& f : sd->fields) {
