@@ -1252,3 +1252,20 @@
 - 提交：`46803c1`（构建身份）、`0074103`（`.cmm` 迁移与旧扩展名拒绝）、`ca7f098`（内部命名）、`51ba350`（文档/README）、`c511006`（终审修正）。
 - 验证：`cmake -S . -B build && cmake --build build -j$(nproc)` 成功；`ctest --test-dir build -j8` **1802/1802** 通过；`build/bin/cmm examples/all_features.cmm` 输出 `ALL FEATURES OK`；安装布局包含 `bin/cmm` 与 `share/cmm/libs/std/c.cmm`。
 - 评审修复（2026-11-08）：命令行输入名为 `.smc` 的隐藏文件时改按后缀拒绝（`path::extension()` 对其返回空）；嵌套旧扩展名导入诊断补上导入者路径与 specifier；裸文件名输入现在按当前目录搜索同级导入；恢复 static-member 测试 fixture 的原名；统一两个 spec 分册标题；模块后缀长度改为显式常量并清理过期注释。新增 3 个回归测试（隐藏 `.smc`、嵌套诊断上下文、裸文件名同级导入）。
+
+## 2026-11-09 — module/namespace 职责分离 + struct/class record 文法统一
+
+- 背景：冻结 1.0 的两项语法身份裁定：`module` 只负责文件/导入，`namespace` 只负责 API 名字；`struct`/`class` 保留但共用一套 record 文法。设计见 `docs/superpowers/specs/2026-11-09-module-namespace-record-design.md`，计划 `docs/superpowers/plans/2026-11-09-module-namespace-record.md`。
+- module/namespace：
+  - `module`/`import` 只接受点分路径；`module a::b`、`import a::b` 给出明确诊断并恢复，不级联。
+  - `namespace` 声明与访问只使用 `::`；`namespace A.B` 诊断 `namespace names use '::'; '.' is reserved for module paths`；仓库内 3 处 `namespace A.B` 迁移为 `A::B`。
+  - import 只控制可见性：模块根部 `export` 保持非限定访问；namespace 成员必须限定访问。`import std.vec;` 的 API 是 `std::Vec`，无 `Vec` 或 `std.vec::Vec`。
+  - 新增 parser 拼写测试 3 项、module visibility 测试 3 项；`ModuleVisibilityTest` 新增 preload-import helper 以匹配驱动顺序。
+- record：
+  - `parseStructDecl`/`parseClassDecl` 合并为 `parseRecordDecl(bool isClass)`；两者共用访问段、字段、方法、运算符、静态成员、嵌套类型、`using`、匿名成员和 attached declarator 解析。
+  - `struct` 默认 public，`class` 默认 private；`StructDeclAST` 新增 `hasAccessSections`；带方法/访问段的 struct 注册为 `ClassType`，纯数据 struct 仍为 `StructType`；`union` 模型不变。
+  - 修复 struct + attached variable 丢方法/字段的问题；class 默认/前向声明与 `repr(C)` 规则保持。
+  - 新增 parser 测试 4 项、sema 访问测试 5 项、e2e 4 项（访问段、仅访问段、attached variable、struct/class 布局一致）。
+- 文档：`docs/spec/grammar.ebnf`（module-name、record-decl/record-member/access-section）、`docs/spec/modules.md`（职责、拼写、DEC-02 根导出/namespace 限定）、`TODO.md`（PAR-05/PAR-22/TYP-07/TYP-08/MOD-04/05/11/12/13/DEC-02/17 + 快照）。
+- 提交：`259a355`（module/namespace 拼写）、`754ab70`（record parser 统一）、`019057f`（record 语义路由/访问控制）。
+- 验证：`ctest --test-dir build -j8` **1821/1821** 通过；`build/bin/cmm examples/all_features.cmm -o /tmp/opencode/all_features` 编译成功（仅既有 W3001/W3002 警告），运行输出包含 `ALL FEATURES OK`，退出码 0。

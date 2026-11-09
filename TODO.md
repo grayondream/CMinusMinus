@@ -1,5 +1,7 @@
 # Cmm 1.0 详细待办（工程 backlog）
 
+> **进度快照（2026-11-09，module/namespace 职责分离 + record 文法统一）**：`module`/`import` 只使用点分路径，`namespace` 声明与限定访问只使用 `::`；`import` 只控制可见性——模块根部导出保持非限定访问，namespace 成员必须限定访问（`import std.vec;` → `std::Vec`，不是 `Vec` 或 `std.vec::Vec`）。`struct`/`class` 合并到同一 `parseRecordDecl(bool)`：两者都支持字段、方法、运算符、静态成员、嵌套类型、`using`、访问段与 attached declarator；`struct` 默认 public，`class` 默认 private。带方法/访问段的 `struct` 复用 `ClassType`，纯数据 `struct` 仍为 `StructType`；`union` 模型不变。全量 **1821/1821** 通过，`examples/all_features.cmm` 输出 `ALL FEATURES OK`。`string`/`string_view` 迁移与删除 `struct` 仍为后续项。
+
 > **进度快照（2026-11-07，Cmm 硬改名）**：语言正式命名 **Cmm（C minus minus）**，源文件后缀 **`.cmm`**；CLI/CMake 项目/LLVM module/安装路径统一为 `cmm`/`Cmm`，C++ 内部 namespace 统一为 `cmm`，内部 builtin 与 helper 改为 `__cmm_*`/`cmm.*`。公开语言命名空间与标准库模块保持 `std`。旧扩展名输入/导入明确拒绝。全量 **1802/1802** 通过，`examples/all_features.cmm` 输出 `ALL FEATURES OK`。
 >
 > 本文件是唯一的需求与进度追踪清单。每条以稳定 ID 编号，便于 issue/commit 引用。
@@ -126,7 +128,7 @@
 - `[ ]` **PAR-02** `(改)` 函数声明与定义：**C 风格**，不使用 `fn`；覆盖 `extern/static/inline`、成员函数。
 - `[x]` **PAR-03** 方法定义语法 `Vector::length()`；嵌套/`static` 成员（AGG-11 / AGG-10，2026-10-05）。**类外定义完成**（2026-10-20）：`RetType Class::method(params) { ... }`——声明在类体内、定义在类外；sema 校验类/方法/签名、插入隐式 `this`，签名不符或类内未声明均诊断。
 - `[x]` **PAR-04** class 成员：`public/private/protected` 段、成员变量/函数、`static` 成员、嵌套类型。**完成**（2026-10-05）：访问段解析与访问级别记录（DEC-01）、static 成员（AGG-10）、嵌套类型（AGG-11）全部落地。
-- `[ ]` **PAR-05** 类型语法：基础类型、指针 `T*`、数组 `T[N]`、Slice `T[]`、模板实例 `Box<i32>`。**顶层用户类型声明已修正**（2026-10-22）：`S g;` / `S* p;` / `V f()` / `struct V f()` / `class C f()` / `B<int32> g;` / `using W = S;` 不再被前一条聚合声明的 attached-declarator 前瞻吞掉；前向声明显式注册占位类型。
+- `[x]` **PAR-05** 类型语法：基础类型、指针 `T*`、数组 `T[N]`、Slice `T[]`、模板实例 `Box<i32>`。**顶层用户类型声明已修正**（2026-10-22）：`S g;` / `S* p;` / `V f()` / `struct V f()` / `class C f()` / `B<int32> g;` / `using W = S;` 不再被前一条聚合声明的 attached-declarator 前瞻吞掉；前向声明显式注册占位类型。**2026-11-09 record 文法统一**：`struct`/`class` 共用成员产生式，struct 支持访问段/方法/运算符/静态/嵌套；详见 `docs/superpowers/specs/2026-11-09-module-namespace-record-design.md`。
 - `[x]` **PAR-06** 指针限定符：`const/volatile/restrict/atomic`。**完成**（2026-10-20）：指针后缀 `restrict` 语法接受并记录 `Type::isRestrict`；别名/优化语义仍挂 MEM-04。
 - `[x]` **PAR-07** `(新)` 注解挂载点：六处全落地（模块仅解析记录）（2026-10-07）。
 - `[x]` **PAR-08** 表达式：字面量/标识符/调用/成员访问/下标/一元/二元/三元/强转。**切片/复合字面量完成**（2026-10-20）：C99 复合字面量 `(T[N]){...}` / `(T[]){...}`（块内栈对象、文件级静态常量，直接转义拒绝）；slice 字面量初始化 `T[] s = {1,2,3}`（栈匿名数组 + 视图，返回即悬垂拒绝）。
@@ -143,7 +145,7 @@
 - `[ ]` **PAR-19** AST 节点带源码位置/属性/注释/文档；AST 序列化（增量编译缓存）。
 - `[ ]` **PAR-20** 语法错误恢复与高质量诊断。
 - `[x]` **PAR-21** `(新)` 模板声明语法（2026-10-06）。函数/struct/class/别名模板；union/enum 拒绝；`class T` 参数诊断提示 typename；非类型参数仅整数。
-- `[x]` **PAR-22** `(新)` `namespace` 声明与限定名 `ns::name` 语法。历史需求来源为 `libsafec` 的 `namespace safec`（该实现已删除）；函数/变量成员、嵌套命名空间、限定类型名（struct/class/union/enum/typedef）均已实现。
+- `[x]` **PAR-22** `(新)` `namespace` 声明与限定名 `ns::name` 语法。历史需求来源为 `libsafec` 的 `namespace safec`（该实现已删除）；函数/变量成员、嵌套命名空间、限定类型名（struct/class/union/enum/typedef）均已实现。**2026-11-09 收紧**：namespace 声明与访问只使用 `::`，`namespace A.B` 明确诊断（`.` 保留给 module 路径）。
 - `[x]` **PAR-23** `(新)` 运算符优先级/结合性在解析器中的显式实现与表驱动测试（配合 INF-10）。`cmm::getOperatorInfo` 表驱动 + `test_operator_precedence` + `test_spec_conformance`。
 - `[x]` **PAR-24** `(新)` 别名声明规范形式收敛：**已收口（2026-10-23）**——删除 `typedef`/`type`，只留 `using`；`using` RHS = 完整 type-id（固定数组、函数指针、内联 enum、聚合定义）；删除 `TypedefDeclAST`/`TypeDeclAST`，保留内部 `TypedefType`。 **2026-10-24 补丁**：块/成员体作用域别名、前向占位合并、`*p` 穿透指针别名（MOD-03 关闭）。
 
@@ -154,16 +156,16 @@
 - `[ ]` **MOD-01** 符号表：全局/模块/类型/函数/变量/字段/方法。
 - `[ ]` **MOD-02** 作用域规则：块/函数/类型/模块。
 - `[x]` **MOD-03** 前向声明：函数/struct/class/enum/union/类型别名。**已完成（2026-10-24）**：struct/union 前向占位与定义合并为同一对象——`using N = struct Node;`、`struct S; S* p; struct S { ... };` 后 `N`/`p->x` 均可见字段；class/enum 原有 eager 注册不变。
-- `[x]` **MOD-04** `module` 声明与文件映射。点分/`::` 模块名 → `TranslationUnitAST::moduleName`；`import` 点分名解析 + 文件↔模块名校验（MOD-13）。
-- `[x]` **MOD-05** `export` 导出规则；`import` 导入规则与访问语法（DEC-02 已冻结：直接非限定访问）。参与模块默认私有，`export`/`public` 后可见。
+- `[x]` **MOD-04** `module` 声明与文件映射。**点分模块名** → `TranslationUnitAST::moduleName`；`module a::b` / `import a::b` 明确诊断（`::` 保留给 namespace）；`import` 点分名解析 + 文件↔模块名校验（MOD-13）。
+- `[x]` **MOD-05** `export` 导出规则；`import` 导入规则与访问语法（DEC-02 已冻结：模块根部导出直接非限定访问；namespace 成员必须 `::` 限定）。参与模块默认私有，`export`/`public` 后可见。
 - `[x]` **MOD-06** 模块可见性与 `public/private`。每模块私有作用域 + `export` 提升到全局；顶层 `public` 与 `export` 同义（类成员访问级别仍待 PAR-04）。类型名可见性见 `docs/spec/modules.md` §11 限制。
 - `[x]` **MOD-07** 模块循环依赖检测。`ModuleLoader` DFS `active` 栈检出导入环并报错（列出环路径）；`loaded` 去重支持菱形依赖。
 - `[ ]` **MOD-08** 名称修饰：C ABI 符号、class 方法、**模板单态化符号**、`static` 成员。
 - `[x]` **MOD-09** `(改)` **C 互操作（无预处理器方案）**：不解析真实 C 头文件，改用 `extern` 声明 + `std.c` 绑定层。绑定层已文件化到 `libs/std/c.cmm`（`src/driver/StdPrelude.*` 优先读文件、内嵌兜底；`--no-prelude` 关闭）；`void*` 形参、函数指针形参与嵌套回调（`int (*cb)(int,int)`）均已支持；回调 API `qsort/bsearch/atexit` 已入库（P0-02 / MEM-10）。
 - `[ ]` **MOD-10** 增量编译：模块/AST/类型/IR 缓存与失效策略（内容哈希）。
-- `[x]` **MOD-11** 导入符号访问语法待定并实现：**直接非限定访问**（DEC-02 冻结）；限定名由模块内 `namespace` 提供。
-- `[x]` **MOD-12** `(新)` `namespace` 语义：嵌套/开放命名空间、限定查找、与模块的关系（DEC-17 已冻结：正交）。（嵌套查找 + 名称隔离 + 限定类型名已实现；规范见 `docs/spec/modules.md`）
-- `[x]` **MOD-13** `(新)` 模块/编译单元文件布局：文件 ↔ 模块映射、导出单元、单文件多模块规则。点分名↔目录文件映射 + 声明名与导入说明符一致性校验已实现（`module` 首部/重复声明约束待补）。
+- `[x]` **MOD-11** 导入符号访问语法：**import 只控制可见性**（DEC-02 冻结）；模块根部导出直接非限定访问，namespace 成员用 `::` 限定访问；module 名本身不产生限定名。
+- `[x]` **MOD-12** `(新)` `namespace` 语义：嵌套/开放命名空间、限定查找、与模块的关系（DEC-17 已冻结：正交）。**module 负责文件/导入，namespace 负责 API 名字**；namespace 声明与访问只使用 `::`，module 名不进入查找；规范见 `docs/spec/modules.md`。
+- `[x]` **MOD-13** `(新)` 模块/编译单元文件布局：文件 ↔ 模块映射、导出单元、单文件多模块规则。点分名↔目录文件映射 + 声明名与导入说明符一致性校验已实现；`module`/`import` 的 `::` 写法已在 parser 层拒绝（`module` 首部/重复声明约束仍待补）。
 - `[x]` **MOD-14** `(新)` `import` 搜索路径与名称解析顺序、循环导入诊断（细化 MOD-07）。（搜索顺序：导入者目录 → `-M/--module-path` → `STD_DIR`；循环报错并列出环路径；规范见 `docs/spec/modules.md`）
 - `[~]` **MOD-15** `(新)` **名称修饰方案（规范性）**：C ABI、方法、模板单态化、`static` 成员、namespace 的完整规则（细化 MOD-08）。（现状+目标见 `docs/spec/abi.md`）
 
@@ -177,8 +179,8 @@
 - `[x]` **TYP-04** 浮点类型：`f16/f32/f64/f128` 的 LLVM 映射与软件兜底（**短拼写类型关键字完成** 2026-10-20：`f16/f32/f64/f128` ≡ `float16/32/64/128`；字面量后缀不受影响）。**已完成**：LLVM 类型映射（常量按 APFloat 语义生成，LEX-15）；x86-64 上 f16/f128 的算术/比较/混合运算/转换、形参/返回、全局变量、struct 字段均可用（LLVM 原生/内部提升承担兜底）；`print`/`println` 全格式说明符支持 f16（无损提升）/f128（截断为 double，精度损失见 `conversions.md` §9.1）；varargs 默认实参提升对齐 C23（`float16→float64`，`float128` 原样传递）。**延后**：非 x86-64 目标（无 half 硬件、需 compiler_rt 的 quad）的验证挂靠 INF-05/TST-08；f128 的 113 位精确十进制输出挂靠 FMT-13。
 - `[x]` **TYP-05** `bool/char/char8/char16/char32/void`。`char8/16/32` 类型关键字（2026-10-19，uint8/16/32 别名）；**u8/u16/u32 前缀字面量完成**（2026-10-20）：类型为 `char8/16/32[]`（逐字节存储、不转码），可退化为对应指针。
 - `[ ]` **TYP-06** 类型别名 `type Handle = u64;`：展开、循环检测。
-- `[ ]` **TYP-07** `struct`：字段、布局、默认公开、C ABI 兼容。
-- `[ ]` **TYP-08** `class`：布局等价 struct，成员函数不占空间。
+- `[x]` **TYP-07** `struct`：字段、布局、默认公开、C ABI 兼容。**2026-11-09**：与 `class` 共用 record 文法，支持方法/运算符/静态/嵌套/访问段；带方法或访问段的 struct 内部走 `ClassType`，纯数据 struct 保持 `StructType`。
+- `[x]` **TYP-08** `class`：布局等价 struct，成员函数不占空间。**2026-11-09**：默认 private；与 struct 共用 `parseRecordDecl`，`[[repr(C)]]` 仍只允许 struct/union。
 - `[x]` **TYP-09** `enum` 强类型：底层类型 `:uint8`、固定大小、不隐式转换。底层类型/固定大小、名义相等与 `enum ↔ int` 强制显式转换（TYP-20）均已实现。
 - `[ ]` **TYP-10** `union`：C 风格布局、初始化、访问。
 - `[x]` **TYP-11** 固定数组 `i32[32]`；VLA（可变长度数组）；多维数组。**完成**：一维数组形参 `T name[N]` 去糖为 slice（2026-10-01，spec `docs/superpowers/specs/2026-10-01-typ11-array-params-design.md`）；多维数组本体（2026-10-03，spec docs/superpowers/specs/2026-10-03-multidim-arrays-design.md；顺带修复全局数组带初始化器的既有缺口）；多维形参行 slice 去糖（2026-10-04，spec docs/superpowers/specs/2026-10-04-multidim-array-params-design.md；顺带修复 typesEqual 数组分支忽略元素/长度的缺陷）。**VLA 明确不支持**（2026-10-05 用户决策）：运行时长度分配与安全定位冲突（无界栈增长）、C23 已将 VLA 降为可选、动态长度由 Slice 承接；专用诊断"variable-length arrays are not supported"（声明与形参两处）+ pin 测试。
@@ -511,7 +513,7 @@
 ## 20. 待定决策（DEC）
 
 - `[x]` **DEC-01** class 默认访问级别：**class 默认 private，struct 默认 public**（C++ 惯例）；`public:`/`private:`/`protected:` 段切换（`protected` 为上下文关键字，继承落地前 ≡ private，见 SEM-04/INH）。实现见 `src/frontend/Parser.cpp`（记录）与 `SemanticAnalyzer`（检查，E2009）。
-- `[x]` **DEC-02** `import math;` 后符号访问语法：**直接非限定访问**（`add`）。模块是物理边界，不引入 `math.add` 式运算符；限定名由模块内 `namespace` 提供。
+- `[x]` **DEC-02** `import math;` 后符号访问语法：**import 只控制可见性**。模块**根部**导出直接非限定访问（`add`）；namespace 内的导出必须限定访问（`g::add`）。模块名不产生 `math.add` / `math::add` 式限定；module 是物理边界，namespace 是逻辑名字边界。
 - `[x]` **DEC-03** `Result<T,E>` 精确布局与 `.error`/`.value` 语义（显式访问，无 `?`）。**裁决**（2026-10-06，DS4）：`{ bool ok; T value; E error; }` 三字段加判别标志——两字段草案无法区分成功/失败，哨兵约定与任意 E 冲突；与 Optional `{ bool valid; T value; }` 对称。实现见 TYP-14。
 - `[ ]` **DEC-04** 默认参数范围；**确认不做**命名参数。
 - `[x]` **DEC-05** `constexpr` 与 `compile_time` 的关系——裁决：并存 + 共享求值器内核（2026-10-06）；constexpr 保持既有语义（运行时可调用），CT 表达式内 constexpr 函数调用委托 `evaluateConstexpr`。
@@ -526,7 +528,7 @@
 - `[ ]` **DEC-14** 模块缓存格式与稳定性。
 - `[ ]` **DEC-15** 是否默认链接 libc（当前 `print` 依赖系统 `printf`）。
 - `[x]` **DEC-16** `(新)` 类型别名规范形式：**裁决（2026-10-23）**——`using` 为唯一形式；`typedef`/`type` 均移除（硬错误 + 改写提示）。
-- `[x]` **DEC-17** `(新)` `namespace` 与模块（`module`/`import`）的关系与共存方式：**模块=物理边界，namespace=逻辑边界，二者正交**；同一模块可含多个 namespace，同一 namespace 可跨模块。
+- `[x]` **DEC-17** `(新)` `namespace` 与模块（`module`/`import`）的关系与共存方式：**模块=物理边界，namespace=逻辑边界，二者正交**；同一模块可含多个 namespace，同一 namespace 可跨模块。**2026-11-09 冻结拼写**：module/import 用点分路径，namespace 声明/访问用 `::`；module 不产生限定名。
 - `[x]` **DEC-18** `(新)` `register`/`cast`/`typeof` 等既有 token 的废弃或保留。→ **决定移除**（一并移除 `comptime`/`generic`）；显式转换改用 `static_cast`/`reinterpret_cast`（LEX-11），类型查询改用 `compile_time` 反射（CT-07）。已同步 `Token.h`/`Lexer.cpp`/`Utils.cpp`/`keywords.md`。
 - `[ ]` **DEC-19** `(新)` `main` 入口签名与返回值约定。
 - `[x]` **DEC-20** `(新)` 字符串字面量所有权/生命周期与 `str`/`String` 边界。→ **决定**（2026-10-08 随 P1-06）：字面量即 `str`（静态存储、全局生命周期、不拥有）；`string` 拥有其缓冲区，显式 `string.new`/`destroy`，无隐式堆分配（`str`/`char*` 赋给 `string` 编译期拒绝）；`string → str → char*` 视图链隐式、反向一律显式；`destroy` 后字段清零（二次 destroy 走 `free(NULL)` 无害）。spec `docs/superpowers/specs/2026-10-08-str-string-design.md`。
