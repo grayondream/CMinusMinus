@@ -143,25 +143,32 @@ type-id             = type , { '[' , integer-literal , ']' }
    [impl] SG-04/SG-05: C 风格 cast 与 type-id 使用同一递归声明符解析；
    支持 `(int32 (*)(int32))`、`int32 (*(*g)(int32))(int32)` 等嵌套形式。 *)
 
-(* --- 记录类型 --- *)
-record-decl         = struct-decl | class-decl | union-decl ;
-(* [impl] 2026-10-26: 记录定义后可接 attached 声明符：`struct S {...} *p;`、
-   `struct S {...} f();`、`struct S {...} (*fp)(int32);`。 *)
-
-(* PAR-12 [impl] 2026-10-17: 匿名聚合定义——无 tag 的
-   struct/union/class 定义 + 内联变量声明符（`struct { ... } v;`）。
-   每个匿名定义是独立类型（合成名 __anon_N，C 语义）。*)
-struct-decl         = 'struct' , [ identifier ] , [ '{' , { field-decl | type-alias } , '}' ] , ';'
-                    | 'struct' , '{' , { field-decl | type-alias } , '}' , identifier , { ',' , identifier } , ';' ;
-
-class-decl          = 'class' , [ identifier ]
+(* --- 记录类型（PAR-05：struct/class 共用 record 文法） --- *)
+record-decl         = record-keyword , [ identifier ]
                       [ ':' , [ access-specifier ] , qualified-name ]   (* [impl] 仅记录 baseClass; 继承语义 INH-01 [plan] *)
-                      [ '{' , { class-member } , '}' ] , ';' ;
-class-member        = access-section
+                      [ '{' , { record-member } , '}'
+                        [ record-declarator-list ] ] , ';' ;            (* [impl] 定义/前向/attached declarator *)
+record-keyword      = 'struct' | 'class' ;
+record-member       = access-section
                     | field-decl
                     | function-decl
-                    | type-alias ;
-access-section      = ( 'public' | 'private' | 'protected' ) , ':' ;  (* [plan] protected 见 PAR-04；默认级别 DEC-01 *)
+                    | operator-decl
+                    | type-alias
+                    | record-decl
+                    | union-decl
+                    | enum-decl
+                    | static-member-decl ;
+static-member-decl  = 'static' , ( field-decl | function-decl ) ;
+access-specifier    = 'public' | 'private' | 'protected' ;
+access-section      = access-specifier , ':' ;  (* [plan] protected 见 PAR-04；默认级别 DEC-01 *)
+(* [impl] 2026-10-26: 记录定义后可接 attached 声明符：`struct S {...} *p;`、
+   `struct S {...} f();`、`struct S {...} (*fp)(int32);`。 *)
+record-declarator-list = record-declarator , { ',' , record-declarator } ;
+record-declarator   = member-declarator
+                    | identifier , '(' , [ parameter-list ] , ')' ;
+(* [impl] 2026-10-17 PAR-12: 匿名聚合定义——无 tag 的 struct/class 定义 +
+   内联变量声明符（`struct { ... } v;`）。每个匿名定义是独立类型
+   （合成名 __anon_N，C 语义）。 *)
 
 union-decl          = 'union' , [ identifier ] , [ '{' , { field-decl | type-alias } , '}' ] , ';'
                     | 'union' , '{' , { field-decl | type-alias } , '}' , identifier , { ',' , identifier } , ';' ;
@@ -185,7 +192,7 @@ enumerator          = identifier , [ '=' , const-expr ] ;
 
 (* --- 模板（GEN-01 / GEN-02 / PAR-21） --- *)
 template-decl       = 'template' , '<' , template-parameter , { ',' , template-parameter } , '>'
-                      ( function-decl | class-decl | type-alias ) ;
+                      ( function-decl | record-decl | type-alias ) ;
 template-parameter  = 'typename' , identifier                           (* 类型参数 *)
                     | type , identifier ;                               (* 非类型/常量参数 *)
 template-instance   = qualified-name , '<' , template-argument , { ',' , template-argument } , '>' ;
@@ -249,7 +256,7 @@ primitive-type      = 'void' | 'bool' | 'char'
                     | 'string_view' | 'string' ;                   (* [impl] P1-06: identifier 特判，非关键字 *)
 
 named-type          = qualified-name ;
-record-body         = struct-decl | union-decl ;                    (* 内联定义 *)
+record-body         = record-decl | union-decl ;                    (* 内联定义 *)
 enum-body           = enum-decl ;
 
 

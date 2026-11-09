@@ -4825,307 +4825,7 @@ bool Parser::parseMemberFieldDecl(Type* baseType, MemberFieldDecl& out) {
 }
 
 std::unique_ptr<StructDeclAST> Parser::parseStructDecl() {
-    if (!match(TokenType::TOKEN_STRUCT)) return nullptr;
-
-    std::string bareName = parseQualifiedTypeName();
-    // PAR-12: 匿名 struct 定义 `struct { ... } v;` 获得唯一合成名（C 语义：
-    // 每次匿名定义 = 独立类型；类型不可被后续源码按名引用）。仅当确实紧跟
-    // `{`（定义）时分配——前向声明/引用场景无匿名形态。
-    if (bareName.empty() && check(TokenType::TOKEN_LBRACE)) {
-        bareName = TypeContext::instance().nextAnonId();
-    }
-    std::string name = qualifyTypeDeclName(bareName);
-
-    // INH-01/DS2: optional single public inheritance — `struct D : [public] B`.
-    // The specifier defaults to public; private/protected inheritance is
-    // diagnosed as unsupported (INH-02-style diagnostic, no silent ignore).
-    std::string baseClass;
-    if (match(TokenType::TOKEN_COLON)) {
-        if (check(TokenType::TOKEN_PUBLIC) || check(TokenType::TOKEN_PRIVATE) ||
-            check(TokenType::TOKEN_IDENTIFIER)) {
-            std::string access = peek()->lexeme;
-            if (access == "public" || access == "private" || access == "protected") {
-                advance();
-                if (access != "public") {
-                    error("private/protected inheritance is not supported; use public inheritance",
-                          *peek());
-                    return nullptr;
-                }
-            }
-        }
-        baseClass = qualifyTypeDeclName(parseQualifiedTypeName());
-        // P1-03 / INH-05 / GEN-09: 模板实例基类 `Shape<Circle>`——实参在
-        // 派生类定义处尚不存在（CRTP），parse 只捕获源拼写，sema 在派生类
-        // visit 时经 Registry 解析。实参限定为类型名/数字的平拼写。
-        if (check(TokenType::TOKEN_LT)) {
-            std::string spelling = "<";
-            advance();
-            int depth = 1;
-            while (!eof() && depth > 0) {
-                auto t = peek();
-                if (t->type == TokenType::TOKEN_GT) {
-                    --depth;
-                    if (depth == 0) {
-                        spelling += ">";
-                        advance();
-                        break;
-                    }
-                }
-                if (t->type == TokenType::TOKEN_IDENTIFIER ||
-                    t->type == TokenType::TOKEN_NUMBER ||
-                    t->type == TokenType::TOKEN_COMMA ||
-                    t->type == TokenType::TOKEN_STAR ||
-                    t->type == TokenType::TOKEN_LT ||
-                    t->type == TokenType::TOKEN_GT ||
-                    t->type == TokenType::TOKEN_RSHIFT) {
-                    spelling += t->lexeme;
-                    advance();
-                } else {
-                    error("unsupported template base class argument", *t);
-                    return nullptr;
-                }
-            }
-            if (depth != 0) {
-                errorUnexpected("expected '>' to close template base class arguments");
-                return nullptr;
-            }
-            baseClass += spelling;
-        }
-        // INH-02: single inheritance only — a ',' after the base name would
-        // otherwise be silently mis-parsed as a forward declaration.
-        if (check(TokenType::TOKEN_COMMA)) {
-            error("multiple inheritance is not supported; use single inheritance", *peek());
-            return nullptr;
-        }
-    }
-
-    if (!check(TokenType::TOKEN_LBRACE)) {
-        // Forward declaration
-        auto fwd = std::make_unique<StructDeclAST>(name, std::vector<FieldInfo>{});
-        fwd->bareName = bareName;
-        fwd->baseClass = std::move(baseClass);
-        fwd->isForwardDecl = true;
-        return fwd;
-    }
-
-    advance(); // consume '{'
-
-    // AGG-11: while parsing this aggregate's body, nested type declarations
-    // and bare type references resolve against a prefix extended with this
-    // aggregate's own bare name (same mechanism as namespaces).
-    std::string savedPrefix = m_typeNamespacePrefix;
-    m_typeNamespacePrefix += mangleQualifiedTypeName(bareName) + "_";
-
-    std::vector<FieldInfo> fields;
-    std::vector<std::unique_ptr<FunctionDeclAST>> methods;
-    std::vector<std::unique_ptr<VarDeclAST>> staticMembers;
-    // AGG-11: nested type declarations, in source order.
-    std::vector<std::unique_ptr<DeclAST>> nestedTypes;
-    while (!eof() && !check(TokenType::TOKEN_RBRACE)) {
-        // P1-05 / ANN-01: 字段/嵌套类型/静态成员注解（成员起始位置）。
-        std::vector<Annotation> memberAnns = parseAnnotations();
-
-        // PAR-24: legacy alias forms / member-scope using are rejected explicitly.
-        if (isRemovedTypeAliasStart()) {
-            rejectRemovedTypeAlias();
-            continue;
-        }
-        if (isLocalUsingStart()) {
-            auto u = parseUsingAliasDecl(/*member=*/true);
-            if (!u) continue;
-            u->annotations = std::move(memberAnns);
-            nestedTypes.push_back(std::move(u));
-            continue;
-        }
-
-        // AGG-11: a nested type declaration is `keyword IDENT {` (a forward
-        // `class D;` and an inherited `class D : Base` also route here);
-        // `keyword {` stays an anonymous inline member (AGG-03) and any other
-        // shape stays a field of that type.
-        {
-            TokenType kw = peek()->type;
-            if (kw == TokenType::TOKEN_ENUM || kw == TokenType::TOKEN_STRUCT ||
-                kw == TokenType::TOKEN_UNION || kw == TokenType::TOKEN_CLASS) {
-                size_t save = m_currentTokenPos;
-                advance();
-                std::string nestedName = parseQualifiedTypeName();
-                // A '{' followed (after the balanced closing brace) by an
-                // IDENTIFIER is an inline member definition with a declarator
-                // (`struct Inner { ... } inner;`) — that stays on the field
-                // path (pre-existing C-style idiom, pinned by tests).
-                // A ';' is a forward declaration (`class D;`, `struct D;`).
-                // `class D : Base` also routes (inherited definition or
-                // forward). `enum E : under` skips the underlying-type spec
-                // before the '{' / ';' check (TYP-09 form).
-                bool isNested = false;
-                if (!nestedName.empty()) {
-                    if (check(TokenType::TOKEN_LBRACE)) {
-                        size_t afterBody = balancedBraceEnd(m_currentTokenPos);
-                        isNested = afterBody >= m_tokens.size() ||
-                                   m_tokens[afterBody].type != TokenType::TOKEN_IDENTIFIER;
-                    } else if (check(TokenType::TOKEN_SEMICOLON)) {
-                        isNested = true;
-                    } else if (kw == TokenType::TOKEN_CLASS &&
-                               check(TokenType::TOKEN_COLON)) {
-                        isNested = true;
-                    } else if (kw == TokenType::TOKEN_ENUM &&
-                               check(TokenType::TOKEN_COLON)) {
-                        advance(); // ':'
-                        if (parseType()) {
-                            isNested = check(TokenType::TOKEN_LBRACE) ||
-                                       check(TokenType::TOKEN_SEMICOLON);
-                        }
-                    }
-                }
-                m_currentTokenPos = save;
-                if (isNested) {
-                    std::unique_ptr<DeclAST> nested;
-                    if (kw == TokenType::TOKEN_ENUM) {
-                        nested = parseEnumDecl();
-                        // parseEnumDecl stops at '}' (or right after the name
-                        // for a forward) — the trailing ';' belongs to the
-                        // declaration; the member loop owns it.
-                        match(TokenType::TOKEN_SEMICOLON);
-                    }
-                    else if (kw == TokenType::TOKEN_UNION) nested = parseUnionDecl();
-                    else if (kw == TokenType::TOKEN_CLASS) nested = parseClassDecl();
-                    else nested = parseStructDecl();
-                    // Forward declarations of struct/class/union stop before
-                    // the trailing ';' — consume it here too, or it stalls the
-                    // member loop and silently drops the remaining members.
-                    if (kw != TokenType::TOKEN_ENUM) match(TokenType::TOKEN_SEMICOLON);
-                    if (!nested) {
-                        m_typeNamespacePrefix = savedPrefix;
-                        return nullptr;
-                    }
-                    registerNestedDeclType(nested.get());
-                    if (!memberAnns.empty()) {
-                        nested->annotations = std::move(memberAnns);
-                    }
-                    nestedTypes.push_back(std::move(nested));
-                    continue;
-                }
-            }
-        }
-
-        // AGG-10: `static` storage for the following data member (structs
-        // have no method path, so static applies to variables only).
-        bool memberIsStatic = false;
-        if (check(TokenType::TOKEN_STATIC)) {
-            advance();
-            memberIsStatic = true;
-        }
-        Type* fieldType = parseType();
-        if (!fieldType) break;
-
-        // P1-07 / PAR-10: unnamed bit-field `T : N;` (incl. zero-width `T : 0;`).
-        if (check(TokenType::TOKEN_COLON)) {
-            advance();
-            int bw = 0;
-            if (!parseBitFieldWidth(bw)) {
-                m_typeNamespacePrefix = savedPrefix;
-                return nullptr;
-            }
-            fields.push_back(FieldInfo{"", fieldType, std::move(memberAnns), bw});
-            match(TokenType::TOKEN_SEMICOLON);
-            continue;
-        }
-
-        if (check(TokenType::TOKEN_IDENTIFIER)) {
-            size_t namePos = m_currentTokenPos;
-            auto nameTok = advance();
-            if (check(TokenType::TOKEN_LPAREN)) {
-                auto func = parseFunctionDecl(fieldType, nameTok->lexeme);
-                if (func) {
-                    func->annotations = std::move(memberAnns);
-                    func->isStatic = memberIsStatic;
-                    methods.push_back(std::move(func));
-                }
-                continue;
-            }
-            m_currentTokenPos = namePos;
-        }
-
-        if (!memberIsStatic && !check(TokenType::TOKEN_IDENTIFIER) &&
-            !check(TokenType::TOKEN_STAR) && !check(TokenType::TOKEN_LPAREN)) {
-            // AGG-03: an anonymous struct/union member promotes its
-            // fields/members into the enclosing struct. The trailing ';' was
-            // already consumed by parseType's inline-definition path.
-            if (isAnonymousAggregate(fieldType)) {
-                if (!promoteAnonymousMembers(fields, fieldType)) {
-                    error("duplicate member name in anonymous struct/union", *peek());
-                    m_typeNamespacePrefix = savedPrefix;
-                    return nullptr;
-                }
-                continue;
-            }
-            break;
-        }
-
-        Type* memberBase = stripDeclaratorType(fieldType);
-        bool firstField = true;
-        while (true) {
-            MemberFieldDecl fd;
-            if (!parseMemberFieldDecl(firstField ? fieldType : memberBase, fd)) {
-                m_typeNamespacePrefix = savedPrefix;
-                return nullptr;
-            }
-            auto anns = firstField ? std::move(memberAnns) : std::vector<Annotation>{};
-            if (memberIsStatic) {
-                if (fd.bitWidth != 0 || fd.flexibleArray) {
-                    error("invalid static member declarator", *peek());
-                    m_typeNamespacePrefix = savedPrefix;
-                    return nullptr;
-                }
-                std::unique_ptr<ExprAST> init = nullptr;
-                if (match(TokenType::TOKEN_ASSIGN)) {
-                    init = parseExpr(2);
-                    if (!init) {
-                        m_typeNamespacePrefix = savedPrefix;
-                        return nullptr;
-                    }
-                }
-                auto staticVar = std::make_unique<VarDeclAST>(fd.name, fd.type, std::move(init));
-                staticVar->annotations = std::move(anns);
-                staticMembers.push_back(std::move(staticVar));
-                if (check(TokenType::TOKEN_COMMA)) {
-                    error("multiple static member declarators are not supported", *peek());
-                    m_typeNamespacePrefix = savedPrefix;
-                    return nullptr;
-                }
-                if (!expect(TokenType::TOKEN_SEMICOLON,
-                            "expected ';' after static member declaration")) {
-                    m_typeNamespacePrefix = savedPrefix;
-                    return nullptr;
-                }
-                break;
-            }
-            FieldInfo fi{fd.name, fd.type, std::move(anns), fd.bitWidth};
-            fi.flexibleArray = fd.flexibleArray;
-            fields.push_back(std::move(fi));
-            firstField = false;
-            if (!match(TokenType::TOKEN_COMMA)) {
-                if (!expect(TokenType::TOKEN_SEMICOLON,
-                            "expected ';' after member declaration")) {
-                    m_typeNamespacePrefix = savedPrefix;
-                    return nullptr;
-                }
-                break;
-            }
-        }
-    }
-
-    m_typeNamespacePrefix = savedPrefix;
-    match(TokenType::TOKEN_RBRACE);
-    match(TokenType::TOKEN_SEMICOLON);
-
-    auto decl = std::make_unique<StructDeclAST>(name, std::move(fields));
-    decl->methods = std::move(methods);
-    decl->bareName = bareName;
-    decl->baseClass = std::move(baseClass);
-    decl->staticMembers = std::move(staticMembers);
-    decl->nestedTypes = std::move(nestedTypes);
-    return decl;
+    return parseRecordDecl(/*isClass=*/false);
 }
 
 // AGG-11: register a nested type declaration into TypeContext, mirroring
@@ -5213,7 +4913,15 @@ size_t Parser::balancedBraceEnd(size_t lbracePos) const {
 }
 
 std::unique_ptr<StructDeclAST> Parser::parseClassDecl() {
-    if (!match(TokenType::TOKEN_CLASS)) return nullptr;
+    return parseRecordDecl(/*isClass=*/true);
+}
+
+std::unique_ptr<StructDeclAST> Parser::parseRecordDecl(bool isClass) {
+    if (isClass) {
+        if (!match(TokenType::TOKEN_CLASS)) return nullptr;
+    } else {
+        if (!match(TokenType::TOKEN_STRUCT)) return nullptr;
+    }
 
     std::string bareName = parseQualifiedTypeName();
     // PAR-12: 匿名 class 定义获得唯一合成名。
@@ -5292,12 +5000,15 @@ std::unique_ptr<StructDeclAST> Parser::parseClassDecl() {
         decl->baseClass = std::move(baseClass);
         decl->bareName = bareName;
         decl->isForwardDecl = true;
+        decl->isClassDecl = isClass;
         return decl;
     }
 
-    // PAR-17: 自引用签名（`A* self()`）——体 parse 前先注册占位 ClassType，
-    // parseDeclarationImpl 的注册路径对已存在者幂等复用。
-    if (!TypeContext::instance().getClass(name)) {
+    // PAR-17: 自引用签名（`A* self()`）——class 体 parse 前先注册占位
+    // ClassType，parseDeclarationImpl 的注册路径对已存在者幂等复用。
+    // struct 保留既有行为：解析完后再由 parseDeclaration/registerNestedDeclType
+    // 决定它需要 StructType 还是 ClassType（带方法/访问段时）。
+    if (isClass && !TypeContext::instance().getClass(name)) {
         TypeContext::instance().addClass(name, new ClassType(name));
     }
 
@@ -5314,9 +5025,12 @@ std::unique_ptr<StructDeclAST> Parser::parseClassDecl() {
     std::unordered_map<std::string, AccessLevel> memberAccess;
     // AGG-11: nested type declarations, in source order.
     std::vector<std::unique_ptr<DeclAST>> nestedTypes;
-    // DEC-01: class members default to private; `public:`/`private:`/
-    // `protected:` sections change the level for the members that follow.
-    AccessLevel currentAccess = AccessLevel::Private;
+    // DEC-01: class members default to private, struct members to public;
+    // `public:`/`private:`/`protected:` sections change the level for the
+    // members that follow in both records.
+    AccessLevel currentAccess =
+        isClass ? AccessLevel::Private : AccessLevel::Public;
+    bool hasAccessSections = false;
     auto accessFromLexeme = [](const std::string& s) -> AccessLevel {
         if (s == "public") return AccessLevel::Public;
         if (s == "protected") return AccessLevel::Protected;
@@ -5354,6 +5068,7 @@ std::unique_ptr<StructDeclAST> Parser::parseClassDecl() {
         if (isSpecifier) {
             std::string lexeme = peek()->lexeme;
             currentAccess = accessFromLexeme(lexeme);
+            hasAccessSections = true;
             advance(); // consume specifier
             expect(TokenType::TOKEN_COLON, "expected ':' after access specifier");
             continue;
@@ -5632,7 +5347,8 @@ std::unique_ptr<StructDeclAST> Parser::parseClassDecl() {
     decl->memberAccess = std::move(memberAccess);
     decl->nestedTypes = std::move(nestedTypes);
     decl->bareName = bareName;
-    decl->isClassDecl = true;
+    decl->isClassDecl = isClass;
+    decl->hasAccessSections = hasAccessSections;
     return decl;
 }
 

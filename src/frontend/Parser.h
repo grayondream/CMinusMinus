@@ -175,8 +175,11 @@ private:
     bool parseMemberFieldDecl(Type* baseType, MemberFieldDecl& out);
 
     std::unique_ptr<StructDeclAST> parseStructDecl();
-
     std::unique_ptr<StructDeclAST> parseClassDecl();
+
+    // PAR-05: struct/class share one record grammar; `isClass` selects the
+    // keyword and the default member access (class=private, struct=public).
+    std::unique_ptr<StructDeclAST> parseRecordDecl(bool isClass);
 
     std::unique_ptr<UnionDeclAST> parseUnionDecl();
 

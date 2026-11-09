@@ -197,9 +197,14 @@ public:
     std::string bareName;
     std::string baseClass;
 
-    // PAR-04/DEC-01: explicit access levels recorded by the parser (class
-    // declarations record every member; structs leave this empty -> Public).
+    // PAR-04/DEC-01: explicit access levels recorded by the parser. Both
+    // struct and class record every member; absent entries mean the record
+    // keyword's default (struct: Public, class: Private).
     std::unordered_map<std::string, AccessLevel> memberAccess;
+    // PAR-05: true when the source body contains at least one access section.
+    // A struct with access sections needs ClassType semantics even if it has no
+    // methods; a pure data struct keeps StructType.
+    bool hasAccessSections = false;
     // INH-01: true when this node came from a forward declaration (`class D;`)
     // — sema uses it to keep ClassType::isComplete accurate.
     bool isForwardDecl = false;
