@@ -26,7 +26,7 @@ namespace geometry {        // 声明
     struct Point { int32 x; int32 y; }
 }
 
-namespace geometry.ops {    // 嵌套
+namespace geometry::ops {   // 嵌套（namespace 用 `::`）
     int32 dot(Point a, Point b) { ... }
 }
 
@@ -35,6 +35,8 @@ namespace geometry {        // 开放命名空间：可再次进入
 }
 ```
 
+- namespace 名与限定访问使用 `::`；`namespace A::B::C` 合法，`namespace A.B`
+  不再合法（点分保留给 module 路径）。
 - 限定名 `A::B::name`（`::` token 已实现，LEX-14/PAR-22）。
 - 命名空间是**编译期名字分组**，与模块（文件/编译单元）**正交**：
   - 模块决定“哪些文件一起编译/如何导入”；
@@ -44,12 +46,13 @@ namespace geometry {        // 开放命名空间：可再次进入
 ### 2.2 查找规则
 
 1. 非限定名：当前块 → 外层块 → 函数 → 当前 namespace（由内向外）→ 其外层 namespace → 模块根 →（若 import）被导入模块的**导出**符号。
-2. 限定名 `A::x`：从全局根按名逐级进入 namespace/module。
+2. 限定名 `A::x`：从全局根按名逐级进入 namespace；module 不是名字作用域，
+   不产生 `module::x` 或 `module.x::x` 的访问形式。
 3. ADL（实参依赖查找）**不引入**（保持 C 风格可预测，见 NG-03）。
 
 ## 3. 模块与文件（MOD-04/13）`[impl]`
 
-- **一文件一模块**：每个 `.cmm` 源文件最多一条 `module` 声明；解析器接受点分/`::` 模块名，并记入 `TranslationUnitAST::moduleName`。
+- **一文件一模块**：每个 `.cmm` 源文件最多一条 `module` 声明；模块名只使用点分路径（如 `module std.vec;`），记入 `TranslationUnitAST::moduleName`。`module a::b;` 会被拒绝，并提示 `::` 保留给 namespace。
 - 文件↔模块映射：`module a.b.c;` ↔ 路径 `a/b/c.cmm`；缺省模块名为文件名（去扩展名）。`import a.b;` 解析到该文件后，若文件声明了模块名，则**必须与导入说明符一致**，否则报错（`ModuleLoader`，MOD-13）。
 - 编译单元 = 一个模块文件（或显式引入的一组）。
 - 导入搜索路径由驱动提供（`-M`/`--module-path`，见 TOOL-04/TOOL-08），默认搜索当前目录与标准库根。
@@ -63,14 +66,15 @@ namespace geometry {        // 开放命名空间：可再次进入
 
 ```cmm
 import math;            // 形式 1：引入模块的导出符号
-import math::{add, sub};// 形式 2（提案）：选择性导入
-import math as m;       // 形式 3（提案）：别名
+// 形式 2/3（选择性导入、别名）仍为提案，未实现；模块说明符不要写 `::`。
 ```
 
 - 被导入模块内**未标记 `export`/`public`** 的符号不可见（`[impl]`）。
-- 访问语法由 **DEC-02** 裁定：**直接非限定访问**（`import math;` 后可直接用 `add`）。
-  模块是物理边界，不引入名字前缀；若需要限定名，由模块作者用 `namespace`
-  包裹（如 `libs/std/core.cmm` 的 `std::min`），见 DEC-17。
+- 访问语法由 **DEC-02** 裁定：`import` 只控制可见性，**不产生模块名限定**：
+  - 模块**根部**的 `export` 声明：导入后直接非限定访问（`import math; add(...)`）；
+  - `namespace` 内的 `export` 声明：导入后必须限定访问（`std::min(...)`）。
+  - 因此 `import std.vec;` 的 API 是 `std::Vec`，不是 `Vec`，也不是
+    `std.vec::Vec`。模块是物理边界，namespace 是逻辑名字边界（DEC-17）。
 - 形式 2/3（选择性导入、别名）仍为提案，未实现。
 
 ### 4.2 可见性 `[impl]`

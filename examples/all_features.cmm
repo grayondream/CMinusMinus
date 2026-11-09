@@ -506,7 +506,7 @@ namespace geometry {
     int32 dist1(Point* p) { return p->x + p->y; }
     int32 f() { return 7; }
 }
-namespace A.B { int32 deep() { return 9; } }
+namespace A::B { int32 deep() { return 9; } }
 namespace io {
     int32 f() { return 2; }
 }

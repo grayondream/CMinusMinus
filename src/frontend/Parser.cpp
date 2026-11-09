@@ -2211,10 +2211,21 @@ std::unique_ptr<TranslationUnitAST> Parser::parse() {
             sawModule = true;
             if (!eof() && isModuleNameToken(*peek())) {
                 moduleName = advance()->lexeme;
-                while (check(TokenType::TOKEN_DOT) || check(TokenType::TOKEN_COLON_COLON)) {
-                    advance();
-                    if (eof() || !isModuleNameToken(*peek())) break;
-                    moduleName += "." + advance()->lexeme;
+                for (;;) {
+                    if (check(TokenType::TOKEN_DOT)) {
+                        advance();
+                        if (eof() || !isModuleNameToken(*peek())) break;
+                        moduleName += "." + advance()->lexeme;
+                        continue;
+                    }
+                    if (check(TokenType::TOKEN_COLON_COLON)) {
+                        error("module names use '.'; '::' is reserved for namespaces",
+                              *peek());
+                        // Skip the malformed qualifier so the following ';' is
+                        // still consumed and the parser does not cascade.
+                        while (!eof() && !check(TokenType::TOKEN_SEMICOLON)) advance();
+                    }
+                    break;
                 }
             }
             if (moduleName.empty()) {
@@ -2235,10 +2246,23 @@ std::unique_ptr<TranslationUnitAST> Parser::parse() {
                 }
             } else if (!eof() && isModuleNameToken(*peek())) {
                 importName = advance()->lexeme;
-                while (check(TokenType::TOKEN_DOT)) {
-                    advance();
-                    if (eof() || !isModuleNameToken(*peek())) break;
-                    importName += "." + advance()->lexeme;
+                for (;;) {
+                    if (check(TokenType::TOKEN_DOT)) {
+                        advance();
+                        if (eof() || !isModuleNameToken(*peek())) break;
+                        importName += "." + advance()->lexeme;
+                        continue;
+                    }
+                    if (check(TokenType::TOKEN_COLON_COLON)) {
+                        error("import specifiers use '.' or a quoted path; "
+                              "'::' is reserved for namespaces",
+                              *peek());
+                        // The whole specifier is invalid; drop it so the loader
+                        // does not add a second diagnostic for a partial name.
+                        importName.clear();
+                        while (!eof() && !check(TokenType::TOKEN_SEMICOLON)) advance();
+                    }
+                    break;
                 }
             }
             if (!importName.empty()) {
@@ -6082,12 +6106,25 @@ std::unique_ptr<DeclAST> Parser::parseNamespaceDeclImpl() {
     std::string name;
     if (check(TokenType::TOKEN_IDENTIFIER)) {
         name = advance()->lexeme;
-        // Allow both `A.B` and `A::B` nesting in the declaration name.
-        while (check(TokenType::TOKEN_COLON_COLON) || check(TokenType::TOKEN_DOT)) {
-            advance();
-            auto part = match(TokenType::TOKEN_IDENTIFIER);
-            if (!part) break;
-            name += "." + part->lexeme;
+        for (;;) {
+            if (check(TokenType::TOKEN_COLON_COLON)) {
+                advance();
+                auto part = match(TokenType::TOKEN_IDENTIFIER);
+                if (!part) break;
+                name += "::" + part->lexeme;
+                continue;
+            }
+            if (check(TokenType::TOKEN_DOT)) {
+                error("namespace names use '::'; '.' is reserved for module paths",
+                      *peek());
+                // Consume the malformed dotted suffix up to the body so we
+                // report one diagnostic and still parse the namespace body.
+                while (!eof() && !check(TokenType::TOKEN_LBRACE) &&
+                       !check(TokenType::TOKEN_SEMICOLON)) {
+                    advance();
+                }
+            }
+            break;
         }
     }
 

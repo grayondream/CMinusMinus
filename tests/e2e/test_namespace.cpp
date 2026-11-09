@@ -105,7 +105,7 @@ int32 main() { return f() + A::f() - 3; }
 
 TEST_F(NamespaceE2E, NestedNamespaces) {
     EXPECT_EQ(runSource(R"(
-namespace A.B { int32 f() { return 9; } }
+namespace A::B { int32 f() { return 9; } }
 int32 main() { return A::B::f() - 9; }
 )", "ns_nested.cmm"), 0);
 }
@@ -144,7 +144,7 @@ int32 main() { return A::Green - 1; }
 
 TEST_F(NamespaceE2E, NestedQualifiedStructType) {
     EXPECT_EQ(runSource(R"(
-namespace A.B { struct P { int32 v; }; }
+namespace A::B { struct P { int32 v; }; }
 int32 main() {
     A::B::P p;
     p.v = 9;

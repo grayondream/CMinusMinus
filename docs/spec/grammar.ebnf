@@ -105,9 +105,11 @@ top-level-declaration
     = { annotation } , ( module-decl | import-decl | export-decl
                        | namespace-decl | declaration ) ;
 
-module-decl         = 'module' , qualified-name , ';' ;            (* [impl] MOD-04：点分/`::` 名 *)
-import-decl         = 'import' , ( qualified-name | string-literal ) , ';' ;  (* [impl] MOD-04/14 *)
-(* [impl] DEC-02 冻结：导入后为直接非限定访问；限定名由模块内 namespace 提供 *)
+module-name         = identifier , { '.' , identifier } ;          (* [impl] MOD-04：module 只用点分路径 *)
+module-decl         = 'module' , module-name , ';' ;
+import-decl         = 'import' , ( module-name | string-literal ) , ';' ;  (* [impl] MOD-04/14 *)
+(* [impl] DEC-02 冻结：导入只控制可见性，不产生模块限定名；模块根部导出直接
+   非限定访问，namespace 成员必须用 `::` 限定访问 *)
 export-decl         = 'export' , ( declaration | namespace-decl ) ; (* [impl] MOD-05/06：导出声明/整个 namespace *)
 namespace-decl      = 'namespace' , qualified-name , '{' , { top-level-declaration } , '}' ;
 (* [impl] PAR-22 / MOD-12 / P0-08：函数/变量成员、嵌套、限定访问与限定类型名

@@ -2674,3 +2674,21 @@ TEST_F(ParserTest, ModuleWithoutNameRejected) {
     }
     EXPECT_TRUE(found);
 }
+
+TEST_F(ParserTest, ModulePathRejectsColonColon) {
+    auto errors = parseErrors("module a::b;\nint32 main() { return 0; }");
+    ASSERT_FALSE(errors.empty());
+    EXPECT_NE(errors[0].message.find("module names use '.'"), std::string::npos);
+}
+
+TEST_F(ParserTest, ImportSpecifierRejectsColonColon) {
+    auto errors = parseErrors("import a::b;\nint32 main() { return 0; }");
+    ASSERT_FALSE(errors.empty());
+    EXPECT_NE(errors[0].message.find("import specifiers use '.'"), std::string::npos);
+}
+
+TEST_F(ParserTest, NamespaceDeclRejectsDotName) {
+    auto errors = parseErrors("namespace A.B { int32 f() { return 1; } }");
+    ASSERT_FALSE(errors.empty());
+    EXPECT_NE(errors[0].message.find("namespace names use '::'"), std::string::npos);
+}
