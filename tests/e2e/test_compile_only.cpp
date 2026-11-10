@@ -99,6 +99,26 @@ static int runSource(const std::string& source, const std::string& filename) {
     return fn();
 }
 
+TEST_F(CompileOnlyE2E, CompileTimeAggregateInitializerMaterializes) {
+    EXPECT_EQ(runSource(R"(
+struct Pair { int32 a; int32 b; };
+compile_time Pair P = { 20, 21 };
+int32 main() { return P.a + P.b - 41; }
+)", "ct_pair.cmm"), 0);
+}
+
+TEST_F(CompileOnlyE2E, CompileTimeAggregateDoesNotPoisonType) {
+    EXPECT_EQ(runSource(R"(
+struct S { int32 x; };
+compile_time S A = { 1 };
+int32 main() {
+    S b;
+    b.x = 2;
+    return A.x + b.x - 3;
+}
+)", "ct_no_type_poison.cmm"), 0);
+}
+
 TEST_F(CompileOnlyE2E, CompileOnlyInsideIfCompileTimeAllowed) {
     EXPECT_EQ(runSource(R"(
 compile_only int32 build(int32 x) { return x * 2; }

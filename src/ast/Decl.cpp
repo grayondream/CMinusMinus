@@ -982,6 +982,47 @@ static llvm::Constant* ctValueToConstant(CodegenContext& ctx, Type* type,
                 st, {data, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx.getContext()),
                                                  v.strVal.size())});
         }
+        case CtValue::AGGREGATE: {
+            if (!v.aggregate || !t) return nullptr;
+            if (t->kind == TypeKind::Array) {
+                auto* arr = static_cast<ArrayType*>(t);
+                auto* llvmArr = llvm::dyn_cast<llvm::ArrayType>(lt);
+                if (!llvmArr) return nullptr;
+                std::vector<llvm::Constant*> elems;
+                const std::size_t n = llvmArr->getNumElements();
+                elems.reserve(n);
+                for (std::size_t i = 0; i < n; ++i) {
+                    CtValue elem = i < v.aggregate->elements.size()
+                                       ? v.aggregate->elements[i]
+                                       : ctDefaultValue(arr->elementType);
+                    llvm::Constant* c = ctValueToConstant(ctx, arr->elementType, elem);
+                    if (!c) c = llvm::Constant::getNullValue(llvmArr->getElementType());
+                    elems.push_back(c);
+                }
+                return llvm::ConstantArray::get(llvmArr, elems);
+            }
+            if (t->kind == TypeKind::Struct || t->kind == TypeKind::Class) {
+                const std::vector<FieldInfo>* fields =
+                    t->kind == TypeKind::Struct
+                        ? &static_cast<StructType*>(t)->fields
+                        : &static_cast<ClassType*>(t)->fields;
+                auto* st = llvm::dyn_cast<llvm::StructType>(lt);
+                if (!st || st->getNumElements() != fields->size()) return nullptr;
+                std::vector<llvm::Constant*> elems;
+                elems.reserve(fields->size());
+                for (std::size_t i = 0; i < fields->size(); ++i) {
+                    CtValue field = i < v.aggregate->elements.size()
+                                        ? v.aggregate->elements[i]
+                                        : ctDefaultValue((*fields)[i].type);
+                    llvm::Constant* c =
+                        ctValueToConstant(ctx, (*fields)[i].type, field);
+                    if (!c) c = llvm::Constant::getNullValue(st->getElementType(i));
+                    elems.push_back(c);
+                }
+                return llvm::ConstantStruct::get(st, elems);
+            }
+            return nullptr;
+        }
         default:
             return nullptr;
     }
@@ -1133,6 +1174,11 @@ llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
         llvm::Constant* initConstant = nullptr;
         if (foldedContainer) {
             initConstant = buildCtContainerConstant(ctx, type, *foldedContainer);
+        } else if (foldedAggregate) {
+            CtValue cv;
+            cv.type = CtValue::AGGREGATE;
+            cv.aggregate = foldedAggregate;
+            initConstant = ctValueToConstant(ctx, type, cv);
         } else if (foldedValue) {
             initConstant = foldToConstant(ctx, *foldedValue);
         } else if (initExpr) {
@@ -1153,7 +1199,7 @@ llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
         std::string globalName = "__cmm_static_" + fnName + "_" + name + "_" +
                                  std::to_string(staticLocalId++);
         auto* global = new llvm::GlobalVariable(
-            ctx.getModule(), llvmType, type->isConst,
+            ctx.getModule(), llvmType, type->isConst || isCompileTime,
             llvm::GlobalVariable::InternalLinkage, initConstant, globalName);
         if (isThreadLocal) global->setThreadLocal(true);
         if (declAlign) global->setAlignment(llvm::Align(declAlign));
@@ -1165,6 +1211,11 @@ llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
         llvm::Constant* initConstant = nullptr;
         if (isCompileTime && foldedContainer) {
             initConstant = buildCtContainerConstant(ctx, type, *foldedContainer);
+        } else if (isCompileTime && foldedAggregate) {
+            CtValue cv;
+            cv.type = CtValue::AGGREGATE;
+            cv.aggregate = foldedAggregate;
+            initConstant = ctValueToConstant(ctx, type, cv);
         } else if (isCompileTime && foldedValue) {
             initConstant = foldToConstant(ctx, *foldedValue);
         } else if (initExpr) {
@@ -1185,11 +1236,12 @@ llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
             initConstant = llvm::Constant::getNullValue(llvmType);
         }
         
-        llvm::GlobalVariable::LinkageTypes linkage = type->isConst 
-            ? llvm::GlobalVariable::PrivateLinkage 
+        const bool readOnlyGlobal = type->isConst || isCompileTime;
+        llvm::GlobalVariable::LinkageTypes linkage = readOnlyGlobal
+            ? llvm::GlobalVariable::PrivateLinkage
             : llvm::GlobalVariable::ExternalLinkage;
         llvm::GlobalVariable* global = new llvm::GlobalVariable(
-            ctx.getModule(), llvmType, type->isConst, linkage, initConstant, name);
+            ctx.getModule(), llvmType, readOnlyGlobal, linkage, initConstant, name);
         // CON-04: `thread_local` → per-thread copy of the global.
         if (isThreadLocal) {
             global->setThreadLocal(true);
@@ -1229,6 +1281,14 @@ llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
     
     if (isCompileTime && foldedContainer) {
         llvm::Value* constVal = buildCtContainerConstant(ctx, type, *foldedContainer);
+        if (constVal) {
+            ctx.getBuilder().CreateStore(constVal, alloca);
+        }
+    } else if (isCompileTime && foldedAggregate) {
+        CtValue cv;
+        cv.type = CtValue::AGGREGATE;
+        cv.aggregate = foldedAggregate;
+        llvm::Value* constVal = ctValueToConstant(ctx, type, cv);
         if (constVal) {
             ctx.getBuilder().CreateStore(constVal, alloca);
         }

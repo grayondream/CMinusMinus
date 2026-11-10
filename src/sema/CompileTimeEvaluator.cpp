@@ -260,6 +260,54 @@ std::optional<ConstValue> CompileTimeEvaluator::eval(ExprAST* expr, ASTNode& at)
         return std::nullopt;
     }
 
+    if (auto* init = dynamic_cast<InitializerListExprAST*>(expr)) {
+        Type* t = init->type;
+        while (t && t->kind == TypeKind::Typedef)
+            t = static_cast<TypedefType*>(t)->aliasedType;
+        if (!t) return std::nullopt;
+        auto agg = std::make_shared<CtAggregate>();
+        agg->type = t;
+        auto append = [&](Type* elemType, ExprAST* source) -> bool {
+            if (source) {
+                auto v = eval(source, at);
+                if (!v) return false;
+                agg->elements.push_back(*v);
+            } else {
+                agg->elements.push_back(ctDefaultValue(elemType));
+            }
+            return true;
+        };
+        if (t->kind == TypeKind::Array) {
+            auto* arr = static_cast<ArrayType*>(t);
+            const int n = arr->size > 0 ? arr->size : 0;
+            for (int i = 0; i < n; ++i) {
+                ExprAST* source = static_cast<std::size_t>(i) < init->initializers.size()
+                                      ? init->initializers[i].get()
+                                      : nullptr;
+                if (!append(arr->elementType, source)) return std::nullopt;
+            }
+            agg->totalElements = static_cast<std::size_t>(n);
+        } else if (t->kind == TypeKind::Struct || t->kind == TypeKind::Class) {
+            const std::vector<FieldInfo>* fields =
+                t->kind == TypeKind::Struct
+                    ? &static_cast<StructType*>(t)->fields
+                    : &static_cast<ClassType*>(t)->fields;
+            for (std::size_t i = 0; i < fields->size(); ++i) {
+                ExprAST* source = i < init->initializers.size()
+                                      ? init->initializers[i].get()
+                                      : nullptr;
+                if (!append((*fields)[i].type, source)) return std::nullopt;
+            }
+            agg->totalElements = fields->size();
+        } else {
+            return std::nullopt;
+        }
+        CtValue out;
+        out.type = CtValue::AGGREGATE;
+        out.aggregate = std::move(agg);
+        return out;
+    }
+
     return std::nullopt; // 普通非常量节点：静默失败（spec §2 钉死）
 }
 

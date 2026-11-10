@@ -56,6 +56,8 @@ public:
     // Constexpr container value; codegen materializes it as immutable
     // constant arrays + a constant container struct.
     std::shared_ptr<CtContainer> foldedContainer;
+    // CT-25: fixed array / POD aggregate compile-time value.
+    std::shared_ptr<CtAggregate> foldedAggregate;
     // P1-05 / ANN-03: [[align(N)]] 折叠值（sema 写入，codegen setAlignment）。
     uint64_t declAlign = 0;
     // CON-04: `thread_local` storage class — emitted as an LLVM thread-local

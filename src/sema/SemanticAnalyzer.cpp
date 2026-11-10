@@ -2017,6 +2017,10 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
         return evalConstexprCall(*call, 0);
     }
 
+    if (dynamic_cast<InitializerListExprAST*>(expr)) {
+        return ctEval().eval(expr, *expr);
+    }
+
     return std::nullopt;
 }
 
@@ -7385,6 +7389,12 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
             const bool savedCtInit = m_inCompileTimeInitializer;
             m_inCompileTimeInitializer = true;
             getExprType(*node.initExpr);
+            // Brace-init analysis overwrites the list's heuristic element
+            // type; restore the declared aggregate target before folding.
+            if (auto* initList =
+                    dynamic_cast<InitializerListExprAST*>(node.initExpr.get())) {
+                initList->type = node.type;
+            }
             auto folded = evaluateConstexpr(node.initExpr.get());
             m_inCompileTimeInitializer = savedCtInit;
             if (!folded) {
@@ -7393,6 +7403,8 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
                 compileTimeValues[node.name] = *folded;
                 if (folded->type == ConstValue::CONTAINER) {
                     node.foldedContainer = folded->container;
+                } else if (folded->type == ConstValue::AGGREGATE) {
+                    node.foldedAggregate = folded->aggregate;
                 } else {
                     FoldedValue fv;
                     fv.type = static_cast<FoldedValue::Type>(folded->type);

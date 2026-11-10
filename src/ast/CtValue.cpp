@@ -164,6 +164,7 @@ bool ctTruthy(const CtValue& v) {
         case CtValue::FUNC: return !v.funcName.empty();
         case CtValue::CONTAINER: return v.container != nullptr;
         case CtValue::PTR: return v.container != nullptr;
+        case CtValue::AGGREGATE: return v.aggregate != nullptr;
     }
     return false;
 }
@@ -193,6 +194,7 @@ bool ctEquals(const CtValue& a, const CtValue& b) {
         case CtValue::CONTAINER: return a.container == b.container;
         case CtValue::PTR:
             return a.container == b.container && a.ptrIndex == b.ptrIndex;
+        case CtValue::AGGREGATE: return a.aggregate == b.aggregate;
     }
     return false;
 }
@@ -203,6 +205,16 @@ CtValue ctClone(const CtValue& v) {
         auto copy = std::make_shared<CtContainer>();
         cloneContainerInto(*v.container, *copy);
         out.container = std::move(copy);
+    }
+    if (v.type == CtValue::AGGREGATE && v.aggregate) {
+        auto copy = std::make_shared<CtAggregate>();
+        copy->type = v.aggregate->type;
+        copy->totalElements = v.aggregate->totalElements;
+        copy->elements.reserve(v.aggregate->elements.size());
+        for (const auto& e : v.aggregate->elements) {
+            copy->elements.push_back(ctClone(e));
+        }
+        out.aggregate = std::move(copy);
     }
     // PTR keeps the owner (it is a view, not an owning value).
     return out;
@@ -431,6 +443,40 @@ CtValue ctDefaultValue(Type* t) {
         CtValue out;
         out.type = CtValue::CONTAINER;
         out.container = std::move(c);
+        return out;
+    }
+
+    if (t->kind == TypeKind::Array) {
+        auto* arr = static_cast<ArrayType*>(t);
+        auto agg = std::make_shared<CtAggregate>();
+        agg->type = t;
+        const int n = arr->size > 0 ? arr->size : 0;
+        agg->elements.reserve(static_cast<std::size_t>(n));
+        for (int i = 0; i < n; ++i) {
+            agg->elements.push_back(ctDefaultValue(arr->elementType));
+        }
+        agg->totalElements = static_cast<std::size_t>(n);
+        CtValue out;
+        out.type = CtValue::AGGREGATE;
+        out.aggregate = std::move(agg);
+        return out;
+    }
+
+    if (t->kind == TypeKind::Struct || t->kind == TypeKind::Class) {
+        const std::vector<FieldInfo>* fields =
+            t->kind == TypeKind::Struct
+                ? &static_cast<StructType*>(t)->fields
+                : &static_cast<ClassType*>(t)->fields;
+        auto agg = std::make_shared<CtAggregate>();
+        agg->type = t;
+        agg->elements.reserve(fields->size());
+        for (const auto& f : *fields) {
+            agg->elements.push_back(ctDefaultValue(f.type));
+        }
+        agg->totalElements = fields->size();
+        CtValue out;
+        out.type = CtValue::AGGREGATE;
+        out.aggregate = std::move(agg);
         return out;
     }
 

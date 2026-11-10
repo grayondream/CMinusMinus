@@ -14,6 +14,7 @@
 class Type;
 
 struct CtContainer;
+struct CtAggregate;
 
 struct CtValue {
     enum Type {
@@ -25,6 +26,7 @@ struct CtValue {
         FUNC,
         CONTAINER,
         PTR,
+        AGGREGATE,
     };
 
     Type type = INT;
@@ -48,6 +50,14 @@ struct CtValue {
     long long ptrIndex = 0;
     // PTR to an evaluator environment slot (`&local`) used for out-parameters.
     std::string ptrName;
+    // AGGREGATE: fixed array or POD record value.
+    std::shared_ptr<CtAggregate> aggregate;
+};
+
+struct CtAggregate {
+    ::Type* type = nullptr;            // ArrayType / StructType / ClassType
+    std::vector<CtValue> elements;     // row-major array, or fields in order
+    std::size_t totalElements = 0;     // recursive budget accounting
 };
 
 struct CtContainer {
