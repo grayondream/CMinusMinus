@@ -1586,6 +1586,80 @@ CtValue ctUsizeResult(std::size_t value) {
 
 } // namespace
 
+bool SemanticAnalyzer::ctResolveLValuePath(ExprAST* expr, const ConstEnv& env,
+                                           std::string& root,
+                                           std::vector<std::size_t>& path,
+                                           Type*& valueType) {
+    if (!expr) return false;
+    if (auto* var = dynamic_cast<VariableExprAST*>(expr)) {
+        if (!env.count(var->name)) return false;
+        root = var->name;
+        path.clear();
+        valueType = var->type;
+        return true;
+    }
+    if (auto* member = dynamic_cast<MemberAccessExprAST*>(expr)) {
+        if (!ctResolveLValuePath(member->object.get(), env, root, path, valueType))
+            return false;
+        Type* t = valueType;
+        while (t && t->kind == TypeKind::Typedef)
+            t = static_cast<TypedefType*>(t)->aliasedType;
+        if (!t) return false;
+        const std::vector<FieldInfo>* fields = nullptr;
+        if (t->kind == TypeKind::Struct) fields = &static_cast<StructType*>(t)->fields;
+        if (t->kind == TypeKind::Class) fields = &static_cast<ClassType*>(t)->fields;
+        if (!fields) return false;
+        for (std::size_t i = 0; i < fields->size(); ++i) {
+            if ((*fields)[i].name != member->memberName) continue;
+            path.push_back(i);
+            valueType = (*fields)[i].type;
+            return true;
+        }
+        return false;
+    }
+    if (auto* access = dynamic_cast<ArrayAccessExprAST*>(expr)) {
+        if (!ctResolveLValuePath(access->array.get(), env, root, path, valueType))
+            return false;
+        Type* t = valueType;
+        while (t && t->kind == TypeKind::Typedef)
+            t = static_cast<TypedefType*>(t)->aliasedType;
+        if (!t || t->kind != TypeKind::Array) return false;
+        auto index = evaluateConstexpr(access->index.get());
+        if (!index || index->type != ConstValue::INT || index->intVal < 0)
+            return false;
+        path.push_back(static_cast<std::size_t>(index->intVal));
+        valueType = static_cast<ArrayType*>(t)->elementType;
+        return true;
+    }
+    return false;
+}
+
+CtValue* SemanticAnalyzer::ctLookupLValuePath(ConstEnv& env,
+                                              const std::string& root,
+                                              const std::vector<std::size_t>& path) {
+    auto it = env.find(root);
+    if (it == env.end()) return nullptr;
+    CtValue* cur = &it->second;
+    for (std::size_t idx : path) {
+        if (cur->type != CtValue::AGGREGATE || !cur->aggregate) return nullptr;
+        if (idx >= cur->aggregate->elements.size()) return nullptr;
+        cur = &cur->aggregate->elements[idx];
+    }
+    return cur;
+}
+
+bool SemanticAnalyzer::ctAssignLValue(ExprAST* lhs, const CtValue& rhs,
+                                      ConstEnv& env) {
+    std::string root;
+    std::vector<std::size_t> path;
+    Type* valueType = nullptr;
+    if (!ctResolveLValuePath(lhs, env, root, path, valueType)) return false;
+    CtValue* slot = ctLookupLValuePath(env, root, path);
+    if (!slot) return false;
+    *slot = ctBindValue(rhs, valueType);
+    return true;
+}
+
 std::optional<SemanticAnalyzer::ConstValue>
 SemanticAnalyzer::evalConstexprCallCT(CallExprAST& call,
                                       const std::vector<ConstValue>& argValues) {
@@ -1728,6 +1802,19 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
     if (auto* assign = dynamic_cast<AssignmentExprAST*>(expr)) {
         if (!activeEnv) return std::nullopt;
         if (assign->op == AssignOp::Assign) {
+            auto rhs = evaluateConstexpr(assign->rhs.get());
+            if (rhs && ctAssignLValue(assign->lhs.get(), *rhs, *activeEnv)) {
+                std::string root;
+                std::vector<std::size_t> path;
+                Type* vt = nullptr;
+                if (ctResolveLValuePath(assign->lhs.get(), *activeEnv, root, path, vt)) {
+                    if (CtValue* slot = ctLookupLValuePath(*activeEnv, root, path))
+                        return *slot;
+                }
+                return rhs;
+            }
+        }
+        if (assign->op == AssignOp::Assign) {
             if (auto* un = dynamic_cast<UnaryExprAST*>(assign->lhs.get());
                 un && un->op == UnaryOp::Deref) {
                 auto ptr = evaluateConstexpr(un->operand.get());
@@ -1832,10 +1919,44 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
 
     if (auto* member = dynamic_cast<MemberAccessExprAST*>(expr)) {
         auto object = evaluateConstexpr(member->object.get());
+        if (object && object->type == ConstValue::AGGREGATE && object->aggregate) {
+            Type* t = object->aggregate->type;
+            while (t && t->kind == TypeKind::Typedef)
+                t = static_cast<TypedefType*>(t)->aliasedType;
+            if (t && (t->kind == TypeKind::Struct || t->kind == TypeKind::Class)) {
+                const std::vector<FieldInfo>* fields =
+                    t->kind == TypeKind::Struct
+                        ? &static_cast<StructType*>(t)->fields
+                        : &static_cast<ClassType*>(t)->fields;
+                for (std::size_t i = 0; i < fields->size(); ++i) {
+                    if ((*fields)[i].name != member->memberName) continue;
+                    if (i >= object->aggregate->elements.size()) return std::nullopt;
+                    return ctClone(object->aggregate->elements[i]);
+                }
+            }
+            return std::nullopt;
+        }
         if (!object || object->type != ConstValue::CONTAINER) {
             return std::nullopt;
         }
         return evalContainerMember(*member, *object);
+    }
+
+    if (auto* access = dynamic_cast<ArrayAccessExprAST*>(expr)) {
+        auto array = evaluateConstexpr(access->array.get());
+        auto index = evaluateConstexpr(access->index.get());
+        if (!array || !index || index->type != ConstValue::INT ||
+            array->type != ConstValue::AGGREGATE || !array->aggregate) {
+            return std::nullopt;
+        }
+        Type* t = array->aggregate->type;
+        while (t && t->kind == TypeKind::Typedef)
+            t = static_cast<TypedefType*>(t)->aliasedType;
+        if (!t || t->kind != TypeKind::Array) return std::nullopt;
+        if (index->intVal < 0) return std::nullopt;
+        const std::size_t i = static_cast<std::size_t>(index->intVal);
+        if (i >= array->aggregate->elements.size()) return std::nullopt;
+        return ctClone(array->aggregate->elements[i]);
     }
 
     if (auto* mc = dynamic_cast<MethodCallExprAST*>(expr)) {
@@ -8435,29 +8556,84 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
     checkDeprecatedTypeUse(node.returnType, node);
     for (auto& p : node.params) checkDeprecatedTypeUse(p->type, node);
 
-    // Validate compile_time function constraints. Container types are allowed so
-    // compile-time construction can return/move a table; other aggregates keep
-    // the historical literal-type restriction.
+    // Validate compile_time/compile_only function constraints. CT values are
+    // scalars, containers, fixed arrays, and POD records; compile_only may not
+    // return pointers/references/owning strings.
+    std::function<bool(Type*)> isCtValue = [&](Type* t) -> bool {
+        while (t && t->kind == TypeKind::Typedef)
+            t = static_cast<TypedefType*>(t)->aliasedType;
+        if (!t) return false;
+        if (isIntegerType(t) || isFloatType(t) || t->kind == TypeKind::Enum ||
+            ctContainerInfo(t).has_value()) {
+            return true;
+        }
+        if (t->kind == TypeKind::Array) {
+            return isCtValue(static_cast<ArrayType*>(t)->elementType);
+        }
+        if (t->kind == TypeKind::Struct || t->kind == TypeKind::Class) {
+            const std::vector<FieldInfo>* fields = nullptr;
+            std::string base;
+            if (t->kind == TypeKind::Struct) {
+                fields = &static_cast<StructType*>(t)->fields;
+            } else {
+                auto* ct = static_cast<ClassType*>(t);
+                if (!ct->baseClass.empty()) return false;
+                fields = &ct->fields;
+            }
+            for (const auto& f : *fields) {
+                if (f.bitWidth > 0 || f.flexibleArray) return false;
+                if (!isCtValue(f.type)) return false;
+            }
+            return true;
+        }
+        return false;
+    };
+    auto isCtInput = [&](Type* t) {
+        Type* raw = t;
+        while (raw && raw->kind == TypeKind::Typedef)
+            raw = static_cast<TypedefType*>(raw)->aliasedType;
+        return isCtValue(t) || (raw && raw->kind == TypeKind::Str);
+    };
+
     if (node.isCompileTime) {
-        auto isCtLiteral = [this](Type* t) {
-            return isIntegerType(t) || isFloatType(t) ||
-                   ctContainerInfo(t).has_value();
-        };
-        if (!isCtLiteral(node.returnType)) {
-            emitError("compile_time function '" + node.name + "' must have literal return type", node);
+        Type* ret = node.returnType;
+        while (ret && ret->kind == TypeKind::Typedef)
+            ret = static_cast<TypedefType*>(ret)->aliasedType;
+        if (!ret || (ret->kind != TypeKind::Void && !isCtValue(ret))) {
+            emitError("compile_time function '" + node.name + "' must have CT value return type", node);
         }
 
         auto isCtParam = [&](Type* t) {
-            if (isCtLiteral(t)) return true;
+            if (isCtInput(t)) return true;
             Type* raw = t;
             while (raw && raw->kind == TypeKind::Typedef)
                 raw = static_cast<TypedefType*>(raw)->aliasedType;
             return raw && raw->kind == TypeKind::Pointer &&
-                   isCtLiteral(raw->base);
+                   isCtValue(raw->base);
         };
         for (auto& param : node.params) {
             if (!isCtParam(param->type)) {
-                emitError("compile_time function '" + node.name + "' parameter '" + param->name + "' must have literal type", node);
+                emitError("compile_time function '" + node.name + "' parameter '" + param->name + "' must have CT value type", node);
+            }
+        }
+    }
+
+    if (node.isCompileOnly) {
+        Type* ret = node.returnType;
+        while (ret && ret->kind == TypeKind::Typedef)
+            ret = static_cast<TypedefType*>(ret)->aliasedType;
+        if (!ret || (ret->kind != TypeKind::Void && !isCtValue(ret))) {
+            emitError("compile_only function '" + node.name +
+                          "' must return a fixed-size, trivially copyable value "
+                          "without pointers, references, or owning strings",
+                      node);
+        }
+        for (auto& param : node.params) {
+            if (!isCtInput(param->type)) {
+                emitError("compile_only function '" + node.name + "' parameter '" +
+                              param->name +
+                              "' must be a compile-time value type",
+                          node);
             }
         }
     }

@@ -397,7 +397,7 @@ TEST_F(ConstexprContainersTest, StillRejectsStringConstexprFunction) {
         compile_time string make() { return string.new("x"); }
         int32 main() { return 0; }
     )", "ct_string_constexpr.cmm");
-    EXPECT_TRUE(hasErrorContaining(errors, "literal return type"));
+    EXPECT_TRUE(hasErrorContaining(errors, "CT value return type"));
 }
 
 TEST_F(ConstexprContainersTest, VecTableIsReadableAtRuntime) {

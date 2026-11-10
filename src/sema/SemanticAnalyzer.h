@@ -222,6 +222,12 @@ private:
     enum class CtFlow { Normal, Break, Continue, Return };
 
     std::optional<ConstValue> evalConstexprCall(CallExprAST& call, int depth);
+    bool ctResolveLValuePath(ExprAST* expr, const ConstEnv& env,
+                             std::string& root, std::vector<std::size_t>& path,
+                             Type*& valueType);
+    CtValue* ctLookupLValuePath(ConstEnv& env, const std::string& root,
+                                const std::vector<std::size_t>& path);
+    bool ctAssignLValue(ExprAST* lhs, const CtValue& rhs, ConstEnv& env);
     std::optional<ConstValue> evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
                                                 CtFlow& flow);
     std::optional<ConstValue> evalContainerMethod(MethodCallExprAST& call,

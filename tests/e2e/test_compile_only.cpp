@@ -99,6 +99,100 @@ static int runSource(const std::string& source, const std::string& filename) {
     return fn();
 }
 
+TEST_F(CompileOnlyE2E, CompileTimeFunctionReturnsAggregate) {
+    EXPECT_EQ(runSource(R"(
+struct Pair { int32 a; int32 b; };
+compile_time Pair make(int32 x) {
+    Pair p;
+    p.a = x;
+    p.b = x + 1;
+    return p;
+}
+compile_time Pair P = make(20);
+int32 main() { return P.a + P.b - 41; }
+)", "ct_compile_time_pair.cmm"), 0);
+}
+
+TEST_F(CompileOnlyE2E, CompileOnlyPointerReturnRejected) {
+    auto errs = compileErrors(R"(
+compile_only int32* bad() { return nullptr; }
+int32 main() { return 0; }
+)", "ct_compile_only_ptr.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "return a fixed-size"));
+}
+
+TEST_F(CompileOnlyE2E, AggregateReturnAndMemberWrites) {
+    EXPECT_EQ(runSource(R"(
+struct Pair { int32 a; int32 b; };
+compile_only Pair makePair(int32 x) {
+    Pair p;
+    p.a = x;
+    p.b = x + 1;
+    return p;
+}
+compile_time Pair P = makePair(20);
+int32 main() { return P.a + P.b - 41; }
+)", "ct_pair_return.cmm"), 0);
+}
+
+TEST_F(CompileOnlyE2E, AggregateParameterIsDeepCopied) {
+    EXPECT_EQ(runSource(R"(
+struct Pair { int32 a; int32 b; };
+compile_only Pair makePair(int32 x) {
+    Pair p;
+    p.a = x;
+    p.b = x + 1;
+    return p;
+}
+compile_only int32 mutate(Pair p) {
+    p.a = 99;
+    return p.a;
+}
+compile_time Pair P = makePair(20);
+compile_time int32 X = mutate(P);
+int32 main() { return P.a + X - 119; }
+)", "ct_pair_copy.cmm"), 0);
+}
+
+TEST_F(CompileOnlyE2E, DfaTableBuildsAtCompileTimeWithoutSymbol) {
+    auto ctx = codegenSource(R"(
+struct DfaTable {
+    int32 next[4][8];
+    int32 initial;
+};
+compile_only DfaTable build_dfa(string_view pattern) {
+    DfaTable t;
+    for (usize s = 0; s < 4; s = s + 1) {
+        for (usize c = 0; c < 8; c = c + 1) {
+            t.next[s][c] = 0;
+        }
+    }
+    t.initial = 0;
+    for (usize i = 0; i < pattern.len(); i = i + 1) {
+        t.next[0][i] = pattern.char_at(i);
+    }
+    return t;
+}
+compile_time DfaTable EMAIL_DFA = build_dfa("abc");
+int32 main() { return EMAIL_DFA.next[0][1] - 'b'; }
+)", "ct_dfa.cmm");
+    ASSERT_NE(ctx, nullptr);
+    EXPECT_EQ(ctx->getModule().getFunction("build_dfa"), nullptr);
+    EXPECT_NE(ctx->getModule().getNamedGlobal("EMAIL_DFA"), nullptr);
+}
+
+TEST_F(CompileOnlyE2E, CompileOnlyStepLimitDiagnosed) {
+    auto errs = compileErrors(R"(
+compile_only int32 spin(int32 x) {
+    while (x > 0) { x = x; }
+    return x;
+}
+compile_time int32 N = spin(1);
+int32 main() { return 0; }
+)", "ct_step_limit.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "limit"));
+}
+
 TEST_F(CompileOnlyE2E, CompileTimeAggregateInitializerMaterializes) {
     EXPECT_EQ(runSource(R"(
 struct Pair { int32 a; int32 b; };

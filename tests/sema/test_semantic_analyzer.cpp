@@ -520,12 +520,13 @@ TEST_F(SemanticAnalyzerTest, ConstexprFunctionWithNonLiteralReturnType) {
     std::vector<std::unique_ptr<ParamDeclAST>> params;
 
     std::vector<std::unique_ptr<DeclAST>> decls;
+    auto* ptrRet = new Type(TypeKind::Pointer, typeCtx->getInt32());
     decls.push_back(std::make_unique<FunctionDeclAST>(
-        "bad", typeCtx->getVoid(), params, body, true));
+        "bad", ptrRet, params, body, true));
     TranslationUnitAST tu(std::move(decls));
     analyzer->analyze(tu);
     EXPECT_FALSE(analyzer->getErrors().empty());
-    EXPECT_NE(analyzer->getErrors()[0].message.find("literal return type"), std::string::npos);
+    EXPECT_NE(analyzer->getErrors()[0].message.find("CT value return type"), std::string::npos);
 }
 
 TEST_F(SemanticAnalyzerTest, ConstexprFunctionWithNonLiteralParameter) {
@@ -546,7 +547,7 @@ TEST_F(SemanticAnalyzerTest, ConstexprFunctionWithNonLiteralParameter) {
     TranslationUnitAST tu(std::move(decls));
     analyzer->analyze(tu);
     EXPECT_FALSE(analyzer->getErrors().empty());
-    EXPECT_NE(analyzer->getErrors()[0].message.find("literal type"), std::string::npos);
+    EXPECT_NE(analyzer->getErrors()[0].message.find("CT value type"), std::string::npos);
 }
 
 // ========== Overload Resolution ==========
