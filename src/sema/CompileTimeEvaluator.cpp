@@ -269,9 +269,12 @@ std::optional<ConstValue> CompileTimeEvaluator::eval(ExprAST* expr, ASTNode& at)
         agg->type = t;
         auto append = [&](Type* elemType, ExprAST* source) -> bool {
             if (source) {
+                if (auto* nested = dynamic_cast<InitializerListExprAST*>(source)) {
+                    nested->type = elemType;
+                }
                 auto v = eval(source, at);
                 if (!v) return false;
-                agg->elements.push_back(*v);
+                agg->elements.push_back(ctConvertValue(*v, elemType));
             } else {
                 agg->elements.push_back(ctDefaultValue(elemType));
             }

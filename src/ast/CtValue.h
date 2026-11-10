@@ -107,6 +107,9 @@ CtValue ctNormalizeInt(uint64_t raw, unsigned bits, bool isUnsigned,
 bool ctTruthy(const CtValue& v);
 bool ctEquals(const CtValue& a, const CtValue& b);
 CtValue ctClone(const CtValue& v);
+// Convert/bind a CT value to a target type, including element-wise conversion
+// for fixed arrays and POD records.
+CtValue ctConvertValue(const CtValue& v, ::Type* target);
 
 // Arithmetic/comparison on already-evaluated operands. `resultType` is the
 // sema-assigned type of the operation (may be null while an initializer is

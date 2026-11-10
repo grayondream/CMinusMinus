@@ -1301,3 +1301,19 @@
 - 迁移：`libs/std/*.cmm`、e2e/sema/driver 测试、`examples/all_features.cmm`、`docs/spec/{compile_time,grammar,keywords,semantics,stdlib,conversions}.md`。
 - 新增 e2e：`tests/e2e/test_compile_only.cpp`（10 项），覆盖 DfaTable、IR 无 `build_dfa`、聚合深拷贝、step limit、调用链。
 - 验证：全量 `ctest --test-dir build -j8` **1851/1851** 通过；`build/bin/cmm examples/all_features.cmm` 输出 `ALL FEATURES OK`，退出码 0。
+
+## 2026-11-10 — 终审修复（compile_time / compile_only）
+
+- 修复 Critical：
+  - 拒绝 `compile_only` 模板/方法/仅声明；模板实例化不再泄漏运行期函数体。
+  - 拒绝 `compile_only` 运算符重载，避免运行期调用静默生成 `unknown operator`。
+  - `ctConvertValue` 做聚合逐字段/逐元素类型转换；`Pair { int32, float64 }` 初始化不再生成非法 IR；拒绝 `compile_time` 聚合中的指针/union/位域/柔性数组。
+- 修复 Important：
+  - `compile_time`/`compile_only` 上下文关键字只在下一个 token 确实是类型/存储类时生效；`compile_time` 作为普通变量仍可用。
+  - 嵌套 `{{...}}` 聚合初始化支持。
+  - 命名 `compile_time` 常量可作为 parser 级数组维度；VLA 仍拒绝。
+  - `compile_time` + storage class 定向报错；位域/指针聚合变量诊断。
+  - 全局初始化器运行期链显示 `global initializer`。
+  - 去掉 `&compile_only` 重复地址诊断；step-limit 不再叠加泛化初始化错误。
+- 新增 e2e：模板/方法/仅声明/运算符拒绝、聚合类型转换、嵌套初始化、上下文关键字兼容、延迟数组维度、storage class、位域变量、global initializer 链。
+- 验证：全量 **1865/1865** 通过；示例 `ALL FEATURES OK`。

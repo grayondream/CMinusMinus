@@ -4304,7 +4304,8 @@ std::unique_ptr<FunctionDeclAST> Parser::parseFunctionDecl(Type* returnType, con
 }
 
 std::unique_ptr<DeclAST> Parser::parseVariableDecl(Type* type, const std::string& name, bool isCompileTime) {
-    // constexpr implies const. Never mutate a shared scalar singleton.
+    if (isCompileTime) m_compileTimeVarNames.insert(name);
+    // compile_time implies read-only. Never mutate a shared scalar singleton.
     if (isCompileTime) {
         bool scalar = false;
         switch (type ? type->kind : TypeKind::Void) {
@@ -4343,19 +4344,25 @@ std::unique_ptr<DeclAST> Parser::parseVariableDecl(Type* type, const std::string
     if (check(TokenType::TOKEN_LBRACKET)) {
         std::vector<int> dims;
         std::vector<bool> explicitDim;
+        std::vector<std::string> dimNames;
         while (check(TokenType::TOKEN_LBRACKET)) {
             advance();
             int size = 0;
             bool hasNumber = false;
+            std::string dimName;
             // VLA is a deliberate non-feature: runtime-length allocation is
             // unbounded stack growth. Only compile-time integer constants
-            // (literals, enum constants, const/constexpr integers) are valid.
-            if (!parseArrayDimension(size, hasNumber)) return nullptr;
+            // (literals, enum constants, const/compile_time integers) are valid.
+            if (!parseArrayDimension(size, hasNumber,
+                                     dims.empty() ? &dimName : nullptr)) {
+                return nullptr;
+            }
             if (!expect(TokenType::TOKEN_RBRACKET, "expected ']' after array size")) {
                 return nullptr;
             }
             dims.push_back(size);
             explicitDim.push_back(hasNumber);
+            dimNames.push_back(dimName);
         }
         // C constraint: only the first dimension may be omitted (inferred
         // from the initializer). A missing inner dimension would silently
@@ -4379,7 +4386,10 @@ std::unique_ptr<DeclAST> Parser::parseVariableDecl(Type* type, const std::string
         for (size_t i = dims.size() - 1; i >= 1; --i) {
             elemType = new ArrayType(elemType, dims[i]);
         }
-        return std::make_unique<ArrayDeclAST>(name, elemType, dims[0], std::move(init));
+        auto arrayDecl = std::make_unique<ArrayDeclAST>(name, elemType, dims[0],
+                                                        std::move(init));
+        if (!dimNames.empty()) arrayDecl->sizeName = dimNames[0];
+        return arrayDecl;
     }
 
     // Check for initializer: = expr
@@ -4531,20 +4541,57 @@ std::unique_ptr<ParamDeclAST> Parser::parseParamDecl() {
 // P1-03 / GEN-01 / PAR-21: 解析 `template<...>` 声明。
 // 参数列表 → 模板体（函数/struct/class/using 别名；union/enum 拒绝）。
 // 定义处只 parse：参数名进入 m_templateScopes，模板体内的 `T`/`N` 由此解析。
+static bool tokenStartsDeclarationType(TokenType type);
+
 bool Parser::isCompileTimeModifierStart() const {
     if (eof() || peek()->type != TokenType::TOKEN_IDENTIFIER ||
         peek()->lexeme != "compile_time") {
         return false;
     }
     if (m_currentTokenPos + 1 >= m_tokens.size()) return false;
-    const Token& next = m_tokens[m_currentTokenPos + 1];
-    if (next.type == TokenType::TOKEN_DOT ||
-        next.type == TokenType::TOKEN_SEMICOLON ||
-        next.type == TokenType::TOKEN_ASSIGN ||
-        next.type == TokenType::TOKEN_LPAREN) {
-        return false;
+    return tokenStartsDeclarationType(m_tokens[m_currentTokenPos + 1].type);
+}
+
+static bool tokenStartsDeclarationType(TokenType type) {
+    switch (type) {
+        case TokenType::TOKEN_CHAR_KW:
+        case TokenType::TOKEN_VOID:
+        case TokenType::TOKEN_BOOL:
+        case TokenType::TOKEN_AUTO:
+        case TokenType::TOKEN_STRUCT:
+        case TokenType::TOKEN_UNION:
+        case TokenType::TOKEN_ENUM:
+        case TokenType::TOKEN_CLASS:
+        case TokenType::TOKEN_CONST:
+        case TokenType::TOKEN_VOLATILE:
+        case TokenType::TOKEN_ATOMIC:
+        case TokenType::TOKEN_STATIC:
+        case TokenType::TOKEN_EXTERN:
+        case TokenType::TOKEN_THREAD_LOCAL:
+        case TokenType::TOKEN_IDENTIFIER:
+        case TokenType::TOKEN_INT8:
+        case TokenType::TOKEN_INT16:
+        case TokenType::TOKEN_INT32:
+        case TokenType::TOKEN_INT64:
+        case TokenType::TOKEN_INT128:
+        case TokenType::TOKEN_UINT8:
+        case TokenType::TOKEN_UINT16:
+        case TokenType::TOKEN_UINT32:
+        case TokenType::TOKEN_UINT64:
+        case TokenType::TOKEN_UINT128:
+        case TokenType::TOKEN_CHAR8:
+        case TokenType::TOKEN_CHAR16:
+        case TokenType::TOKEN_CHAR32:
+        case TokenType::TOKEN_ISIZE:
+        case TokenType::TOKEN_USIZE:
+        case TokenType::TOKEN_FLOAT16:
+        case TokenType::TOKEN_FLOAT32:
+        case TokenType::TOKEN_FLOAT64:
+        case TokenType::TOKEN_FLOAT128:
+            return true;
+        default:
+            return false;
     }
-    return true;
 }
 
 bool Parser::isCompileOnlyStart() const {
@@ -4553,11 +4600,7 @@ bool Parser::isCompileOnlyStart() const {
         return false;
     }
     if (m_currentTokenPos + 1 >= m_tokens.size()) return false;
-    const Token& next = m_tokens[m_currentTokenPos + 1];
-    return next.type != TokenType::TOKEN_DOT &&
-           next.type != TokenType::TOKEN_SEMICOLON &&
-           next.type != TokenType::TOKEN_ASSIGN &&
-           next.type != TokenType::TOKEN_LPAREN;
+    return tokenStartsDeclarationType(m_tokens[m_currentTokenPos + 1].type);
 }
 
 std::unique_ptr<DeclAST> Parser::parseCompileOnlyDeclaration() {
@@ -4585,6 +4628,12 @@ bool Parser::consumeCompileTimeSpecifier(bool& isCompileTime) {
     if (isCompileTimeModifierStart()) {
         advance();
         isCompileTime = true;
+        if (check(TokenType::TOKEN_STATIC) || check(TokenType::TOKEN_EXTERN) ||
+            check(TokenType::TOKEN_THREAD_LOCAL)) {
+            Token storage = *peek();
+            advance();
+            error("compile_time cannot be combined with a storage class", storage);
+        }
         return true;
     }
     return false;
@@ -4845,6 +4894,12 @@ std::unique_ptr<DeclAST> Parser::parseTemplateDecl() {
 
     if (dynamic_cast<UnionDeclAST*>(body.get()) || dynamic_cast<EnumDeclAST*>(body.get())) {
         if (bodyStart) error("'template' is not supported on unions/enums", *bodyStart);
+        m_templateScopes.pop_back();
+        return nullptr;
+    }
+    if (auto* fnBody = dynamic_cast<FunctionDeclAST*>(body.get());
+        fnBody && fnBody->isCompileOnly) {
+        if (bodyStart) error("compile_only is not supported on templates", *bodyStart);
         m_templateScopes.pop_back();
         return nullptr;
     }
@@ -5221,6 +5276,13 @@ std::unique_ptr<StructDeclAST> Parser::parseRecordDecl(bool isClass) {
         // PAR-24: legacy alias forms / member-scope using are rejected explicitly.
         if (isRemovedTypeAliasStart()) {
             rejectRemovedTypeAlias();
+            continue;
+        }
+        if (isCompileOnlyStart()) {
+            Token spec = *peek();
+            advance();
+            error("compile_only is only valid on free functions", spec);
+            skipPastSemicolon();
             continue;
         }
         if (isLocalUsingStart()) {
@@ -5601,7 +5663,8 @@ void Parser::registerConstValue(const std::string& name, long long value) {
     m_constScopes.back()[name] = value;
 }
 
-bool Parser::parseArrayDimension(int& size, bool& hasSize) {
+bool Parser::parseArrayDimension(int& size, bool& hasSize,
+                                 std::string* deferredName) {
     if (check(TokenType::TOKEN_RBRACKET)) {
         size = 0;
         hasSize = false;
@@ -5616,6 +5679,15 @@ bool Parser::parseArrayDimension(int& size, bool& hasSize) {
         return lookupConstValue(name, out);
     };
     if (!evalIntConstExpr(expr.get(), value, lookup)) {
+        if (deferredName) {
+            if (auto* var = dynamic_cast<VariableExprAST*>(expr.get());
+                var && m_compileTimeVarNames.count(var->name)) {
+                *deferredName = var->name;
+                size = 0;
+                hasSize = true;
+                return true;
+            }
+        }
         errorUnexpected("variable-length arrays are not supported: array size must be a compile-time constant");
         return false;
     }

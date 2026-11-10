@@ -1569,11 +1569,7 @@ std::optional<std::size_t> ctIndexValue(const CtValue& v) {
 
 CtValue ctBindValue(const CtValue& value, Type* target) {
     if (!target) return ctClone(value);
-    if (value.type == CtValue::INT || value.type == CtValue::CHAR ||
-        value.type == CtValue::DOUBLE) {
-        if (auto converted = ctCast(value, target)) return *converted;
-    }
-    return ctClone(value);
+    return ctConvertValue(value, target);
 }
 
 CtValue ctVoidResult() { return ctInt(0); }
@@ -3451,23 +3447,6 @@ void SemanticAnalyzer::visit(UnaryExprAST& node) {
     }
 
     Type* operandType = getExprType(*node.operand);
-
-    if (node.op == UnaryOp::AddressOf) {
-        if (auto* var = dynamic_cast<VariableExprAST*>(node.operand.get())) {
-            if (var->isFunctionRef) {
-                FunctionDeclAST* fn = findCtFunction(
-                    var->resolvedFunctionName.empty() ? var->name
-                                                      : var->resolvedFunctionName);
-                if (fn && fn->isCompileOnly) {
-                    emitError("cannot take address of compile_only function '" +
-                                  fn->name + "'", node);
-                    node.type = nullptr;
-                    node.isLValue = false;
-                    return;
-                }
-            }
-        }
-    }
 
     if ((node.op == UnaryOp::PreInc || node.op == UnaryOp::PreDec ||
          node.op == UnaryOp::AddressOf) &&
@@ -7360,6 +7339,70 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
         emitError("compile_only function '" + currentFunction->name +
                       "' cannot use volatile/atomic variables", node);
     }
+    if (node.isCompileTime && node.type &&
+        stripTypedef(node.type)->kind != TypeKind::Auto) {
+        std::function<bool(Type*)> unsafe = [&](Type* t) -> bool {
+            t = stripTypedef(t);
+            if (!t) return true;
+            if (ctContainerInfo(t)) return false;
+            if (t->kind == TypeKind::Pointer || t->kind == TypeKind::Union ||
+                t->kind == TypeKind::String) {
+                return true;
+            }
+            if (t->kind == TypeKind::Array) {
+                return unsafe(static_cast<ArrayType*>(t)->elementType);
+            }
+            if (t->kind == TypeKind::Struct || t->kind == TypeKind::Class) {
+                const std::vector<FieldInfo>* fields = nullptr;
+                if (t->kind == TypeKind::Struct) {
+                    fields = &static_cast<StructType*>(t)->fields;
+                } else {
+                    auto* ct = static_cast<ClassType*>(t);
+                    if (!ct->baseClass.empty()) return true;
+                    fields = &ct->fields;
+                }
+                for (const auto& f : *fields) {
+                    if (f.bitWidth > 0 || f.flexibleArray || unsafe(f.type))
+                        return true;
+                }
+            }
+            return false;
+        };
+        if (unsafe(node.type)) {
+            emitError("compile_time variable '" + node.name +
+                          "' cannot use pointers, owning strings, unions, "
+                          "bit-fields, or flexible arrays",
+                      node);
+        }
+        std::function<std::size_t(Type*)> elementCount = [&](Type* t) -> std::size_t {
+            t = stripTypedef(t);
+            if (!t) return 0;
+            if (t->kind == TypeKind::Array) {
+                auto* arr = static_cast<ArrayType*>(t);
+                const std::size_t n = static_cast<std::size_t>(arr->size > 0 ? arr->size : 0);
+                const std::size_t elem = elementCount(arr->elementType);
+                const std::size_t limit = 1000000;
+                if (elem == 0 || n > limit / elem) return limit + 1;
+                return n * elem;
+            }
+            if (t->kind == TypeKind::Struct || t->kind == TypeKind::Class) {
+                const std::vector<FieldInfo>* fields =
+                    t->kind == TypeKind::Struct
+                        ? &static_cast<StructType*>(t)->fields
+                        : &static_cast<ClassType*>(t)->fields;
+                std::size_t total = 0;
+                for (const auto& f : *fields) {
+                    total += elementCount(f.type);
+                    if (total > 1000000) return total;
+                }
+                return total;
+            }
+            return 1;
+        };
+        if (elementCount(node.type) > 1000000) {
+            emitError("compile-time aggregate element limit exceeded (1000000)", node);
+        }
+    }
     if (m_ctRepeatDepth > 0 && (node.isStaticLocal || node.isThreadLocal)) {
         emitError("static/thread_local local is not supported inside "
                   "compile_time.repeat",
@@ -7559,7 +7602,11 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
             auto folded = evaluateConstexpr(node.initExpr.get());
             m_inCompileTimeInitializer = savedCtInit;
             if (!folded) {
-                emitError("compile_time variable '" + node.name + "' must be initialized with a constant expression", node);
+                if (!ctStepReported) {
+                    emitError("compile_time variable '" + node.name +
+                                  "' must be initialized with a constant expression",
+                              node);
+                }
             } else {
                 compileTimeValues[node.name] = *folded;
                 if (folded->type == ConstValue::CONTAINER) {
@@ -7747,6 +7794,21 @@ void SemanticAnalyzer::visit(ArrayDeclAST& node) {
     // private nested type must not slip through as the element type.
     node.elementType = resolveTypeInstance(node.elementType, node);
     checkNestedTypeAccess(node.elementType, node);
+    if (!node.sizeName.empty()) {
+        const std::string key = resolveNamespaceName(node.sizeName);
+        auto it = compileTimeValues.find(key);
+        if (it == compileTimeValues.end() && key != node.sizeName)
+            it = compileTimeValues.find(node.sizeName);
+        if (it == compileTimeValues.end() || it->second.type != ConstValue::INT ||
+            it->second.intVal <= 0) {
+            emitError("array size '" + node.sizeName +
+                          "' must be a positive compile_time integer", node);
+            node.size = 0;
+        } else {
+            node.size = static_cast<int>(it->second.intVal);
+        }
+        node.sizeName.clear();
+    }
     // P1-04 评审 I3: 元素类型不得来自 compile_time.if 死分支。
     checkCtDeadBranchUse(node.elementType, node);
     std::string sourceArrayName = node.name;
@@ -8632,7 +8694,9 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
         Type* raw = t;
         while (raw && raw->kind == TypeKind::Typedef)
             raw = static_cast<TypedefType*>(raw)->aliasedType;
-        return isCtValue(t) || (raw && raw->kind == TypeKind::Str);
+        return isCtValue(t) ||
+               (raw && (raw->kind == TypeKind::Str ||
+                        raw->kind == TypeKind::String));
     };
 
     if (node.isCompileTime) {
@@ -8644,10 +8708,11 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
         }
 
         auto isCtParam = [&](Type* t) {
-            if (isCtInput(t)) return true;
+            if (isCtValue(t)) return true;
             Type* raw = t;
             while (raw && raw->kind == TypeKind::Typedef)
                 raw = static_cast<TypedefType*>(raw)->aliasedType;
+            if (raw && raw->kind == TypeKind::Str) return true;
             return raw && raw->kind == TypeKind::Pointer &&
                    isCtValue(raw->base);
         };
@@ -8659,6 +8724,16 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
     }
 
     if (node.isCompileOnly) {
+        if (!node.body) {
+            emitError("compile_only function '" + node.name +
+                          "' must have a body", node);
+        }
+        if (currentClass) {
+            emitError("compile_only is only valid on free functions", node);
+        }
+        if (node.name.rfind("operator", 0) == 0) {
+            emitError("compile_only cannot be an operator overload", node);
+        }
         Type* ret = node.returnType;
         while (ret && ret->kind == TypeKind::Typedef)
             ret = static_cast<TypedefType*>(ret)->aliasedType;
@@ -9045,7 +9120,7 @@ std::string SemanticAnalyzer::callPathTo(FunctionDeclAST* from) {
 void SemanticAnalyzer::reportCompileOnlyViolations() {
     for (const auto& v : m_compileOnlyViolations) {
         if (!v.callee || !v.site) continue;
-        const std::string path = callPathTo(v.from);
+        const std::string path = v.from ? callPathTo(v.from) : "global initializer";
         if (v.directInCompileTime && v.from) {
             emitError("compile_only function '" + v.callee->name +
                           "' cannot be called from compile_time function '" +

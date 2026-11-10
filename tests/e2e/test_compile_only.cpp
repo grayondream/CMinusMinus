@@ -201,6 +201,31 @@ int32 main() { return P.a + P.b - 41; }
 )", "ct_pair.cmm"), 0);
 }
 
+TEST_F(CompileOnlyE2E, AggregateInitializerConvertsFieldTypes) {
+    EXPECT_EQ(runSource(R"(
+struct Pair { int32 a; float64 f; };
+compile_time Pair P = { 20, 1 };
+int32 main() { return P.f == 1.0 ? 0 : 1; }
+)", "ct_pair_float.cmm"), 0);
+}
+
+TEST_F(CompileOnlyE2E, NestedAggregateInitializerLists) {
+    EXPECT_EQ(runSource(R"(
+struct E { int32 a[2]; };
+compile_time E e = { { 1, 2 } };
+int32 main() { return e.a[0] + e.a[1] - 3; }
+)", "ct_nested_init.cmm"), 0);
+}
+
+TEST_F(CompileOnlyE2E, CompileTimeVariableRejectsBitfieldAggregate) {
+    auto errs = compileErrors(R"(
+struct B { int32 a : 4; int32 b : 4; };
+compile_time B x = { 1, 2 };
+int32 main() { return 0; }
+)", "ct_bitfield_var.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "bit-field"));
+}
+
 TEST_F(CompileOnlyE2E, CompileTimeAggregateDoesNotPoisonType) {
     EXPECT_EQ(runSource(R"(
 struct S { int32 x; };
@@ -257,6 +282,72 @@ compile_only int32 build(int32 x) { return runtime_helper(x); }
 int32 main() { return 0; }
 )", "compile_only_runtime_body.cmm");
     EXPECT_TRUE(hasErrorContaining(errs, "cannot call runtime function"));
+}
+
+TEST_F(CompileOnlyE2E, CompileTimeStorageClassRejected) {
+    auto errs = compileErrors(R"(
+compile_time static int32 X = 3;
+int32 main() { return X; }
+)", "ct_storage_class.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "storage class"));
+}
+
+TEST_F(CompileOnlyE2E, CompileTimeIdentifierStillUsable) {
+    EXPECT_EQ(runSource(R"(
+int32 compile_time = 5;
+int32 main() { compile_time++; return compile_time - 6; }
+)", "ct_identifier_compat.cmm"), 0);
+}
+
+TEST_F(CompileOnlyE2E, CompileOnlyResultNamedConstantUsableAsArraySize) {
+    EXPECT_EQ(runSource(R"(
+compile_only int32 states() { return 4; }
+compile_time int32 DFA_STATES = states();
+int32 table[DFA_STATES];
+int32 main() { table[0] = 1; return table[0] - 1; }
+)", "ct_deferred_array_size.cmm"), 0);
+}
+
+TEST_F(CompileOnlyE2E, GlobalInitializerRuntimePathNamed) {
+    auto errs = compileErrors(R"(
+compile_only int32 f() { return 1; }
+int32 g = f();
+int32 main() { return 0; }
+)", "ct_global_init.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "global initializer"));
+}
+
+TEST_F(CompileOnlyE2E, TemplateCompileOnlyRejected) {
+    auto errs = compileErrors(R"(
+template<typename T> compile_only T id(T x) { return x; }
+int32 main() { return 0; }
+)", "ct_compile_only_template.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "template"));
+}
+
+TEST_F(CompileOnlyE2E, MethodCompileOnlyRejected) {
+    auto errs = compileErrors(R"(
+struct S { int32 x; compile_only int32 f() { return 7; } };
+int32 main() { return 0; }
+)", "ct_compile_only_method.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "free function"));
+}
+
+TEST_F(CompileOnlyE2E, DeclarationOnlyCompileOnlyRejected) {
+    auto errs = compileErrors(R"(
+compile_only int32 f(int32 x);
+int32 main() { return 0; }
+)", "ct_compile_only_decl.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "body"));
+}
+
+TEST_F(CompileOnlyE2E, OperatorCompileOnlyRejected) {
+    auto errs = compileErrors(R"(
+struct S { int32 x; };
+compile_only S operator+(S a, S b) { S r; r.x = a.x + b.x; return r; }
+int32 main() { return 0; }
+)", "ct_compile_only_operator.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "operator"));
 }
 
 TEST_F(CompileOnlyE2E, CompileOnlyValueUseRejected) {

@@ -94,6 +94,9 @@ private:
         std::unordered_set<std::string> valueParams;
     };
     std::vector<TemplateScope> m_templateScopes;
+    // CT-25: names declared with `compile_time`; array dimensions may defer
+    // these to sema (regular locals must still be rejected at parse time).
+    std::unordered_set<std::string> m_compileTimeVarNames;
 
     // Namespace-qualified type names (PAR-22): consume `A::B::name`, returning
     // the joined name ("" when no identifier is present).
@@ -113,7 +116,8 @@ private:
     // Parse one bracketed array dimension as a compile-time integer constant.
     // `hasSize=false` means the brackets were empty (only valid for the first
     // dimension / flexible array member). The caller still consumes `]`.
-    bool parseArrayDimension(int& size, bool& hasSize);
+    bool parseArrayDimension(int& size, bool& hasSize,
+                             std::string* deferredName = nullptr);
 
     // Parse-time constant values for enum constants and const/constexpr
     // integer variables, used by array dimensions and bit-field widths.

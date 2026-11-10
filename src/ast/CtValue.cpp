@@ -519,6 +519,69 @@ CtValue ctDefaultValue(Type* t) {
     }
 }
 
+CtValue ctConvertValue(const CtValue& v, Type* target) {
+    Type* t = stripTypedefs(target);
+    if (!t) return ctClone(v);
+
+    if (v.type == CtValue::INT || v.type == CtValue::CHAR ||
+        v.type == CtValue::DOUBLE) {
+        unsigned bits = 0;
+        bool isUnsigned = false;
+        bool isBool = false;
+        const bool intTarget = ctIntInfo(t, bits, isUnsigned, isBool);
+        const bool floatTarget =
+            t->kind == TypeKind::Float16 || t->kind == TypeKind::Float32 ||
+            t->kind == TypeKind::Float64 || t->kind == TypeKind::Float128;
+        if (intTarget || floatTarget) {
+            if (auto converted = ctCast(v, t)) return *converted;
+        }
+    }
+
+    if (v.type != CtValue::AGGREGATE || !v.aggregate) return ctClone(v);
+
+    if (t->kind == TypeKind::Array) {
+        auto* arr = static_cast<ArrayType*>(t);
+        auto out = std::make_shared<CtAggregate>();
+        out->type = t;
+        const std::size_t n = static_cast<std::size_t>(arr->size > 0 ? arr->size : 0);
+        out->elements.reserve(n);
+        for (std::size_t i = 0; i < n; ++i) {
+            CtValue elem = i < v.aggregate->elements.size()
+                               ? v.aggregate->elements[i]
+                               : ctDefaultValue(arr->elementType);
+            out->elements.push_back(ctConvertValue(elem, arr->elementType));
+        }
+        out->totalElements = n;
+        CtValue result;
+        result.type = CtValue::AGGREGATE;
+        result.aggregate = std::move(out);
+        return result;
+    }
+
+    if (t->kind == TypeKind::Struct || t->kind == TypeKind::Class) {
+        const std::vector<FieldInfo>* fields =
+            t->kind == TypeKind::Struct
+                ? &static_cast<StructType*>(t)->fields
+                : &static_cast<ClassType*>(t)->fields;
+        auto out = std::make_shared<CtAggregate>();
+        out->type = t;
+        out->elements.reserve(fields->size());
+        for (std::size_t i = 0; i < fields->size(); ++i) {
+            CtValue elem = i < v.aggregate->elements.size()
+                               ? v.aggregate->elements[i]
+                               : ctDefaultValue((*fields)[i].type);
+            out->elements.push_back(ctConvertValue(elem, (*fields)[i].type));
+        }
+        out->totalElements = fields->size();
+        CtValue result;
+        result.type = CtValue::AGGREGATE;
+        result.aggregate = std::move(out);
+        return result;
+    }
+
+    return ctClone(v);
+}
+
 std::optional<CtContainerInfo> ctContainerInfo(Type* t) {
     t = stripTypedefs(t);
     if (!t) return std::nullopt;

@@ -167,6 +167,8 @@ public:
     std::string name;
     Type* elementType;
     int size;
+    // CT-25: first dimension named by a compile_time variable, resolved in sema.
+    std::string sizeName;
     std::unique_ptr<ExprAST> initExpr;
 
     ArrayDeclAST(const std::string& n, Type* elemType, int sz, std::unique_ptr<ExprAST> init = nullptr)
