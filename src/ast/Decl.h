@@ -102,6 +102,8 @@ public:
     std::vector<std::unique_ptr<ParamDeclAST>> params;
     std::unique_ptr<CompoundStmtAST> body;
     bool isCompileTime = false;
+    // CT-24: compile-only free function; codegen must not emit any symbol.
+    bool isCompileOnly = false;
     bool isVarArg = false;
     // AGG-10: class-body `static` method — no `this` insertion; sema rewrites
     // the name to the desugared `Class_method` global symbol.

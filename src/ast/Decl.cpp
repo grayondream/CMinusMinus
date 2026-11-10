@@ -1330,6 +1330,7 @@ llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
 // P1-03 / GEN-05: 仅创建函数签名（无体）。TU codegen 预扫用——模板实例
 // 函数追加在翻译单元尾部，其前方的调用点必须能解析到符号。
 llvm::Value* FunctionDeclAST::codegenPrototype(CodegenContext& ctx) {
+    if (isCompileOnly) return nullptr;
     llvm::Type* retType = ctx.getLLVMType(returnType);
     std::vector<llvm::Type*> paramTypes;
     for (auto& param : params) {
@@ -1367,6 +1368,7 @@ llvm::Value* FunctionDeclAST::codegenPrototype(CodegenContext& ctx) {
 }
 
 llvm::Value* FunctionDeclAST::codegen(CodegenContext& ctx) {
+    if (isCompileOnly) return nullptr;
     // 签名已由 codegenPrototype（TU 预扫）或本函数创建；复用已有声明。
     std::vector<Type*> astParamTypes;
     for (auto& param : params) {

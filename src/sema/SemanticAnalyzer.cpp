@@ -1592,6 +1592,8 @@ SemanticAnalyzer::evalConstexprCallCT(CallExprAST& call,
     auto lookup = [&](const std::string& name) -> FunctionDeclAST* {
         auto ct = compileTimeFunctions.find(name);
         if (ct != compileTimeFunctions.end()) return ct->second;
+        auto co = compileOnlyFunctions.find(name);
+        if (co != compileOnlyFunctions.end()) return co->second;
         if (m_ctInFunctionBody) {
             auto all = m_allFunctions.find(name);
             if (all != m_allFunctions.end()) return all->second;
@@ -2035,6 +2037,8 @@ SemanticAnalyzer::evalConstexprCall(CallExprAST& call, int depth) {
     auto lookup = [&](const std::string& name) -> FunctionDeclAST* {
         auto ct = compileTimeFunctions.find(name);
         if (ct != compileTimeFunctions.end()) return ct->second;
+        auto co = compileOnlyFunctions.find(name);
+        if (co != compileOnlyFunctions.end()) return co->second;
         if (m_ctInFunctionBody) {
             auto all = m_allFunctions.find(name);
             if (all != m_allFunctions.end()) return all->second;
@@ -2310,12 +2314,16 @@ FunctionDeclAST* SemanticAnalyzer::findCtFunction(const std::string& name) {
     if (it != m_allFunctions.end()) return it->second;
     auto ct = compileTimeFunctions.find(name);
     if (ct != compileTimeFunctions.end()) return ct->second;
+    auto co = compileOnlyFunctions.find(name);
+    if (co != compileOnlyFunctions.end()) return co->second;
     const std::string resolved = resolveNamespaceName(name);
     if (resolved != name) {
         it = m_allFunctions.find(resolved);
         if (it != m_allFunctions.end()) return it->second;
         ct = compileTimeFunctions.find(resolved);
         if (ct != compileTimeFunctions.end()) return ct->second;
+        co = compileOnlyFunctions.find(resolved);
+        if (co != compileOnlyFunctions.end()) return co->second;
     }
     return nullptr;
 }
@@ -4579,6 +4587,16 @@ void SemanticAnalyzer::visit(CallExprAST& node) {
     node.type = checkFunctionCall(node.callee, node.args, node, &funcType);
     if (funcType) {
         node.resolvedParamTypes = funcType->paramTypes;
+        FunctionDeclAST* calleeDecl =
+            findCtFunction(mangleFunction(node.callee, funcType->paramTypes));
+        if (calleeDecl && calleeDecl->isCompileOnly) {
+            const bool allowed = m_inCompileTimeInitializer ||
+                                 (currentFunction && currentFunction->isCompileOnly);
+            if (!allowed) {
+                emitError("compile_only function '" + calleeDecl->name +
+                              "' cannot be called at runtime", node);
+            }
+        }
     }
     if (funcType) {
         for (std::size_t i = 0; i < node.args.size() &&
@@ -7121,6 +7139,13 @@ void SemanticAnalyzer::visit(ContinueStmtAST& node) {}
 void SemanticAnalyzer::visit(NullStmtAST& node) {}
 
 void SemanticAnalyzer::visit(VarDeclAST& node) {
+    const bool savedCtInit = m_inCompileTimeInitializer;
+    if (node.isCompileTime) m_inCompileTimeInitializer = true;
+    struct CtInitGuard {
+        bool& flag;
+        bool saved;
+        ~CtInitGuard() { flag = saved; }
+    } ctInitGuard{m_inCompileTimeInitializer, savedCtInit};
     if (m_ctRepeatDepth > 0 && (node.isStaticLocal || node.isThreadLocal)) {
         emitError("static/thread_local local is not supported inside "
                   "compile_time.repeat",
@@ -7307,9 +7332,12 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
         } else {
             // Type the initializer first so overloads and expression result
             // types are resolved before folding (needed for exact widths and
-            // for constexpr callback/overload selection).
+            // for compile-time callback/overload selection).
+            const bool savedCtInit = m_inCompileTimeInitializer;
+            m_inCompileTimeInitializer = true;
             getExprType(*node.initExpr);
             auto folded = evaluateConstexpr(node.initExpr.get());
+            m_inCompileTimeInitializer = savedCtInit;
             if (!folded) {
                 emitError("compile_time variable '" + node.name + "' must be initialized with a constant expression", node);
             } else {
@@ -8379,6 +8407,9 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
         // to the exact call-site type instead of the last registered body.
         compileTimeFunctions[node.name] = &node;
     }
+    if (node.isCompileOnly) {
+        compileOnlyFunctions[node.name] = &node;
+    }
 
     // FUN-09: validate default parameters — only trailing params may carry a
     // default, and each default must be a compile-time constant. Count them for
@@ -8412,6 +8443,9 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
     m_allFunctions[signature] = &node;
     if (node.isCompileTime) {
         compileTimeFunctions[signature] = &node;
+    }
+    if (node.isCompileOnly) {
+        compileOnlyFunctions[signature] = &node;
     }
     Symbol* declaredSym = declareSymbol(node.name, funcType);
     if (!declaredSym) {

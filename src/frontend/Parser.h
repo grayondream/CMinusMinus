@@ -80,6 +80,8 @@ private:
     // `compile_time T f()`) — distinct from the `compile_time.if` namespace.
     bool isCompileTimeModifierStart() const;
     bool consumeCompileTimeSpecifier(bool& isCompileTime);
+    bool isCompileOnlyStart() const;
+    std::unique_ptr<DeclAST> parseCompileOnlyDeclaration();
     std::unique_ptr<DeclAST> parseCompileTimeIf();
     std::unique_ptr<StmtAST> parseCompileTimeIfStmt();
     std::unique_ptr<StmtAST> parseCompileTimeRepeatStmt();

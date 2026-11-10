@@ -421,6 +421,9 @@ private:
     std::unique_ptr<CompileTimeEvaluator> m_ctEval;
     std::unordered_set<std::string> definedFunctions;
     std::unordered_map<std::string, FunctionDeclAST*> compileTimeFunctions;
+    std::unordered_map<std::string, FunctionDeclAST*> compileOnlyFunctions;
+    // CT-24: true while analyzing a compile_time variable initializer.
+    bool m_inCompileTimeInitializer = false;
     // All user functions (by source and mangled name). The compile-time
     // evaluator uses this to interpret side-effect-free callbacks such as
     // std.hash's equality functions, which are not marked constexpr.

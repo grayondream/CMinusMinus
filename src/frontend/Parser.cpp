@@ -1887,6 +1887,11 @@ std::unique_ptr<StmtAST> Parser::parseStmt() {
         }
     }
 
+    if (isCompileOnlyStart()) {
+        auto decl = parseCompileOnlyDeclaration();
+        if (decl) return makeDeclStmt(std::move(decl));
+    }
+
     // PAR-12: 局部 class 定义 `class { ... } c;` / `class C { ... };` ——
     // isTypeStart 不含 TOKEN_CLASS（class 仅作声明起始），走 parseDeclaration
     // 复用顶层 class 分支（含 attachedVars 内联变量）。局部 struct/union 既有
@@ -3324,6 +3329,10 @@ std::unique_ptr<DeclAST> Parser::parseDeclarationImpl() {
         return nullptr;
     }
 
+    if (isCompileOnlyStart()) {
+        return parseCompileOnlyDeclaration();
+    }
+
     // P1-03 / GEN-01 / PAR-21: `template<...>` 声明。
     if (check(TokenType::TOKEN_TEMPLATE)) {
         return parseTemplateDecl();
@@ -4516,6 +4525,31 @@ bool Parser::isCompileTimeModifierStart() const {
         return false;
     }
     return true;
+}
+
+bool Parser::isCompileOnlyStart() const {
+    if (eof() || peek()->type != TokenType::TOKEN_IDENTIFIER ||
+        peek()->lexeme != "compile_only") {
+        return false;
+    }
+    if (m_currentTokenPos + 1 >= m_tokens.size()) return false;
+    const Token& next = m_tokens[m_currentTokenPos + 1];
+    return next.type != TokenType::TOKEN_DOT &&
+           next.type != TokenType::TOKEN_SEMICOLON &&
+           next.type != TokenType::TOKEN_ASSIGN &&
+           next.type != TokenType::TOKEN_LPAREN;
+}
+
+std::unique_ptr<DeclAST> Parser::parseCompileOnlyDeclaration() {
+    Token spec = *peek();
+    advance(); // compile_only
+    auto decl = parseDeclaration();
+    if (auto* fn = dynamic_cast<FunctionDeclAST*>(decl.get())) {
+        fn->isCompileOnly = true;
+        return decl;
+    }
+    error("compile_only is only valid on functions", spec);
+    return decl;
 }
 
 bool Parser::consumeCompileTimeSpecifier(bool& isCompileTime) {
