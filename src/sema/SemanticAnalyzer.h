@@ -257,6 +257,7 @@ private:
     // P1-04 / CT-03: compile_time.if 条件编译——求值条件、选分支、原位展开。
     void visit(CompileTimeIfDeclAST& node);
     void visit(CompileTimeIfStmtAST& node);
+    void visit(CompileTimeContextIfStmtAST& node);
     void visit(CompileTimeRepeatStmtAST& node);
 
     // Shared top-level dispatcher (translation unit and namespace bodies).
@@ -424,6 +425,8 @@ private:
     std::unordered_map<std::string, FunctionDeclAST*> compileOnlyFunctions;
     // CT-24: true while analyzing a compile_time variable initializer.
     bool m_inCompileTimeInitializer = false;
+    // CT-26: true while analyzing the compile-time branch of `if compile_time`.
+    bool m_inCtOnlyBranch = false;
     // All user functions (by source and mangled name). The compile-time
     // evaluator uses this to interpret side-effect-free callbacks such as
     // std.hash's equality functions, which are not marked constexpr.

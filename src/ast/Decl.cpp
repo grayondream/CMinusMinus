@@ -1739,6 +1739,11 @@ llvm::Value* CompileTimeIfStmtAST::codegen(CodegenContext& ctx) {
     return live ? live->codegen(ctx) : nullptr;
 }
 
+llvm::Value* CompileTimeContextIfStmtAST::codegen(CodegenContext& ctx) {
+    // Run-time version of `if compile_time`: only the else branch exists.
+    return elseStmt ? elseStmt->codegen(ctx) : nullptr;
+}
+
 llvm::Value* CompileTimeRepeatStmtAST::codegen(CodegenContext& ctx) {
     if (!ctResolved || !body) return nullptr;
     auto& builder = ctx.getBuilder();

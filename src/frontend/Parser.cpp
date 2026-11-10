@@ -1953,6 +1953,26 @@ std::unique_ptr<StmtAST> Parser::parseIfStmt() {
         return nullptr;
     }
 
+    if (check(TokenType::TOKEN_IDENTIFIER) && peek()->lexeme == "compile_time" &&
+        m_currentTokenPos + 1 < m_tokens.size() &&
+        m_tokens[m_currentTokenPos + 1].type == TokenType::TOKEN_LBRACE) {
+        advance(); // compile_time
+        auto thenStmt = parseCompoundStmt();
+        std::unique_ptr<CompoundStmtAST> elseStmt;
+        if (match(TokenType::TOKEN_ELSE)) {
+            if (!check(TokenType::TOKEN_LBRACE)) {
+                errorUnexpected("expected '{' after 'else' in if compile_time");
+            } else {
+                elseStmt = parseCompoundStmt();
+            }
+        }
+        auto stmt = std::make_unique<CompileTimeContextIfStmtAST>();
+        stmt->thenStmt = std::move(thenStmt);
+        stmt->elseStmt = std::move(elseStmt);
+        stmt->setLocation(ifToken->filename, ifToken->line, ifToken->column);
+        return stmt;
+    }
+
     expect(TokenType::TOKEN_LPAREN, "expected '(' after 'if'");
     auto cond = parseExpr();
     if (!cond) {

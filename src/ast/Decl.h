@@ -336,6 +336,15 @@ public:
     llvm::Value* codegen(CodegenContext& ctx) override;
 };
 
+// CT-26: `if compile_time { ... } else { ... }` — the then branch is the
+// compile-time path; codegen emits only the runtime (else) branch.
+class CompileTimeContextIfStmtAST : public StmtAST {
+public:
+    std::unique_ptr<CompoundStmtAST> thenStmt;
+    std::unique_ptr<CompoundStmtAST> elseStmt;
+    llvm::Value* codegen(CodegenContext& ctx) override;
+};
+
 // CTX-01 / E2: compile-time repeat — the body is emitted `iterations` times at
 // codegen time; no runtime loop or counter is generated.
 class CompileTimeRepeatStmtAST : public StmtAST {

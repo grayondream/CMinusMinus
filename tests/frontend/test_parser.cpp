@@ -1905,6 +1905,16 @@ TEST_F(ParserDeclTest, ConstexprRemovedWithTargetedDiagnostic) {
     EXPECT_NE(errs[0].message.find("compile_only"), std::string::npos);
 }
 
+TEST_F(ParserDeclTest, ParseIfCompileTime) {
+    auto tu = parse("compile_time int32 f() { if compile_time { return 1; } else { return 0; } }");
+    ASSERT_NE(tu, nullptr);
+    auto* fn = dynamic_cast<FunctionDeclAST*>(tu->declarations[0].get());
+    ASSERT_NE(fn, nullptr);
+    ASSERT_NE(fn->body, nullptr);
+    ASSERT_EQ(fn->body->stmts.size(), 1u);
+    EXPECT_NE(dynamic_cast<CompileTimeContextIfStmtAST*>(fn->body->stmts[0].get()), nullptr);
+}
+
 // ========== Error Message Tests ==========
 
 class ParserErrorTest : public ::testing::Test {

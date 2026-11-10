@@ -2140,6 +2140,10 @@ SemanticAnalyzer::evalConstexprStmt(StmtAST* stmt, ConstEnv& env, int depth,
         return result;
     }
 
+    if (auto* ctc = dynamic_cast<CompileTimeContextIfStmtAST*>(stmt)) {
+        return evalConstexprStmt(ctc->thenStmt.get(), env, depth + 1, flow);
+    }
+
     if (auto* ifs = dynamic_cast<IfStmtAST*>(stmt)) {
         auto cond = evaluateConstexpr(ifs->cond.get());
         if (!cond) {
@@ -6114,6 +6118,11 @@ void SemanticAnalyzer::collectUsedNamesStmt(StmtAST* stmt, std::unordered_set<st
         collectUsedNamesStmt(ctif->elseStmt.get(), out);
         return;
     }
+    if (auto* ctc = dynamic_cast<CompileTimeContextIfStmtAST*>(stmt)) {
+        collectUsedNamesStmt(ctc->thenStmt.get(), out);
+        collectUsedNamesStmt(ctc->elseStmt.get(), out);
+        return;
+    }
     if (auto* ctr = dynamic_cast<CompileTimeRepeatStmtAST*>(stmt)) {
         collectUsedNames(ctr->count.get(), out);
         collectUsedNamesStmt(ctr->body.get(), out);
@@ -8506,6 +8515,19 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
     if (oocClass) currentClass = oocSavedClass;
 }
 
+void SemanticAnalyzer::visit(CompileTimeContextIfStmtAST& node) {
+    if (!currentFunction ||
+        (!currentFunction->isCompileTime && !currentFunction->isCompileOnly)) {
+        emitError("'if compile_time' is only allowed inside compile_time/compile_only functions", node);
+        return;
+    }
+    const bool saved = m_inCtOnlyBranch;
+    m_inCtOnlyBranch = true;
+    if (node.thenStmt) visit(*node.thenStmt);
+    m_inCtOnlyBranch = saved;
+    if (!currentFunction->isCompileOnly && node.elseStmt) visit(*node.elseStmt);
+}
+
 void SemanticAnalyzer::visit(CompileTimeRepeatStmtAST& node) {
     auto count = evalCompileTime(node.count.get(), node);
     if (!count || count->type != ConstValue::INT) {
@@ -9112,6 +9134,7 @@ void SemanticAnalyzer::visit(StmtAST& stmt) {
     if (auto* s = dynamic_cast<DeclStmtAST*>(&stmt)) { visit(*s); return; }
     if (auto* s = dynamic_cast<DeferStmtAST*>(&stmt)) { visit(*s); return; }
     if (auto* s = dynamic_cast<CompileTimeIfStmtAST*>(&stmt)) { visit(*s); return; }
+    if (auto* s = dynamic_cast<CompileTimeContextIfStmtAST*>(&stmt)) { visit(*s); return; }
     if (auto* s = dynamic_cast<CompileTimeRepeatStmtAST*>(&stmt)) { visit(*s); return; }
 }
 

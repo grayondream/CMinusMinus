@@ -57,6 +57,28 @@ static std::unique_ptr<CodegenContext> codegenSource(const std::string& source,
     return ctx;
 }
 
+static std::vector<std::string> compileErrors(const std::string& source,
+                                              const std::string& filename) {
+    Lexer lexer(filename, source);
+    Parser parser(lexer.tokenize());
+    auto ast = parser.parse();
+    std::vector<std::string> errors;
+    for (auto& d : parser.getErrors()) errors.push_back(d.format());
+    if (!ast) return errors;
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    for (auto& d : analyzer.getErrors()) errors.push_back(d.format());
+    return errors;
+}
+
+static bool hasErrorContaining(const std::vector<std::string>& errors,
+                               const std::string& needle) {
+    for (auto& e : errors) {
+        if (e.find(needle) != std::string::npos) return true;
+    }
+    return false;
+}
+
 static int runSource(const std::string& source, const std::string& filename) {
     auto ctx = codegenSource(source, filename);
     if (!ctx) return -1;
@@ -75,6 +97,31 @@ static int runSource(const std::string& source, const std::string& filename) {
     if (!sym) return -1;
     auto fn = (int (*)())(intptr_t)sym->getValue();
     return fn();
+}
+
+TEST_F(CompileOnlyE2E, IfCompileTimeSelectsBothPaths) {
+    EXPECT_EQ(runSource(R"(
+compile_time int32 f(int32 x) {
+    if compile_time {
+        return x + 1;
+    } else {
+        return x - 1;
+    }
+}
+compile_time int32 CT = f(5);
+int32 main() {
+    return f(5) * 10 + CT - 46;
+}
+)", "if_compile_time.cmm"), 0);
+}
+
+TEST_F(CompileOnlyE2E, IfCompileTimeRejectedInRuntimeFunction) {
+    auto errs = compileErrors(R"(
+int32 main() {
+    if compile_time { return 1; } else { return 0; }
+}
+)", "if_compile_time_bad.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "if compile_time"));
 }
 
 TEST_F(CompileOnlyE2E, ScalarBuildsCompileTimeVariable) {
