@@ -1,6 +1,6 @@
 // ===== std.math — 基础数学 (P1-09 / STD-13) =====
 // Import with `import std.math;` and use as `std::sqrt(...)` etc.
-// libc 绑定（需要 -lm 链接）+ constexpr 常量 + 位级浮点分类。
+// libc 绑定（需要 -lm 链接）+ compile_time 常量 + 位级浮点分类。
 // 浮点分类（isnan/isinf/is_finite）位级纯语言实现（IEEE754），不依赖 libc
 // 分类宏；64 位掩码经 `ul` 字面量 + 移位构造（超 int64 常量折叠受限）。
 module std.math;
@@ -28,8 +28,8 @@ extern float32 cosf(float32 x);
 extern float64 sin(float64 x);
 extern float32 sinf(float32 x);
 
-constexpr float64 PI = 3.14159265358979323846;
-constexpr float64 E  = 2.71828182845904523536;
+compile_time float64 PI = 3.14159265358979323846;
+compile_time float64 E  = 2.71828182845904523536;
 
 // ----- 位级浮点分类（IEEE754） -----
 

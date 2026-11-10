@@ -19,7 +19,7 @@ extern int32 sched_yield();
 extern int64 sysconf(int32 name);
 
 // Linux _SC_NPROCESSORS_ONLN.
-constexpr int32 SYS_NPROCESSORS_ONLN = 84;
+compile_time int32 SYS_NPROCESSORS_ONLN = 84;
 
 struct Thread {
     usize handle;

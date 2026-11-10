@@ -130,10 +130,10 @@ TEST_F(StdModulesTest, CoreClamp) {
 }
 
 TEST_F(StdModulesTest, CoreConstexprUse) {
-    // std::min is constexpr and folds at compile time.
+    // std::min is compile_time and folds at compile time.
     EXPECT_EQ(runWithImports(
         "import std.core;\n"
-        "int32 main() { constexpr int32 m = std::min(4, 7); return m - 4; }\n",
+        "int32 main() { compile_time int32 m = std::min(4, 7); return m - 4; }\n",
         "std_core_constexpr.cmm"), 0);
 }
 

@@ -1572,7 +1572,7 @@ TEST_F(ParserDeclTest, ConstVarDecl) {
     auto var = dynamic_cast<VarDeclAST*>(tu->declarations[0].get());
     ASSERT_NE(var, nullptr);
     EXPECT_TRUE(var->type->isConst);
-    EXPECT_FALSE(var->isConstexpr);
+    EXPECT_FALSE(var->isCompileTime);
 }
 
 TEST_F(ParserDeclTest, VolatileVarDecl) {
@@ -1855,33 +1855,54 @@ TEST_F(ParserDeclTest, ClassMemberUsingAlias) {
     EXPECT_FALSE(u->isBlockScope);
 }
 
-TEST_F(ParserDeclTest, ConstexprVarDecl) {
-    auto tu = parse("constexpr int32 x = 42;");
+TEST_F(ParserDeclTest, CompileTimeVarDecl) {
+    auto tu = parse("compile_time int32 x = 42;");
     ASSERT_NE(tu, nullptr);
     ASSERT_EQ(tu->declarations.size(), 1u);
     auto* varDecl = dynamic_cast<VarDeclAST*>(tu->declarations[0].get());
     ASSERT_NE(varDecl, nullptr);
-    EXPECT_TRUE(varDecl->isConstexpr);
+    EXPECT_TRUE(varDecl->isCompileTime);
     EXPECT_EQ(varDecl->name, "x");
 }
 
-TEST_F(ParserDeclTest, ConstexprWithInit) {
-    auto tu = parse("constexpr int32 y = 20;");
+TEST_F(ParserDeclTest, CompileTimeWithInit) {
+    auto tu = parse("compile_time int32 y = 20;");
     ASSERT_NE(tu, nullptr);
     ASSERT_EQ(tu->declarations.size(), 1u);
     auto* varDecl = dynamic_cast<VarDeclAST*>(tu->declarations[0].get());
     ASSERT_NE(varDecl, nullptr);
-    EXPECT_TRUE(varDecl->isConstexpr);
+    EXPECT_TRUE(varDecl->isCompileTime);
     EXPECT_TRUE(varDecl->type->isConst);
 }
 
-TEST_F(ParserDeclTest, ConstexprFunctionDeclaration) {
-    auto tu = parse("constexpr int32 square(int32 x) { return x * x; }");
+TEST_F(ParserDeclTest, CompileTimeFunctionDeclaration) {
+    auto tu = parse("compile_time int32 square(int32 x) { return x * x; }");
     ASSERT_NE(tu, nullptr);
     ASSERT_EQ(tu->declarations.size(), 1u);
     auto& func = dynamic_cast<FunctionDeclAST&>(*tu->declarations[0]);
-    EXPECT_TRUE(func.isConstexpr);
+    EXPECT_TRUE(func.isCompileTime);
     EXPECT_EQ(func.name, "square");
+}
+
+TEST_F(ParserDeclTest, CompileTimeFunctionAndVariableParse) {
+    auto tu = parse("compile_time int32 f(int32 x) { return x + 1; }\n"
+                    "compile_time int32 N = f(41);\n");
+    ASSERT_NE(tu, nullptr);
+    ASSERT_EQ(tu->declarations.size(), 2u);
+    auto* fn = dynamic_cast<FunctionDeclAST*>(tu->declarations[0].get());
+    ASSERT_NE(fn, nullptr);
+    EXPECT_TRUE(fn->isCompileTime);
+    auto* var = dynamic_cast<VarDeclAST*>(tu->declarations[1].get());
+    ASSERT_NE(var, nullptr);
+    EXPECT_TRUE(var->isCompileTime);
+}
+
+TEST_F(ParserDeclTest, ConstexprRemovedWithTargetedDiagnostic) {
+    auto errs = parseErrors("constexpr int32 N = 1;");
+    ASSERT_FALSE(errs.empty());
+    EXPECT_NE(errs[0].message.find("constexpr"), std::string::npos);
+    EXPECT_NE(errs[0].message.find("compile_time"), std::string::npos);
+    EXPECT_NE(errs[0].message.find("compile_only"), std::string::npos);
 }
 
 // ========== Error Message Tests ==========

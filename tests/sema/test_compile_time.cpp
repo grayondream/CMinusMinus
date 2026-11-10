@@ -1,5 +1,5 @@
 // P1-04 / CT-06: 编译期求值器 CompileTimeEvaluator——字面量/算术/逻辑/
-// 字符串比较与拼接、constexpr 变量与函数委托、深度上限、静默失败语义。
+// 字符串比较与拼接、compile_time 变量与函数委托、深度上限、静默失败语义。
 
 #include <gtest/gtest.h>
 
@@ -99,7 +99,7 @@ TEST_F(CompileTimeEval, EvalStringConcatRemoved) {
 
 TEST_F(CompileTimeEval, EvalConstexprVar) {
     Extracted ex;
-    ASSERT_NO_FATAL_FAILURE(extract(ex, "constexpr int32 k = 5;", "k * 2"));
+    ASSERT_NO_FATAL_FAILURE(extract(ex, "compile_time int32 k = 5;", "k * 2"));
     CompileTimeEvaluator ev(*ex.analyzer);
     auto v = ev.eval(ex.expr, *ex.expr);
     ASSERT_TRUE(v.has_value());
@@ -152,7 +152,7 @@ static bool analyzeOk(const std::string& source) {
 TEST_F(CompileTimeEval, CompileTimeInsideNamespace) {
     // Review Focus 2: namespace 内的 compile_time 根链不被 namespacePrefix 劫持。
     EXPECT_TRUE(analyzeOk(R"(
-constexpr int32 ok = compile_time.build.debug;
+compile_time int32 ok = compile_time.build.debug;
 namespace N { int32 f() { return ok; } }
 )"));
 }
@@ -348,10 +348,10 @@ int32 main() { compile_time.static_assert(2 > 3, "body fail"); return 0; }
 // ---- P1-04 评审修复（I1/I2/I3/I4/I5）----
 
 TEST_F(CompileTimeEval, ConstExprFnWithCTArg) {
-    // I1: constexpr 函数实参含 compile_time 根 → 委托不得互递归。
+    // I1: compile_time 函数实参含 compile_time 根 → 委托不得互递归。
     EXPECT_TRUE(analyzeOk(R"(
-constexpr int32 twice(int32 x) { return x * 2; }
-constexpr int32 r = twice(compile_time.size_of(int32));
+compile_time int32 twice(int32 x) { return x * 2; }
+compile_time int32 r = twice(compile_time.size_of(int32));
 int32 main() { return 0; }
 )"));
 }
@@ -397,7 +397,7 @@ int32 main() {
 TEST_F(CompileTimeEval, CompileTimeInsideNamespaceReal) {
     // I5: compile_time 根链在 namespace 体内不被 namespacePrefix 劫持。
     EXPECT_TRUE(analyzeOk(R"(
-namespace N { constexpr int32 ok = compile_time.build.debug; }
+namespace N { compile_time int32 ok = compile_time.build.debug; }
 )"));
 }
 

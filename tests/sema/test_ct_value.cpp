@@ -1,4 +1,4 @@
-// CtValue: exact compile-time integer semantics shared by the constexpr
+// CtValue: exact compile-time integer semantics shared by the compile_time
 // interpreter and the compile_time query evaluator.
 #include <gtest/gtest.h>
 

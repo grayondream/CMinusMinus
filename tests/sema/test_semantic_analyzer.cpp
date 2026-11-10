@@ -445,7 +445,7 @@ TEST_F(SemanticAnalyzerTest, ConstexprMustHaveInitializer) {
     TranslationUnitAST tu(std::move(decls));
     analyzer->analyze(tu);
     EXPECT_FALSE(analyzer->getErrors().empty());
-    EXPECT_NE(analyzer->getErrors()[0].message.find("constexpr"), std::string::npos);
+    EXPECT_NE(analyzer->getErrors()[0].message.find("compile_time"), std::string::npos);
     EXPECT_NE(analyzer->getErrors()[0].message.find("initializer"), std::string::npos);
 }
 
@@ -464,7 +464,7 @@ TEST_F(SemanticAnalyzerTest, ConstexprConstantFolding) {
     analyzer->analyze(tu);
     EXPECT_TRUE(analyzer->getErrors().empty());
 
-    auto& values = analyzer->getConstexprValues();
+    auto& values = analyzer->getCompileTimeValues();
     ASSERT_TRUE(values.count("x"));
     EXPECT_EQ(values.at("x").intVal, 14);
 }
@@ -489,7 +489,7 @@ TEST_F(SemanticAnalyzerTest, ConstexprNonConstantError) {
 }
 
 TEST_F(SemanticAnalyzerTest, ConstexprFunctionWithValidSignature) {
-    // constexpr int square(int x) { return x * x; }
+    // compile_time int square(int x) { return x * x; }
     // Should pass - no errors
     auto returnExpr = std::make_unique<BinaryExprAST>(
         BinaryOp::Mul,
@@ -511,8 +511,8 @@ TEST_F(SemanticAnalyzerTest, ConstexprFunctionWithValidSignature) {
 }
 
 TEST_F(SemanticAnalyzerTest, ConstexprFunctionWithNonLiteralReturnType) {
-    // constexpr void bad() { return; }
-    // Should emit error: constexpr function must have literal return type
+    // compile_time void bad() { return; }
+    // Should emit error: compile_time function must have literal return type
     std::vector<std::unique_ptr<StmtAST>> bodyStmts;
     bodyStmts.push_back(std::make_unique<ReturnStmtAST>(nullptr));
     auto body = std::make_unique<CompoundStmtAST>(std::move(bodyStmts));
@@ -529,7 +529,7 @@ TEST_F(SemanticAnalyzerTest, ConstexprFunctionWithNonLiteralReturnType) {
 }
 
 TEST_F(SemanticAnalyzerTest, ConstexprFunctionWithNonLiteralParameter) {
-    // constexpr int bad(string s) { return 0; }
+    // compile_time int bad(string s) { return 0; }
     // Should emit error: parameter must have literal type. Scalar pointers are
     // allowed now (out-parameters); owning string is still not a literal type.
     std::vector<std::unique_ptr<StmtAST>> bodyStmts;

@@ -1683,7 +1683,8 @@ std::unique_ptr<StmtAST> Parser::parseStmt() {
         stmtAnns = parseAnnotations();
         if (!(isTypeStart() || check(TokenType::TOKEN_CONST) ||
               check(TokenType::TOKEN_VOLATILE) || check(TokenType::TOKEN_CONSTEXPR) ||
-              check(TokenType::TOKEN_ATOMIC) || isLocalUsingStart())) {
+              check(TokenType::TOKEN_ATOMIC) || isCompileTimeModifierStart() ||
+              isLocalUsingStart())) {
             errorUnexpected("annotations are only allowed on declarations");
             return nullptr;
         }
@@ -1878,8 +1879,8 @@ std::unique_ptr<StmtAST> Parser::parseStmt() {
         return makeDeclStmt(std::move(varDecl));
     }
 
-    // local constexpr declaration: `constexpr T name = ...;`
-    if (check(TokenType::TOKEN_CONSTEXPR)) {
+    // local compile_time declaration: `compile_time T name = ...;`
+    if (check(TokenType::TOKEN_CONSTEXPR) || isCompileTimeModifierStart()) {
         auto decl = parseDeclaration();
         if (decl) {
             return makeDeclStmt(std::move(decl));
@@ -3635,7 +3636,7 @@ static Type* stripDeclaratorType(Type* type) {
 }
 
 std::unique_ptr<DeclAST> Parser::parseDeclarationFromBaseType(Type* base,
-                                                              bool isConstexpr) {
+                                                              bool isCompileTime) {
     // Parenthesized declarator: `(*fp)(int32)` / `(*p)[3]`.
     if (check(TokenType::TOKEN_LPAREN)) {
         std::string name;
@@ -3654,9 +3655,9 @@ std::unique_ptr<DeclAST> Parser::parseDeclarationFromBaseType(Type* base,
             if (declType->kind != TypeKind::Function) return nullptr;
             auto* ft = static_cast<FunctionType*>(declType);
             return std::make_unique<FunctionDeclAST>(
-                name, ft->returnType, params, body, isConstexpr, ft->isVarArg);
+                name, ft->returnType, params, body, isCompileTime, ft->isVarArg);
         }
-        return parseVariableDeclList(declType, name, isConstexpr);
+        return parseVariableDeclList(declType, name, isCompileTime);
     }
 
     // Leading pointers: `*p`, `**p`, `*f()` (function returning pointer).
@@ -3682,18 +3683,14 @@ std::unique_ptr<DeclAST> Parser::parseDeclarationFromBaseType(Type* base,
     }
     auto nameTok = advance();
     if (check(TokenType::TOKEN_LPAREN)) {
-        return parseFunctionDecl(type, nameTok->lexeme, isConstexpr);
+        return parseFunctionDecl(type, nameTok->lexeme, isCompileTime);
     }
-    return parseVariableDeclList(type, nameTok->lexeme, isConstexpr);
+    return parseVariableDeclList(type, nameTok->lexeme, isCompileTime);
 }
 
 std::unique_ptr<DeclAST> Parser::parseDeclarationAsType() {
-    // Handle constexpr declaration specifier
-    bool isConstexpr = false;
-    if (check(TokenType::TOKEN_CONSTEXPR)) {
-        advance();
-        isConstexpr = true;
-    }
+    bool isCompileTime = false;
+    consumeCompileTimeSpecifier(isCompileTime);
 
     // 双报防护（Task 5）：记录本次尝试前的诊断数——若 parseType 已诊断（如
     // 模板实参失败），不补报 unknown type。
@@ -3777,7 +3774,7 @@ std::unique_ptr<DeclAST> Parser::parseDeclarationAsType() {
             errorUnexpected("expected '(' after operator name");
             return nullptr;
         }
-        return parseFunctionDecl(type, opName, isConstexpr);
+        return parseFunctionDecl(type, opName, isCompileTime);
     }
 
     // Parenthesized pointer declarator: function pointer, pointer-to-array,
@@ -3798,9 +3795,9 @@ std::unique_ptr<DeclAST> Parser::parseDeclarationAsType() {
                     errorUnexpected("expected '{' or ';' after function declaration");
                 }
                 return std::make_unique<FunctionDeclAST>(
-                    fpName, ft->returnType, fnParams, body, isConstexpr, ft->isVarArg);
+                    fpName, ft->returnType, fnParams, body, isCompileTime, ft->isVarArg);
             }
-            return parseVariableDeclList(declType, fpName, isConstexpr);
+            return parseVariableDeclList(declType, fpName, isCompileTime);
         }
     }
 
@@ -3815,7 +3812,7 @@ std::unique_ptr<DeclAST> Parser::parseDeclarationAsType() {
             if (check(TokenType::TOKEN_IDENTIFIER)) {
                 auto methodTok = advance();
                 if (check(TokenType::TOKEN_LPAREN)) {
-                    auto fn = parseFunctionDecl(type, methodTok->lexeme, isConstexpr);
+                    auto fn = parseFunctionDecl(type, methodTok->lexeme, isCompileTime);
                     if (fn) fn->className = classTok->lexeme;
                     return fn;
                 }
@@ -3823,7 +3820,7 @@ std::unique_ptr<DeclAST> Parser::parseDeclarationAsType() {
                 // Out-of-class static data definition: `int32 S::x = 1;`.
                 // Keep the member name and class separately so sema can bind
                 // it to the in-class static member before codegen.
-                auto decl = parseVariableDecl(type, methodTok->lexeme, isConstexpr);
+                auto decl = parseVariableDecl(type, methodTok->lexeme, isCompileTime);
                 if (auto* vd = dynamic_cast<VarDeclAST*>(decl.get())) {
                     vd->isOutOfClassStatic = true;
                     vd->staticClass = classTok->lexeme;
@@ -3887,7 +3884,7 @@ std::unique_ptr<DeclAST> Parser::parseDeclarationAsType() {
                     errorUnexpected("expected operator symbol and parameter list");
                     return nullptr;
                 }
-                auto fn = parseFunctionDecl(type, "operator" + sym, isConstexpr);
+                auto fn = parseFunctionDecl(type, "operator" + sym, isCompileTime);
                 if (fn) fn->className = classTok->lexeme;
                 return fn;
             }
@@ -3900,7 +3897,7 @@ std::unique_ptr<DeclAST> Parser::parseDeclarationAsType() {
 
     // Function declaration/definition: type name '('
     if (check(TokenType::TOKEN_LPAREN)) {
-        auto first = parseFunctionDecl(type, nameTok->lexeme, isConstexpr,
+        auto first = parseFunctionDecl(type, nameTok->lexeme, isCompileTime,
                                        /*allowComma=*/true);
         if (!first) return nullptr;
         if (!check(TokenType::TOKEN_COMMA)) return first;
@@ -3924,7 +3921,7 @@ std::unique_ptr<DeclAST> Parser::parseDeclarationAsType() {
                 errorUnexpected("expected '(' after function name");
                 break;
             }
-            auto fn = parseFunctionDecl(type, extraName->lexeme, isConstexpr,
+            auto fn = parseFunctionDecl(type, extraName->lexeme, isCompileTime,
                                         /*allowComma=*/true);
             if (!fn) break;
             fns.push_back(std::move(fn));
@@ -3934,11 +3931,11 @@ std::unique_ptr<DeclAST> Parser::parseDeclarationAsType() {
     }
 
     // Variable declaration, possibly with several comma-separated declarators.
-    return parseVariableDeclList(type, nameTok->lexeme, isConstexpr);
+    return parseVariableDeclList(type, nameTok->lexeme, isCompileTime);
 }
 
-std::unique_ptr<DeclAST> Parser::parseVariableDeclList(Type* type, const std::string& firstName, bool isConstexpr) {
-    auto first = parseVariableDecl(type, firstName, isConstexpr);
+std::unique_ptr<DeclAST> Parser::parseVariableDeclList(Type* type, const std::string& firstName, bool isCompileTime) {
+    auto first = parseVariableDecl(type, firstName, isCompileTime);
     if (!check(TokenType::TOKEN_COMMA)) {
         expect(TokenType::TOKEN_SEMICOLON, "expected ';' after variable declaration");
         return first;
@@ -3964,7 +3961,7 @@ std::unique_ptr<DeclAST> Parser::parseVariableDeclList(Type* type, const std::st
                 error("function declaration cannot follow a variable declarator", *peek());
                 break;
             }
-            auto extra = parseVariableDecl(varType, extraName, isConstexpr);
+            auto extra = parseVariableDecl(varType, extraName, isCompileTime);
             if (!extra) break;
             vars.push_back(std::move(extra));
             continue;
@@ -3994,7 +3991,7 @@ std::unique_ptr<DeclAST> Parser::parseVariableDeclList(Type* type, const std::st
             break;
         }
         auto extraName = advance();
-        auto extra = parseVariableDecl(varType, extraName->lexeme, isConstexpr);
+        auto extra = parseVariableDecl(varType, extraName->lexeme, isCompileTime);
         if (!extra) break;
         vars.push_back(std::move(extra));
     }
@@ -4230,7 +4227,7 @@ Type* Parser::parseFunctionPointerType(Type* returnType) {
 }
 
 std::unique_ptr<FunctionDeclAST> Parser::parseFunctionDecl(Type* returnType, const std::string& name,
-                                                          bool isConstexpr, bool allowComma) {
+                                                          bool isCompileTime, bool allowComma) {
     if (!expect(TokenType::TOKEN_LPAREN, "expected '(' after function name")) return nullptr;
 
     std::vector<std::unique_ptr<ParamDeclAST>> params;
@@ -4274,12 +4271,12 @@ std::unique_ptr<FunctionDeclAST> Parser::parseFunctionDecl(Type* returnType, con
         errorUnexpected("expected '{' or ';' after function declaration");
     }
 
-    return std::make_unique<FunctionDeclAST>(name, returnType, params, body, isConstexpr, isVarArg);
+    return std::make_unique<FunctionDeclAST>(name, returnType, params, body, isCompileTime, isVarArg);
 }
 
-std::unique_ptr<DeclAST> Parser::parseVariableDecl(Type* type, const std::string& name, bool isConstexpr) {
+std::unique_ptr<DeclAST> Parser::parseVariableDecl(Type* type, const std::string& name, bool isCompileTime) {
     // constexpr implies const. Never mutate a shared scalar singleton.
-    if (isConstexpr) {
+    if (isCompileTime) {
         bool scalar = false;
         switch (type ? type->kind : TypeKind::Void) {
             case TypeKind::Char: case TypeKind::Bool:
@@ -4365,7 +4362,7 @@ std::unique_ptr<DeclAST> Parser::parseVariableDecl(Type* type, const std::string
     // Remember const/constexpr integer initializers so later array dimensions
     // and bit-field widths can use them as compile-time constants. Evaluate
     // before moving `init` into the declaration node.
-    if ((isConstexpr || type->isConst) && isIntegerScalarType(type) && init) {
+    if ((isCompileTime || type->isConst) && isIntegerScalarType(type) && init) {
         long long value = 0;
         auto lookup = [this](const std::string& n, long long& out) {
             return lookupConstValue(n, out);
@@ -4375,7 +4372,7 @@ std::unique_ptr<DeclAST> Parser::parseVariableDecl(Type* type, const std::string
         }
     }
 
-    auto decl = std::make_unique<VarDeclAST>(name, type, std::move(init), isConstexpr);
+    auto decl = std::make_unique<VarDeclAST>(name, type, std::move(init), isCompileTime);
     // Snapshot source-order completeness. isComplete is only filled by sema;
     // a later definition must not validate an earlier by-value use.
     Type* vt = type;
@@ -4505,6 +4502,40 @@ std::unique_ptr<ParamDeclAST> Parser::parseParamDecl() {
 // P1-03 / GEN-01 / PAR-21: 解析 `template<...>` 声明。
 // 参数列表 → 模板体（函数/struct/class/using 别名；union/enum 拒绝）。
 // 定义处只 parse：参数名进入 m_templateScopes，模板体内的 `T`/`N` 由此解析。
+bool Parser::isCompileTimeModifierStart() const {
+    if (eof() || peek()->type != TokenType::TOKEN_IDENTIFIER ||
+        peek()->lexeme != "compile_time") {
+        return false;
+    }
+    if (m_currentTokenPos + 1 >= m_tokens.size()) return false;
+    const Token& next = m_tokens[m_currentTokenPos + 1];
+    if (next.type == TokenType::TOKEN_DOT ||
+        next.type == TokenType::TOKEN_SEMICOLON ||
+        next.type == TokenType::TOKEN_ASSIGN ||
+        next.type == TokenType::TOKEN_LPAREN) {
+        return false;
+    }
+    return true;
+}
+
+bool Parser::consumeCompileTimeSpecifier(bool& isCompileTime) {
+    if (check(TokenType::TOKEN_CONSTEXPR)) {
+        Token tok = *peek();
+        advance();
+        error("'constexpr' has been removed; use 'compile_time' for functions/variables, "
+              "or 'compile_only' for functions that must not exist at runtime",
+              tok);
+        isCompileTime = true;
+        return true;
+    }
+    if (isCompileTimeModifierStart()) {
+        advance();
+        isCompileTime = true;
+        return true;
+    }
+    return false;
+}
+
 // P1-04 / CT-01: `compile_time` 非关键字——仅当前瞻出 `compile_time` + `.` +
 // 成员 ∈ {if, static_assert} 时才走编译期声明路径；只 peek 不消耗。
 bool Parser::isCompileTimeDeclStart() const {

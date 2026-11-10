@@ -28,6 +28,9 @@ public:
     // storage is read-only. Symbol identity (not just the name) keeps shadowed
     // locals and same-named parameters mutable.
     bool isConstexprContainer = false;
+    // CT-23: `compile_time` variable; read-only and backed by a compile-time
+    // constant. Kept on the symbol so the shared Type is never mutated.
+    bool isCompileTime = false;
     std::string declFile;
     int declLine = 0;
     int declColumn = 0;

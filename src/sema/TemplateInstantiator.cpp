@@ -496,7 +496,7 @@ std::unique_ptr<DeclAST> TemplateInstantiator::cloneDeclInternal(const DeclAST& 
         std::unique_ptr<CompoundStmtAST> body(
             dynamic_cast<CompoundStmtAST*>(cloneStmt(fn->body.get()).release()));
         auto* cloned = new FunctionDeclAST(fn->name, rewrite(fn->returnType), params,
-                                           body, fn->isConstexpr, fn->isVarArg);
+                                           body, fn->isCompileTime, fn->isVarArg);
         cloned->isStatic = fn->isStatic;
         cloned->className = fn->className;
         cloned->shadowedValueParams.assign(
@@ -533,7 +533,7 @@ std::unique_ptr<DeclAST> TemplateInstantiator::cloneDeclInternal(const DeclAST& 
         if (m_valueArgs.count(vd->name))
             m_shadowedValueParams.push_back(vd->name);
         auto* cloned = new VarDeclAST(vd->name, rewrite(vd->type),
-                                      cloneExpr(vd->initExpr.get()), vd->isConstexpr);
+                                      cloneExpr(vd->initExpr.get()), vd->isCompileTime);
         copyLoc(cloned, *vd);
         return std::unique_ptr<DeclAST>(cloned);
     }

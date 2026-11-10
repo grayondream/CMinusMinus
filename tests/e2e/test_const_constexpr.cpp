@@ -79,18 +79,18 @@ TEST_F(ConstConstexprE2E, ConstVariable) {
 
 TEST_F(ConstConstexprE2E, ConstexprVariable) {
     EXPECT_EQ(runSource(
-        "constexpr int32 x = 42; int32 main() { return x; }", "constexpr_var.cmm"), 42);
+        "compile_time int32 x = 42; int32 main() { return x; }", "constexpr_var.cmm"), 42);
 }
 
 TEST_F(ConstConstexprE2E, ConstexprTwoGlobals) {
     EXPECT_EQ(runSource(
-        "constexpr int32 a = 10; constexpr int32 b = 23; int32 main() { return b; }",
+        "compile_time int32 a = 10; compile_time int32 b = 23; int32 main() { return b; }",
         "constexpr_two.cmm"), 23);
 }
 
 TEST_F(ConstConstexprE2E, ConstexprExpression) {
     EXPECT_EQ(runSource(
-        "constexpr int32 a = 10; constexpr int32 b = a * 2 + 3; int32 main() { return b; }",
+        "compile_time int32 a = 10; compile_time int32 b = a * 2 + 3; int32 main() { return b; }",
         "constexpr_expr.cmm"), 23);
 }
 
@@ -101,18 +101,18 @@ TEST_F(ConstConstexprE2E, LocalConstVariable) {
 
 TEST_F(ConstConstexprE2E, LocalConstexprVariable) {
     EXPECT_EQ(runSource(
-        "int32 main() { constexpr int32 x = 42; return x; }", "local_constexpr.cmm"), 42);
+        "int32 main() { compile_time int32 x = 42; return x; }", "local_constexpr.cmm"), 42);
 }
 
 TEST_F(ConstConstexprE2E, MixedConstConstexpr) {
     EXPECT_EQ(runSource(
-        "constexpr int32 a = 10; const int32 b = 20; int32 main() { return a + b; }",
+        "compile_time int32 a = 10; const int32 b = 20; int32 main() { return a + b; }",
         "mixed.cmm"), 30);
 }
 
 TEST_F(ConstConstexprE2E, ConstexprInFunction) {
     EXPECT_EQ(runSource(
-        "int32 main() { constexpr int32 x = 5; constexpr int32 y = x * 3; return y; }",
+        "int32 main() { compile_time int32 x = 5; compile_time int32 y = x * 3; return y; }",
         "constexpr_func.cmm"), 15);
 }
 

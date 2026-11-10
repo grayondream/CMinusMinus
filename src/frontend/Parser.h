@@ -76,6 +76,10 @@ private:
     // P1-04 / CT-01: `compile_time.if` / `compile_time.static_assert` 顶层声明。
     // `compile_time` 非关键字；仅成员名 ∈ {if, static_assert} 的根链在此特判。
     bool isCompileTimeDeclStart() const;
+    // `compile_time` as a declaration modifier (`compile_time T x;`,
+    // `compile_time T f()`) — distinct from the `compile_time.if` namespace.
+    bool isCompileTimeModifierStart() const;
+    bool consumeCompileTimeSpecifier(bool& isCompileTime);
     std::unique_ptr<DeclAST> parseCompileTimeIf();
     std::unique_ptr<StmtAST> parseCompileTimeIfStmt();
     std::unique_ptr<StmtAST> parseCompileTimeRepeatStmt();
@@ -133,15 +137,15 @@ private:
     // attached forms after a record definition: `s`, `*p`, `f()`, `*f()`,
     // `(*fp)(...)`, `(*p)[N]`.
     std::unique_ptr<DeclAST> parseDeclarationFromBaseType(Type* base,
-                                                          bool isConstexpr = false);
+                                                          bool isCompileTime = false);
 
     std::unique_ptr<FunctionDeclAST> parseFunctionDecl(Type* returnType, const std::string& name,
-                                                       bool isConstexpr = false,
+                                                       bool isCompileTime = false,
                                                        bool allowComma = false);
 
-    std::unique_ptr<DeclAST> parseVariableDecl(Type* type, const std::string& name, bool isConstexpr = false);
+    std::unique_ptr<DeclAST> parseVariableDecl(Type* type, const std::string& name, bool isCompileTime = false);
 
-    std::unique_ptr<DeclAST> parseVariableDeclList(Type* type, const std::string& firstName, bool isConstexpr = false);
+    std::unique_ptr<DeclAST> parseVariableDeclList(Type* type, const std::string& firstName, bool isCompileTime = false);
 
     // Parse the parameter list of a function-pointer declarator, after the
     // closing ')' of "(*name)"; returns the pointed-to FunctionType.

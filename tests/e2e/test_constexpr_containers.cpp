@@ -1,4 +1,4 @@
-// Compile-time containers: the std container API executed by the constexpr
+// Compile-time containers: the std container API executed by the compile_time
 // evaluator, plus materialized constant tables.
 #include <gtest/gtest.h>
 
@@ -163,7 +163,7 @@ TEST_F(ConstexprContainersTest, VecSumInConstexpr) {
         import std.deque;
         import std.hashmap;
         import std.hashset;
-        constexpr int32 sum8() {
+        compile_time int32 sum8() {
             std::Vec<int32> v;
             v.init();
             for (usize i = 0; i < 8; i = i + 1) v.push((int32)(i * i));
@@ -172,7 +172,7 @@ TEST_F(ConstexprContainersTest, VecSumInConstexpr) {
             v.destroy();
             return total;
         }
-        int32 main() { constexpr int32 x = sum8(); return x - 140; }
+        int32 main() { compile_time int32 x = sum8(); return x - 140; }
     )", "ct_vec_sum.cmm"), 0);
 }
 
@@ -183,7 +183,7 @@ TEST_F(ConstexprContainersTest, HashMapInConstexpr) {
         import std.hashmap;
         import std.hashset;
         import std.hash;
-        constexpr int32 mapWork() {
+        compile_time int32 mapWork() {
             std::HashMap<uint32,int32> m;
             m.init(std::hash_key_u32, std::equal_u32);
             uint32 i = 0;
@@ -204,7 +204,7 @@ TEST_F(ConstexprContainersTest, HashMapInConstexpr) {
             m.destroy();
             return 0;
         }
-        int32 main() { constexpr int32 x = mapWork(); return x; }
+        int32 main() { compile_time int32 x = mapWork(); return x; }
     )", "ct_map.cmm"), 0);
 }
 
@@ -215,7 +215,7 @@ TEST_F(ConstexprContainersTest, HashSetInConstexpr) {
         import std.hashmap;
         import std.hashset;
         import std.hash;
-        constexpr int32 setWork() {
+        compile_time int32 setWork() {
             std::HashSet<uint64> s;
             s.init(std::hash_key_u64, std::equal_u64);
             uint64 i = 0;
@@ -233,7 +233,7 @@ TEST_F(ConstexprContainersTest, HashSetInConstexpr) {
             s.destroy();
             return 0;
         }
-        int32 main() { constexpr int32 x = setWork(); return x; }
+        int32 main() { compile_time int32 x = setWork(); return x; }
     )", "ct_set.cmm"), 0);
 }
 
@@ -244,7 +244,7 @@ TEST_F(ConstexprContainersTest, StringViewElementsInConstexpr) {
         import std.hashmap;
         import std.hashset;
         import std.hash;
-        constexpr int32 strWork() {
+        compile_time int32 strWork() {
             std::Vec<string_view> v;
             v.init();
             v.push("alpha");
@@ -257,7 +257,7 @@ TEST_F(ConstexprContainersTest, StringViewElementsInConstexpr) {
             v.destroy();
             return 0;
         }
-        int32 main() { constexpr int32 x = strWork(); return x; }
+        int32 main() { compile_time int32 x = strWork(); return x; }
     )", "ct_vec_string.cmm"), 0);
 }
 
@@ -267,7 +267,7 @@ TEST_F(ConstexprContainersTest, OutParametersInConstexpr) {
         import std.deque;
         import std.hashmap;
         import std.hashset;
-        constexpr int32 outWork() {
+        compile_time int32 outWork() {
             std::Vec<int32> v;
             v.init();
             v.push(10);
@@ -277,7 +277,7 @@ TEST_F(ConstexprContainersTest, OutParametersInConstexpr) {
             if (v.len != 1) return -2;
             return out;
         }
-        int32 main() { constexpr int32 x = outWork(); return x - 20; }
+        int32 main() { compile_time int32 x = outWork(); return x - 20; }
     )", "ct_out.cmm"), 0);
 }
 
@@ -287,11 +287,11 @@ TEST_F(ConstexprContainersTest, ConstexprLoopStepLimit) {
         import std.deque;
         import std.hashmap;
         import std.hashset;
-        constexpr int32 spin() {
+        compile_time int32 spin() {
             while (true) { }
             return 0;
         }
-        int32 main() { constexpr int32 x = spin(); return x; }
+        int32 main() { compile_time int32 x = spin(); return x; }
     )", "ct_step_limit.cmm"), -1);
 }
 
@@ -301,7 +301,7 @@ TEST_F(ConstexprContainersTest, DequeRingInConstexpr) {
         import std.deque;
         import std.hashmap;
         import std.hashset;
-        constexpr int64 dequeSum() {
+        compile_time int64 dequeSum() {
             std::Deque<int64> d;
             d.init();
             int64 i = 0;
@@ -317,7 +317,7 @@ TEST_F(ConstexprContainersTest, DequeRingInConstexpr) {
             d.destroy();
             return 0;
         }
-        int32 main() { constexpr int64 x = dequeSum(); return (int32)x; }
+        int32 main() { compile_time int64 x = dequeSum(); return (int32)x; }
     )", "ct_deque_ring.cmm"), 0);
 }
 
@@ -327,14 +327,14 @@ TEST_F(ConstexprContainersTest, AcceptsContainerConstexprFunction) {
         import std.deque;
         import std.hashmap;
         import std.hashset;
-        constexpr std::Vec<int32> make() {
+        compile_time std::Vec<int32> make() {
             std::Vec<int32> v;
             v.init();
             v.push(1);
             return v;
         }
-        constexpr std::Vec<int32> T = make();
-        constexpr std::Vec<int32> B = T;
+        compile_time std::Vec<int32> T = make();
+        compile_time std::Vec<int32> B = T;
         int32 main() { return T.get(0) + B.get(0) - 2; }
     )", "ct_accept_vec.cmm");
     for (auto& e : errors) std::cerr << "sema: " << e << "\n";
@@ -347,15 +347,15 @@ TEST_F(ConstexprContainersTest, RejectsMutationOfConstexprContainer) {
         import std.deque;
         import std.hashmap;
         import std.hashset;
-        constexpr std::Vec<int32> make() {
+        compile_time std::Vec<int32> make() {
             std::Vec<int32> v;
             v.init();
             return v;
         }
-        constexpr std::Vec<int32> T = make();
+        compile_time std::Vec<int32> T = make();
         int32 main() { T.push(1); return 0; }
     )", "ct_mutate_vec.cmm");
-    EXPECT_TRUE(hasErrorContaining(errors, "constexpr container"));
+    EXPECT_TRUE(hasErrorContaining(errors, "compile_time container"));
 }
 
 TEST_F(ConstexprContainersTest, RejectsFieldWriteOnConstexprContainer) {
@@ -364,15 +364,15 @@ TEST_F(ConstexprContainersTest, RejectsFieldWriteOnConstexprContainer) {
         import std.deque;
         import std.hashmap;
         import std.hashset;
-        constexpr std::Vec<int32> make() {
+        compile_time std::Vec<int32> make() {
             std::Vec<int32> v;
             v.init();
             return v;
         }
-        constexpr std::Vec<int32> T = make();
+        compile_time std::Vec<int32> T = make();
         int32 main() { T.len = 0; return 0; }
     )", "ct_mutate_field.cmm");
-    EXPECT_TRUE(hasErrorContaining(errors, "constexpr container"));
+    EXPECT_TRUE(hasErrorContaining(errors, "compile_time container"));
 }
 
 TEST_F(ConstexprContainersTest, RejectsMutableCopyOfConstexprContainer) {
@@ -381,12 +381,12 @@ TEST_F(ConstexprContainersTest, RejectsMutableCopyOfConstexprContainer) {
         import std.deque;
         import std.hashmap;
         import std.hashset;
-        constexpr std::Vec<int32> make() {
+        compile_time std::Vec<int32> make() {
             std::Vec<int32> v;
             v.init();
             return v;
         }
-        constexpr std::Vec<int32> T = make();
+        compile_time std::Vec<int32> T = make();
         int32 main() { std::Vec<int32> M = T; return 0; }
     )", "ct_copy_vec.cmm");
     EXPECT_TRUE(hasErrorContaining(errors, "read-only"));
@@ -394,7 +394,7 @@ TEST_F(ConstexprContainersTest, RejectsMutableCopyOfConstexprContainer) {
 
 TEST_F(ConstexprContainersTest, StillRejectsStringConstexprFunction) {
     auto errors = analyzeWithImports(R"(
-        constexpr string make() { return string.new("x"); }
+        compile_time string make() { return string.new("x"); }
         int32 main() { return 0; }
     )", "ct_string_constexpr.cmm");
     EXPECT_TRUE(hasErrorContaining(errors, "literal return type"));
@@ -406,13 +406,13 @@ TEST_F(ConstexprContainersTest, VecTableIsReadableAtRuntime) {
         import std.deque;
         import std.hashmap;
         import std.hashset;
-        constexpr std::Vec<int32> make() {
+        compile_time std::Vec<int32> make() {
             std::Vec<int32> v;
             v.init();
             for (usize i = 0; i < 8; i = i + 1) v.push((int32)(i * i));
             return v;
         }
-        constexpr std::Vec<int32> T = make();
+        compile_time std::Vec<int32> T = make();
         int32 main() {
             if (T.len != 8) return 1;
             if (T.get(5) != 25) return 2;
@@ -428,7 +428,7 @@ TEST_F(ConstexprContainersTest, DequeTableIsReadableAtRuntime) {
         import std.deque;
         import std.hashmap;
         import std.hashset;
-        constexpr std::Deque<int32> make() {
+        compile_time std::Deque<int32> make() {
             std::Deque<int32> d;
             d.init();
             d.push_back(1);
@@ -436,7 +436,7 @@ TEST_F(ConstexprContainersTest, DequeTableIsReadableAtRuntime) {
             d.push_back(2);
             return d;
         }
-        constexpr std::Deque<int32> T = make();
+        compile_time std::Deque<int32> T = make();
         int32 main() {
             if (T.len != 3) return 1;
             if (T.get(0) != 0 || T.get(1) != 1 || T.get(2) != 2) return 2;
@@ -451,12 +451,12 @@ TEST_F(ConstexprContainersTest, EmptyVecTableIsReadableAtRuntime) {
         import std.deque;
         import std.hashmap;
         import std.hashset;
-        constexpr std::Vec<int32> make() {
+        compile_time std::Vec<int32> make() {
             std::Vec<int32> v;
             v.init();
             return v;
         }
-        constexpr std::Vec<int32> T = make();
+        compile_time std::Vec<int32> T = make();
         int32 main() {
             if (T.len != 0) return 1;
             if (!T.is_empty()) return 2;
@@ -471,7 +471,7 @@ TEST_F(ConstexprContainersTest, StringViewTableIsReadableAtRuntime) {
         import std.deque;
         import std.hashmap;
         import std.hashset;
-        constexpr std::Vec<string_view> make() {
+        compile_time std::Vec<string_view> make() {
             std::Vec<string_view> v;
             v.init();
             v.push("alpha");
@@ -479,7 +479,7 @@ TEST_F(ConstexprContainersTest, StringViewTableIsReadableAtRuntime) {
             v.push("gamma");
             return v;
         }
-        constexpr std::Vec<string_view> T = make();
+        compile_time std::Vec<string_view> T = make();
         int32 main() {
             if (T.len != 3) return 1;
             if (T.get(1) != "beta") return 2;
@@ -496,13 +496,13 @@ TEST_F(ConstexprContainersTest, HashMapTableIsReadableAtRuntime) {
         import std.hashmap;
         import std.hashset;
         import std.hash;
-        constexpr std::HashMap<uint32,int32> make() {
+        compile_time std::HashMap<uint32,int32> make() {
             std::HashMap<uint32,int32> m;
             m.init(std::hash_key_u32, std::equal_u32);
             for (uint32 i = 0; i < 64; i = i + 1) m.put(i, (int32)(i * 2));
             return m;
         }
-        constexpr std::HashMap<uint32,int32> T = make();
+        compile_time std::HashMap<uint32,int32> T = make();
         int32 main() {
             int32 out = 0;
             if (!T.get(17, &out) || out != 34) return 1;
@@ -520,13 +520,13 @@ TEST_F(ConstexprContainersTest, HashSetTableIsReadableAtRuntime) {
         import std.hashmap;
         import std.hashset;
         import std.hash;
-        constexpr std::HashSet<uint64> make() {
+        compile_time std::HashSet<uint64> make() {
             std::HashSet<uint64> s;
             s.init(std::hash_key_u64, std::equal_u64);
             for (uint64 i = 0; i < 32; i = i + 1) s.insert(i * 3);
             return s;
         }
-        constexpr std::HashSet<uint64> T = make();
+        compile_time std::HashSet<uint64> T = make();
         int32 main() {
             if (T.size() != 32) return 1;
             if (!T.contains(30)) return 2;
@@ -543,7 +543,7 @@ TEST_F(ConstexprContainersTest, StringViewMapTableIsReadableAtRuntime) {
         import std.hashmap;
         import std.hashset;
         import std.hash;
-        constexpr std::HashMap<string_view,int32> make() {
+        compile_time std::HashMap<string_view,int32> make() {
             std::HashMap<string_view,int32> m;
             m.init(std::hash_key_string, std::equal_string);
             m.put("one", 1);
@@ -551,7 +551,7 @@ TEST_F(ConstexprContainersTest, StringViewMapTableIsReadableAtRuntime) {
             m.put("three", 3);
             return m;
         }
-        constexpr std::HashMap<string_view,int32> T = make();
+        compile_time std::HashMap<string_view,int32> T = make();
         int32 main() {
             int32 out = 0;
             if (!T.get("two", &out) || out != 2) return 1;
@@ -568,12 +568,12 @@ TEST_F(ConstexprContainersTest, RejectsMutableAssignmentFromConstexprContainer) 
         import std.deque;
         import std.hashmap;
         import std.hashset;
-        constexpr std::Vec<int32> make() {
+        compile_time std::Vec<int32> make() {
             std::Vec<int32> v;
             v.init();
             return v;
         }
-        constexpr std::Vec<int32> T = make();
+        compile_time std::Vec<int32> T = make();
         int32 main() {
             std::Vec<int32> M;
             M.init();
@@ -590,11 +590,11 @@ TEST_F(ConstexprContainersTest, RejectsGetPtrOnConstexprContainer) {
         import std.deque;
         import std.hashmap;
         import std.hashset;
-        constexpr std::Vec<int32> make() { std::Vec<int32> v; v.init(); v.push(1); return v; }
-        constexpr std::Vec<int32> T = make();
+        compile_time std::Vec<int32> make() { std::Vec<int32> v; v.init(); v.push(1); return v; }
+        compile_time std::Vec<int32> T = make();
         int32 main() { int32* p = T.get_ptr(0); return *p; }
     )", "ct_get_ptr.cmm");
-    EXPECT_TRUE(hasErrorContaining(errors, "constexpr container"));
+    EXPECT_TRUE(hasErrorContaining(errors, "compile_time container"));
 }
 
 TEST_F(ConstexprContainersTest, RejectsMutablePointerIntoConstexprData) {
@@ -603,8 +603,8 @@ TEST_F(ConstexprContainersTest, RejectsMutablePointerIntoConstexprData) {
         import std.deque;
         import std.hashmap;
         import std.hashset;
-        constexpr std::Vec<int32> make() { std::Vec<int32> v; v.init(); v.push(1); return v; }
-        constexpr std::Vec<int32> T = make();
+        compile_time std::Vec<int32> make() { std::Vec<int32> v; v.init(); v.push(1); return v; }
+        compile_time std::Vec<int32> T = make();
         int32 main() {
             int32* p = T.data;
             int32* q = T.data + 1;
@@ -613,7 +613,7 @@ TEST_F(ConstexprContainersTest, RejectsMutablePointerIntoConstexprData) {
             return 0;
         }
     )", "ct_data_ptr.cmm");
-    EXPECT_TRUE(hasErrorContaining(errors, "constexpr container"));
+    EXPECT_TRUE(hasErrorContaining(errors, "compile_time container"));
 }
 
 TEST_F(ConstexprContainersTest, RejectsPassingConstexprTableByValue) {
@@ -622,8 +622,8 @@ TEST_F(ConstexprContainersTest, RejectsPassingConstexprTableByValue) {
         import std.deque;
         import std.hashmap;
         import std.hashset;
-        constexpr std::Vec<int32> make() { std::Vec<int32> v; v.init(); v.push(1); return v; }
-        constexpr std::Vec<int32> T = make();
+        compile_time std::Vec<int32> make() { std::Vec<int32> v; v.init(); v.push(1); return v; }
+        compile_time std::Vec<int32> T = make();
         int32 mutate(std::Vec<int32> w) { w.push(2); return w.len; }
         int32 main() { return mutate(T); }
     )", "ct_pass_value.cmm");
@@ -636,8 +636,8 @@ TEST_F(ConstexprContainersTest, AllowsScalarReadFromConstexprTable) {
         import std.deque;
         import std.hashmap;
         import std.hashset;
-        constexpr std::Vec<int32> make() { std::Vec<int32> v; v.init(); v.push(1); return v; }
-        constexpr std::Vec<int32> T = make();
+        compile_time std::Vec<int32> make() { std::Vec<int32> v; v.init(); v.push(1); return v; }
+        compile_time std::Vec<int32> T = make();
         int32 main() {
             int32 n = T.len;
             int32 x = T.get(0);
@@ -655,8 +655,8 @@ TEST_F(ConstexprContainersTest, AllowsShadowingConstexprContainerName) {
         import std.deque;
         import std.hashmap;
         import std.hashset;
-        constexpr std::Vec<int32> make() { std::Vec<int32> v; v.init(); return v; }
-        constexpr std::Vec<int32> T = make();
+        compile_time std::Vec<int32> make() { std::Vec<int32> v; v.init(); return v; }
+        compile_time std::Vec<int32> T = make();
         int32 main() {
             std::Vec<int32> T;
             T.init();

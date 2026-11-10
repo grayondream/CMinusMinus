@@ -1590,8 +1590,8 @@ std::optional<SemanticAnalyzer::ConstValue>
 SemanticAnalyzer::evalConstexprCallCT(CallExprAST& call,
                                       const std::vector<ConstValue>& argValues) {
     auto lookup = [&](const std::string& name) -> FunctionDeclAST* {
-        auto ct = constexprFunctions.find(name);
-        if (ct != constexprFunctions.end()) return ct->second;
+        auto ct = compileTimeFunctions.find(name);
+        if (ct != compileTimeFunctions.end()) return ct->second;
         if (m_ctInFunctionBody) {
             auto all = m_allFunctions.find(name);
             if (all != m_allFunctions.end()) return all->second;
@@ -1986,16 +1986,16 @@ std::optional<SemanticAnalyzer::ConstValue> SemanticAnalyzer::evaluateConstexpr(
                               ? var->name : var->resolvedFunctionName;
             return fn;
         }
-        // A parameter/local of the constexpr function being interpreted shadows
-        // any module-level constexpr variable.
+        // A parameter/local of the compile_time function being interpreted shadows
+        // any module-level compile_time variable.
         if (activeEnv) {
             auto envIt = activeEnv->find(var->name);
             if (envIt != activeEnv->end()) {
                 return envIt->second;
             }
         }
-        auto it = constexprValues.find(var->name);
-        if (it != constexprValues.end()) {
+        auto it = compileTimeValues.find(var->name);
+        if (it != compileTimeValues.end()) {
             return it->second;
         }
         // Enumerator constant.
@@ -2033,8 +2033,8 @@ SemanticAnalyzer::evalConstexprCall(CallExprAST& call, int depth) {
     // compile-time containers need not be marked constexpr, so fall back to
     // the all-functions table.
     auto lookup = [&](const std::string& name) -> FunctionDeclAST* {
-        auto ct = constexprFunctions.find(name);
-        if (ct != constexprFunctions.end()) return ct->second;
+        auto ct = compileTimeFunctions.find(name);
+        if (ct != compileTimeFunctions.end()) return ct->second;
         if (m_ctInFunctionBody) {
             auto all = m_allFunctions.find(name);
             if (all != m_allFunctions.end()) return all->second;
@@ -2299,14 +2299,14 @@ FunctionDeclAST* SemanticAnalyzer::findCtFunction(const std::string& name) {
     if (name.empty()) return nullptr;
     auto it = m_allFunctions.find(name);
     if (it != m_allFunctions.end()) return it->second;
-    auto ct = constexprFunctions.find(name);
-    if (ct != constexprFunctions.end()) return ct->second;
+    auto ct = compileTimeFunctions.find(name);
+    if (ct != compileTimeFunctions.end()) return ct->second;
     const std::string resolved = resolveNamespaceName(name);
     if (resolved != name) {
         it = m_allFunctions.find(resolved);
         if (it != m_allFunctions.end()) return it->second;
-        ct = constexprFunctions.find(resolved);
-        if (ct != constexprFunctions.end()) return ct->second;
+        ct = compileTimeFunctions.find(resolved);
+        if (ct != compileTimeFunctions.end()) return ct->second;
     }
     return nullptr;
 }
@@ -4568,7 +4568,7 @@ void SemanticAnalyzer::visit(CallExprAST& node) {
                 pt = static_cast<TypedefType*>(pt)->aliasedType;
             if (!pt) continue;
             if (ctContainerInfo(pt) && !pt->isConst) {
-                emitError("cannot pass a read-only constexpr container to a "
+                emitError("cannot pass a read-only compile_time container to a "
                               "mutable by-value parameter",
                           *node.args[i]);
             } else if (pt->kind == TypeKind::Pointer) {
@@ -4577,7 +4577,7 @@ void SemanticAnalyzer::visit(CallExprAST& node) {
                     base = static_cast<TypedefType*>(base)->aliasedType;
                 if (base && ctContainerInfo(base) &&
                     !(pt->isConst || base->isConst)) {
-                    emitError("cannot pass a read-only constexpr container to a "
+                    emitError("cannot pass a read-only compile_time container to a "
                                   "mutable pointer parameter",
                               *node.args[i]);
                 }
@@ -4749,8 +4749,8 @@ bool SemanticAnalyzer::tryAnalyzeTemplateCall(CallExprAST& node) {
 
 void SemanticAnalyzer::visit(AssignmentExprAST& node) {
     if (isConstexprContainerExpr(node.lhs.get())) {
-        emitError("cannot mutate constexpr container "
-                      "(materialized constexpr containers are read-only)",
+        emitError("cannot mutate compile_time container "
+                      "(materialized compile_time containers are read-only)",
                   node);
         node.type = nullptr;
         node.isLValue = false;
@@ -4767,12 +4767,12 @@ void SemanticAnalyzer::visit(AssignmentExprAST& node) {
         while (ldecl && ldecl->kind == TypeKind::Typedef)
             ldecl = static_cast<TypedefType*>(ldecl)->aliasedType;
         if (ldecl && ctContainerInfo(ldecl) && !ldecl->isConst) {
-            emitError("cannot copy read-only constexpr container into a mutable container",
+            emitError("cannot copy read-only compile_time container into a mutable container",
                       node);
         }
         if (ldecl && ldecl->kind == TypeKind::Pointer &&
             !(ldecl->isConst || (ldecl->base && ldecl->base->isConst))) {
-            emitError("cannot take a mutable pointer into a read-only constexpr container",
+            emitError("cannot take a mutable pointer into a read-only compile_time container",
                       node);
         }
     }
@@ -5506,16 +5506,16 @@ void SemanticAnalyzer::visit(MethodCallExprAST& node) {
 
     if (isConstexprContainerExpr(node.object.get())) {
         if (isMutatingContainerMethod(node.methodName)) {
-            emitError("cannot mutate constexpr container "
-                          "(materialized constexpr containers are read-only)",
+            emitError("cannot mutate compile_time container "
+                          "(materialized compile_time containers are read-only)",
                       node);
             node.type = nullptr;
             node.isLValue = false;
             return;
         }
         if (node.methodName == "get_ptr") {
-            emitError("cannot take a mutable pointer from a constexpr container "
-                          "(materialized constexpr containers are read-only)",
+            emitError("cannot take a mutable pointer from a compile_time container "
+                          "(materialized compile_time containers are read-only)",
                       node);
             node.type = nullptr;
             node.isLValue = false;
@@ -7258,9 +7258,9 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
         }
     }
 
-    if (node.isConstexpr) {
+    if (node.isCompileTime) {
         if (!node.initExpr) {
-            emitError("constexpr variable '" + node.name + "' must have initializer", node);
+            emitError("compile_time variable '" + node.name + "' must have initializer", node);
         } else {
             // Type the initializer first so overloads and expression result
             // types are resolved before folding (needed for exact widths and
@@ -7268,9 +7268,9 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
             getExprType(*node.initExpr);
             auto folded = evaluateConstexpr(node.initExpr.get());
             if (!folded) {
-                emitError("constexpr variable '" + node.name + "' must be initialized with a constant expression", node);
+                emitError("compile_time variable '" + node.name + "' must be initialized with a constant expression", node);
             } else {
-                constexprValues[node.name] = *folded;
+                compileTimeValues[node.name] = *folded;
                 if (folded->type == ConstValue::CONTAINER) {
                     node.foldedContainer = folded->container;
                 } else {
@@ -7288,7 +7288,7 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
         }
     }
 
-    if (node.initExpr && !node.isConstexpr &&
+    if (node.initExpr && !node.isCompileTime &&
         isConstexprContainerExpr(node.initExpr.get())) {
         Type* declared = node.type;
         while (declared && declared->kind == TypeKind::Typedef)
@@ -7298,12 +7298,12 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
             // for container methods/fields, so a const copy could still write
             // into read-only storage. Only constexpr-to-constexpr copies
             // (deep copies) are accepted.
-            emitError("cannot copy read-only constexpr container into a mutable container",
+            emitError("cannot copy read-only compile_time container into a mutable container",
                       node);
         } else if (declared && declared->kind == TypeKind::Pointer &&
                    !(declared->isConst ||
                      (declared->base && declared->base->isConst))) {
-            emitError("cannot take a mutable pointer into a read-only constexpr container",
+            emitError("cannot take a mutable pointer into a read-only compile_time container",
                       node);
         }
     }
@@ -7433,6 +7433,7 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
         declaredVar->isStaticStorage =
             atGlobalLevel() || node.isStaticLocal || node.isThreadLocal ||
             node.isExternLocal;
+        declaredVar->isCompileTime = node.isCompileTime;
         if (node.foldedContainer) declaredVar->isConstexprContainer = true;
     }
     // SEM-11: remember local variables for the unused-variable check (W3002).
@@ -8302,16 +8303,16 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
     checkDeprecatedTypeUse(node.returnType, node);
     for (auto& p : node.params) checkDeprecatedTypeUse(p->type, node);
 
-    // Validate constexpr function constraints. Container types are allowed so
+    // Validate compile_time function constraints. Container types are allowed so
     // compile-time construction can return/move a table; other aggregates keep
     // the historical literal-type restriction.
-    if (node.isConstexpr) {
+    if (node.isCompileTime) {
         auto isCtLiteral = [this](Type* t) {
             return isIntegerType(t) || isFloatType(t) ||
                    ctContainerInfo(t).has_value();
         };
         if (!isCtLiteral(node.returnType)) {
-            emitError("constexpr function '" + node.name + "' must have literal return type", node);
+            emitError("compile_time function '" + node.name + "' must have literal return type", node);
         }
 
         auto isCtParam = [&](Type* t) {
@@ -8324,16 +8325,16 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
         };
         for (auto& param : node.params) {
             if (!isCtParam(param->type)) {
-                emitError("constexpr function '" + node.name + "' parameter '" + param->name + "' must have literal type", node);
+                emitError("compile_time function '" + node.name + "' parameter '" + param->name + "' must have literal type", node);
             }
         }
     }
 
-    if (node.isConstexpr) {
+    if (node.isCompileTime) {
         // Available to the compile-time evaluator (evaluateConstexpr). Keep
         // both the bare name and the mangled signature so overloads resolve
         // to the exact call-site type instead of the last registered body.
-        constexprFunctions[node.name] = &node;
+        compileTimeFunctions[node.name] = &node;
     }
 
     // FUN-09: validate default parameters — only trailing params may carry a
@@ -8366,8 +8367,8 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
     std::string signature = mangleFunction(node.name, funcType->paramTypes);
     m_allFunctions[node.name] = &node;
     m_allFunctions[signature] = &node;
-    if (node.isConstexpr) {
-        constexprFunctions[signature] = &node;
+    if (node.isCompileTime) {
+        compileTimeFunctions[signature] = &node;
     }
     Symbol* declaredSym = declareSymbol(node.name, funcType);
     if (!declaredSym) {

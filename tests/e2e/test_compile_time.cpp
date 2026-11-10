@@ -104,7 +104,7 @@ static int runSource(const std::string& source, const std::string& filename) {
 TEST_F(CompileTimeE2E, TargetOsIsLinux) {
     // host 上 target.os 必为 "linux"（本测试环境）；== 折叠为编译期常量。
     int r = runSource(R"(
-constexpr int32 isLinux = compile_time.target.os == "linux";
+compile_time int32 isLinux = compile_time.target.os == "linux";
 int32 main() { return isLinux ? 1 : 0; }
 )", "ct_target_os.cmm");
     EXPECT_EQ(r, 1);
@@ -122,11 +122,11 @@ int32 main() { bool d = compile_time.build.debug; return d ? 1 : 0; }
 
 TEST_F(CompileTimeE2E, SizeOfScalars) {
     int r = runSource(R"(
-constexpr usize s32 = compile_time.size_of(int32);
-constexpr usize s64 = compile_time.size_of(float64);
-constexpr usize s8 = compile_time.size_of(int8);
-constexpr usize sb = compile_time.size_of(bool);
-constexpr usize sp = compile_time.size_of(int32*);
+compile_time usize s32 = compile_time.size_of(int32);
+compile_time usize s64 = compile_time.size_of(float64);
+compile_time usize s8 = compile_time.size_of(int8);
+compile_time usize sb = compile_time.size_of(bool);
+compile_time usize sp = compile_time.size_of(int32*);
 int32 main() {
     return (s32 == 4 && s64 == 8 && s8 == 1 && sb == 1 && sp == 8) ? 1 : 0;
 }
@@ -164,17 +164,17 @@ int32 main() {
 
 TEST_F(CompileTimeE2E, ConstVarFromCompileTime) {
     int r = runSource(R"(
-constexpr usize N = compile_time.size_of(float64);
+compile_time usize N = compile_time.size_of(float64);
 int32 main() { return N == 8 ? 1 : 0; }
 )", "ct_constvar.cmm");
     EXPECT_EQ(r, 1);
 }
 
 TEST_F(CompileTimeE2E, ConstExprFnInCompileTime) {
-    // Review Focus 3: constexpr 函数在 compile_time 表达式内（委托路径）。
+    // Review Focus 3: compile_time 函数在 compile_time 表达式内（委托路径）。
     int r = runSource(R"(
-constexpr int32 twice(int32 x) { return x * 2; }
-constexpr int32 r = compile_time.size_of(int32) * 0 + twice(21);
+compile_time int32 twice(int32 x) { return x * 2; }
+compile_time int32 r = compile_time.size_of(int32) * 0 + twice(21);
 int32 main() { return r == 42 ? 1 : 0; }
 )", "ct_constexpr_fn.cmm");
     EXPECT_EQ(r, 1);
@@ -246,7 +246,7 @@ int32 main() { Ghost g; return g.x; }
 
 TEST_F(CompileTimeE2E, ErgonomicsScalarQueries) {
     int r = runSource(R"(
-constexpr bool same = compile_time.is_same(int32, int32);
+compile_time bool same = compile_time.is_same(int32, int32);
 int32 main() {
     compile_time.assert_size(int32, 4);
     compile_time.assert_align(int32, 4);

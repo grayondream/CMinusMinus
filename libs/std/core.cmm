@@ -5,12 +5,12 @@ module std.core;
 
 export namespace std {
 
-constexpr int32 min(int32 a, int32 b) {
+compile_time int32 min(int32 a, int32 b) {
     if (a < b) return a;
     return b;
 }
 
-constexpr int32 max(int32 a, int32 b) {
+compile_time int32 max(int32 a, int32 b) {
     if (a > b) return a;
     return b;
 }

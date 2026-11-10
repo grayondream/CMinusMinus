@@ -941,7 +941,7 @@ llvm::Constant* buildAggregateConstant(CodegenContext& ctx, Type* type,
 }
 
 // ===== Constexpr container materialization =====
-// A constexpr container value becomes immutable module constants: one global
+// A compile_time container value becomes immutable module constants: one global
 // per backing array plus a constant struct matching the runtime ABI.
 static unsigned long g_ctTableId = 0;
 
@@ -1163,9 +1163,9 @@ llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
 
     if (ctx.isGlobalScope()) {
         llvm::Constant* initConstant = nullptr;
-        if (isConstexpr && foldedContainer) {
+        if (isCompileTime && foldedContainer) {
             initConstant = buildCtContainerConstant(ctx, type, *foldedContainer);
-        } else if (isConstexpr && foldedValue) {
+        } else if (isCompileTime && foldedValue) {
             initConstant = foldToConstant(ctx, *foldedValue);
         } else if (initExpr) {
             if (auto* initList = dynamic_cast<InitializerListExprAST*>(initExpr.get())) {
@@ -1214,7 +1214,7 @@ llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
     //     （oldPtr != null）绝不能看到野指针，否则 free(garbage) 崩溃。
     {
         Type* st = stripTypedefs(type);
-        if (st && !initExpr && !isConstexpr) {
+        if (st && !initExpr && !isCompileTime) {
             bool needZero = st->kind == TypeKind::Slice ||
                             st->kind == TypeKind::String ||
                             st->kind == TypeKind::Optional ||
@@ -1227,12 +1227,12 @@ llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
         }
     }
     
-    if (isConstexpr && foldedContainer) {
+    if (isCompileTime && foldedContainer) {
         llvm::Value* constVal = buildCtContainerConstant(ctx, type, *foldedContainer);
         if (constVal) {
             ctx.getBuilder().CreateStore(constVal, alloca);
         }
-    } else if (isConstexpr && foldedValue) {
+    } else if (isCompileTime && foldedValue) {
         llvm::Value* constVal = foldToConstant(ctx, *foldedValue);
         if (constVal) {
             constVal = ctx.castValue(constVal, llvmType);
@@ -1289,13 +1289,13 @@ llvm::Value* VarDeclAST::codegen(CodegenContext& ctx) {
                 //   其余（变量/字段/三元等活值）→ stringCopy 深拷贝到 alloca，
                 //   跳过裸 store（copy 已写三字段）——`string t = s;` 后 s/t 独立。
                 Type* strType = stripTypedefs(type);
-                if (strType && strType->kind == TypeKind::String && !isConstexpr &&
+                if (strType && strType->kind == TypeKind::String && !isCompileTime &&
                     !ctx.isFreshStringValue(*initExpr)) {
                     auto savedIP = ctx.getBuilder().saveIP();
                     llvm::Function* copyFn = ctx.getStringCopyFn();
                     ctx.getBuilder().restoreIP(savedIP);
                     ctx.getBuilder().CreateCall(copyFn, {alloca, initVal});
-                } else if (strType && !isConstexpr &&
+                } else if (strType && !isCompileTime &&
                            (strType->kind == TypeKind::Struct ||
                             strType->kind == TypeKind::Class) &&
                            ctx.aggregateHasStringField(strType)) {

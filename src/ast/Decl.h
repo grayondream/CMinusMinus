@@ -51,7 +51,7 @@ public:
     std::string name;
     Type* type;
     std::unique_ptr<ExprAST> initExpr;
-    bool isConstexpr = false;
+    bool isCompileTime = false;
     std::optional<FoldedValue> foldedValue;
     // Constexpr container value; codegen materializes it as immutable
     // constant arrays + a constant container struct.
@@ -77,7 +77,7 @@ public:
     std::string staticMember;
 
     VarDeclAST(const std::string& n, Type* t, std::unique_ptr<ExprAST> init = nullptr, bool constexpr_ = false)
-        : name(n), type(t), initExpr(std::move(init)), isConstexpr(constexpr_) {}
+        : name(n), type(t), initExpr(std::move(init)), isCompileTime(constexpr_) {}
     llvm::Value* codegen(CodegenContext& ctx) override;
 };
 
@@ -101,7 +101,7 @@ public:
     Type* returnType;
     std::vector<std::unique_ptr<ParamDeclAST>> params;
     std::unique_ptr<CompoundStmtAST> body;
-    bool isConstexpr = false;
+    bool isCompileTime = false;
     bool isVarArg = false;
     // AGG-10: class-body `static` method — no `this` insertion; sema rewrites
     // the name to the desugared `Class_method` global symbol.
@@ -129,7 +129,7 @@ public:
                     std::unique_ptr<CompoundStmtAST>& b, bool constexpr_ = false,
                     bool varArg = false)
         : name(n), returnType(ret), params(std::move(parameters)), body(std::move(b)),
-          isConstexpr(constexpr_), isVarArg(varArg) {}
+          isCompileTime(constexpr_), isVarArg(varArg) {}
     llvm::Value* codegen(CodegenContext& ctx) override;
     // P1-03 / GEN-05: 仅创建签名（无体）——TU codegen 预扫。
     llvm::Value* codegenPrototype(CodegenContext& ctx);

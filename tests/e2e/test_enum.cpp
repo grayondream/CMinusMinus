@@ -92,7 +92,7 @@ TEST_F(EnumE2E, EnumeratorIsConstexpr) {
     // TYP-20: enum -> int is explicit, but still a constant expression.
     EXPECT_EQ(runSource(
         "enum E { X = 3 };\n"
-        "int32 main() { constexpr int32 k = (int32)X; return k - 3; }\n"), 0);
+        "int32 main() { compile_time int32 k = (int32)X; return k - 3; }\n"), 0);
 }
 
 TEST_F(EnumE2E, SwitchOnEnum) {

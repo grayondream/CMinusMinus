@@ -59,7 +59,7 @@ public:
     // 避免 evaluateConstexpr 整树 CT 委托互递归）。
     std::optional<ConstValue> evalConstexprCallCT(CallExprAST& call,
                                                   const std::vector<ConstValue>& argValues);
-    const std::unordered_map<std::string, ConstValue>& getConstexprValues() const { return constexprValues; }
+    const std::unordered_map<std::string, ConstValue>& getCompileTimeValues() const { return compileTimeValues; }
 
     // ---- P1-04 / CT-04/05/12: compile_time 特判 ----
     // 根标识符为 `compile_time` 的成员链判定（含嵌套链 target.os）；
@@ -409,7 +409,7 @@ private:
     // type or a cast target outside its defining class.
     void checkNestedTypeAccess(Type* type, const ASTNode& site);
     TypeContext* typeCtx;
-    std::unordered_map<std::string, ConstValue> constexprValues;
+    std::unordered_map<std::string, ConstValue> compileTimeValues;
 
     // P1-04 / CT-04/05: build 查询注入值与惰性求值器。
     bool m_ctBuildDebug = false;
@@ -419,7 +419,7 @@ private:
     int m_ctRepeatDepth = 0;
     std::unique_ptr<CompileTimeEvaluator> m_ctEval;
     std::unordered_set<std::string> definedFunctions;
-    std::unordered_map<std::string, FunctionDeclAST*> constexprFunctions;
+    std::unordered_map<std::string, FunctionDeclAST*> compileTimeFunctions;
     // All user functions (by source and mangled name). The compile-time
     // evaluator uses this to interpret side-effect-free callbacks such as
     // std.hash's equality functions, which are not marked constexpr.
