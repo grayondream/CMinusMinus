@@ -99,6 +99,69 @@ static int runSource(const std::string& source, const std::string& filename) {
     return fn();
 }
 
+TEST_F(CompileOnlyE2E, CompileOnlyInsideIfCompileTimeAllowed) {
+    EXPECT_EQ(runSource(R"(
+compile_only int32 build(int32 x) { return x * 2; }
+compile_time int32 f(int32 x) {
+    if compile_time {
+        return build(x);
+    } else {
+        return 0;
+    }
+}
+compile_time int32 CT = f(2);
+int32 main() {
+    return f(2) + CT - 4;
+}
+)", "compile_only_guard.cmm"), 0);
+}
+
+TEST_F(CompileOnlyE2E, DirectCallInCompileTimeFunctionRejected) {
+    auto errs = compileErrors(R"(
+compile_only int32 build(int32 x) { return x * 2; }
+compile_time int32 make(int32 x) { return build(x); }
+int32 main() { return make(1); }
+)", "compile_only_direct.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "outside 'if compile_time'"));
+}
+
+TEST_F(CompileOnlyE2E, RuntimeCallChainReportsPath) {
+    auto errs = compileErrors(R"(
+compile_only int32 build(int32 x) { return x * 2; }
+int32 make(int32 x) { return build(x); }
+int32 main() { return make(1); }
+)", "compile_only_runtime.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "main"));
+    EXPECT_TRUE(hasErrorContaining(errs, "make"));
+    EXPECT_TRUE(hasErrorContaining(errs, "build"));
+}
+
+TEST_F(CompileOnlyE2E, CompileOnlyBodyCannotCallRuntimeFunction) {
+    auto errs = compileErrors(R"(
+int32 runtime_helper(int32 x) { return x; }
+compile_only int32 build(int32 x) { return runtime_helper(x); }
+int32 main() { return 0; }
+)", "compile_only_runtime_body.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "cannot call runtime function"));
+}
+
+TEST_F(CompileOnlyE2E, CompileOnlyBodyCannotReadMutableGlobal) {
+    auto errs = compileErrors(R"(
+int32 g = 1;
+compile_only int32 build() { return g; }
+int32 main() { return 0; }
+)", "compile_only_global.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "mutable global"));
+}
+
+TEST_F(CompileOnlyE2E, AddressOfCompileOnlyRejected) {
+    auto errs = compileErrors(R"(
+compile_only int32 build(int32 x) { return x; }
+int32 main() { int32 (*p)(int32) = &build; return p(1); }
+)", "compile_only_addr.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "address"));
+}
+
 TEST_F(CompileOnlyE2E, IfCompileTimeSelectsBothPaths) {
     EXPECT_EQ(runSource(R"(
 compile_time int32 f(int32 x) {

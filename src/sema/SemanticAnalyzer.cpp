@@ -3013,6 +3013,15 @@ void SemanticAnalyzer::visit(VariableExprAST& node) {
             return;
         }
         sym->isUsed = true; // SEM-11: any reference counts as a use (W3002).
+        if (currentFunction && currentFunction->isCompileOnly &&
+            sym->isStaticStorage && !sym->isCompileTime &&
+            !(sym->type && sym->type->kind == TypeKind::Function)) {
+            emitError("compile_only function '" + currentFunction->name +
+                          "' cannot read mutable global '" + originalName + "'", node);
+            node.type = nullptr;
+            node.isLValue = false;
+            return;
+        }
         // PAR-11: reject a reference that escapes any enclosing lambda without
         // being captured by it.
         validateLambdaCaptureReference(originalName, sym, node);
@@ -3308,6 +3317,23 @@ void SemanticAnalyzer::visit(UnaryExprAST& node) {
     }
 
     Type* operandType = getExprType(*node.operand);
+
+    if (node.op == UnaryOp::AddressOf) {
+        if (auto* var = dynamic_cast<VariableExprAST*>(node.operand.get())) {
+            if (var->isFunctionRef) {
+                FunctionDeclAST* fn = findCtFunction(
+                    var->resolvedFunctionName.empty() ? var->name
+                                                      : var->resolvedFunctionName);
+                if (fn && fn->isCompileOnly) {
+                    emitError("cannot take address of compile_only function '" +
+                                  fn->name + "'", node);
+                    node.type = nullptr;
+                    node.isLValue = false;
+                    return;
+                }
+            }
+        }
+    }
 
     if ((node.op == UnaryOp::PreInc || node.op == UnaryOp::PreDec ||
          node.op == UnaryOp::AddressOf) &&
@@ -4593,13 +4619,27 @@ void SemanticAnalyzer::visit(CallExprAST& node) {
         node.resolvedParamTypes = funcType->paramTypes;
         FunctionDeclAST* calleeDecl =
             findCtFunction(mangleFunction(node.callee, funcType->paramTypes));
+        if (calleeDecl && currentFunction) {
+            m_callEdges.push_back({currentFunction, calleeDecl});
+        }
         if (calleeDecl && calleeDecl->isCompileOnly) {
-            const bool allowed = m_inCompileTimeInitializer ||
+            const bool allowed = m_inCompileTimeInitializer || m_inCtOnlyBranch ||
                                  (currentFunction && currentFunction->isCompileOnly);
             if (!allowed) {
-                emitError("compile_only function '" + calleeDecl->name +
-                              "' cannot be called at runtime", node);
+                CompileOnlyViolation v;
+                v.from = currentFunction;
+                v.callee = calleeDecl;
+                v.directInCompileTime = currentFunction &&
+                                        currentFunction->isCompileTime;
+                v.site = &node;
+                m_compileOnlyViolations.push_back(v);
             }
+        } else if (calleeDecl && currentFunction &&
+                   currentFunction->isCompileOnly &&
+                   !calleeDecl->isCompileTime && !calleeDecl->isCompileOnly) {
+            emitError("compile_only function '" + currentFunction->name +
+                          "' cannot call runtime function '" + calleeDecl->name + "'",
+                      node);
         }
     }
     if (funcType) {
@@ -8736,6 +8776,58 @@ void SemanticAnalyzer::visit(NamespaceDeclAST& node) {
     namespaceExported = savedExported;
 }
 
+std::string SemanticAnalyzer::callPathTo(FunctionDeclAST* from) {
+    if (!from) return "";
+    auto mainIt = m_allFunctions.find("main");
+    FunctionDeclAST* root = mainIt == m_allFunctions.end() ? nullptr : mainIt->second;
+    if (!root || from == root) return from->name;
+    std::unordered_map<FunctionDeclAST*, FunctionDeclAST*> parent;
+    std::vector<FunctionDeclAST*> queue{root};
+    std::unordered_set<FunctionDeclAST*> seen{root};
+    for (std::size_t i = 0; i < queue.size(); ++i) {
+        FunctionDeclAST* cur = queue[i];
+        if (cur == from) break;
+        for (const auto& e : m_callEdges) {
+            if (e.from != cur || !e.to || seen.count(e.to)) continue;
+            seen.insert(e.to);
+            parent[e.to] = cur;
+            queue.push_back(e.to);
+        }
+    }
+    if (!parent.count(from)) return from->name;
+    std::vector<std::string> names;
+    for (FunctionDeclAST* cur = from; cur; cur = parent.count(cur) ? parent[cur] : nullptr) {
+        names.push_back(cur->name);
+        if (cur == root) break;
+    }
+    std::reverse(names.begin(), names.end());
+    std::string out;
+    for (std::size_t i = 0; i < names.size(); ++i) {
+        if (i) out += " -> ";
+        out += names[i];
+    }
+    return out;
+}
+
+void SemanticAnalyzer::reportCompileOnlyViolations() {
+    for (const auto& v : m_compileOnlyViolations) {
+        if (!v.callee || !v.site) continue;
+        const std::string path = callPathTo(v.from);
+        if (v.directInCompileTime && v.from) {
+            emitError("compile_only function '" + v.callee->name +
+                          "' cannot be called from compile_time function '" +
+                          v.from->name + "' outside 'if compile_time'\n  path: " +
+                          path + " -> " + v.callee->name,
+                      *v.site);
+        } else {
+            emitError("compile_only function '" + v.callee->name +
+                          "' is not available at runtime\n  runtime path: " +
+                          path + " -> " + v.callee->name,
+                      *v.site);
+        }
+    }
+}
+
 void SemanticAnalyzer::analyze(TranslationUnitAST& ast) {
     errors.clear();
     visit(ast);
@@ -8760,6 +8852,7 @@ void SemanticAnalyzer::analyze(TranslationUnitAST& ast) {
         }
         ast.declarations.push_back(std::move(decl));
     }
+    reportCompileOnlyViolations();
 }
 
 // P1-03 / GEN-03: 解析类型树中的 TypeInstance 占位——递归解析嵌套实参、

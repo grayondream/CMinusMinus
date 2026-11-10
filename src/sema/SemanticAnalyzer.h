@@ -427,6 +427,20 @@ private:
     bool m_inCompileTimeInitializer = false;
     // CT-26: true while analyzing the compile-time branch of `if compile_time`.
     bool m_inCtOnlyBranch = false;
+    struct CallEdge {
+        FunctionDeclAST* from = nullptr;
+        FunctionDeclAST* to = nullptr;
+    };
+    struct CompileOnlyViolation {
+        FunctionDeclAST* from = nullptr;
+        FunctionDeclAST* callee = nullptr;
+        bool directInCompileTime = false;
+        const ASTNode* site = nullptr;
+    };
+    std::vector<CallEdge> m_callEdges;
+    std::vector<CompileOnlyViolation> m_compileOnlyViolations;
+    void reportCompileOnlyViolations();
+    std::string callPathTo(FunctionDeclAST* from);
     // All user functions (by source and mangled name). The compile-time
     // evaluator uses this to interpret side-effect-free callbacks such as
     // std.hash's equality functions, which are not marked constexpr.
