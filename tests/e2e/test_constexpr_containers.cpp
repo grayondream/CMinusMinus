@@ -372,7 +372,7 @@ TEST_F(ConstexprContainersTest, RejectsFieldWriteOnConstexprContainer) {
         compile_time std::Vec<int32> T = make();
         int32 main() { T.len = 0; return 0; }
     )", "ct_mutate_field.cmm");
-    EXPECT_TRUE(hasErrorContaining(errors, "compile_time container"));
+    EXPECT_TRUE(hasErrorContaining(errors, "read-only"));
 }
 
 TEST_F(ConstexprContainersTest, RejectsMutableCopyOfConstexprContainer) {

@@ -231,6 +231,7 @@ private:
     std::optional<ConstValue> evalContainerMember(MemberAccessExprAST& node,
                                                   ConstValue& object);
     bool isConstexprContainerExpr(const ExprAST* expr);
+    bool isCompileTimeVariableExpr(const ExprAST* expr) const;
     FunctionDeclAST* findCtFunction(const std::string& name);
     std::optional<ConstValue> evalCtFunction(FunctionDeclAST* fn,
                                              const std::vector<ConstValue>& args,

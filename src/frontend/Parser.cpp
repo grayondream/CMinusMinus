@@ -4301,9 +4301,9 @@ std::unique_ptr<DeclAST> Parser::parseVariableDecl(Type* type, const std::string
             copy->isAtomic = type->isAtomic;
             copy->isRestrict = type->isRestrict;
             type = copy;
-        } else {
-            type->isConst = true;
         }
+        // Aggregate/array compile_time variables are read-only via the
+        // declaration/symbol flag, never by mutating the shared Type object.
     }
 
     std::unique_ptr<ExprAST> init;

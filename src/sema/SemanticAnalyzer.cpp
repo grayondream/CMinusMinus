@@ -2271,6 +2271,15 @@ bool SemanticAnalyzer::isConstexprContainerExpr(const ExprAST* expr) {
     return sym && sym->isConstexprContainer;
 }
 
+bool SemanticAnalyzer::isCompileTimeVariableExpr(const ExprAST* expr) const {
+    const VariableExprAST* var = rootVariableOf(expr);
+    if (!var) return false;
+    const std::string key = resolveNamespaceName(var->name);
+    const Symbol* sym = currentScope->lookup(key);
+    if (!sym && key != var->name) sym = currentScope->lookup(var->name);
+    return sym && sym->isCompileTime;
+}
+
 std::optional<SemanticAnalyzer::ConstValue>
 SemanticAnalyzer::evalContainerMember(MemberAccessExprAST& node, ConstValue& object) {
     if (!object.container) return std::nullopt;
@@ -3287,6 +3296,18 @@ void SemanticAnalyzer::visit(UnaryExprAST& node) {
     }
 
     Type* operandType = getExprType(*node.operand);
+
+    if ((node.op == UnaryOp::PreInc || node.op == UnaryOp::PreDec ||
+         node.op == UnaryOp::AddressOf) &&
+        isCompileTimeVariableExpr(node.operand.get())) {
+        emitError(node.op == UnaryOp::AddressOf
+                      ? "cannot take a mutable address of compile_time variable"
+                      : "compile_time variable is read-only",
+                  node);
+        node.type = nullptr;
+        node.isLValue = false;
+        return;
+    }
 
     // Review 2.4: `!opt` / `!res` mean "invalid" / "error" before any
     // user-defined operator overload lookup.
@@ -4562,6 +4583,16 @@ void SemanticAnalyzer::visit(CallExprAST& node) {
     if (funcType) {
         for (std::size_t i = 0; i < node.args.size() &&
                                 i < funcType->paramTypes.size(); ++i) {
+            if (isCompileTimeVariableExpr(node.args[i].get())) {
+                Type* cpt = funcType->paramTypes[i];
+                while (cpt && cpt->kind == TypeKind::Typedef)
+                    cpt = static_cast<TypedefType*>(cpt)->aliasedType;
+                if (cpt && cpt->kind == TypeKind::Pointer &&
+                    !(cpt->isConst || (cpt->base && cpt->base->isConst))) {
+                    emitError("cannot pass compile_time variable to a mutable pointer parameter",
+                              *node.args[i]);
+                }
+            }
             if (!isConstexprContainerExpr(node.args[i].get())) continue;
             Type* pt = funcType->paramTypes[i];
             while (pt && pt->kind == TypeKind::Typedef)
@@ -4748,6 +4779,12 @@ bool SemanticAnalyzer::tryAnalyzeTemplateCall(CallExprAST& node) {
 }
 
 void SemanticAnalyzer::visit(AssignmentExprAST& node) {
+    if (isCompileTimeVariableExpr(node.lhs.get())) {
+        emitError("compile_time variable is read-only", node);
+        node.type = nullptr;
+        node.isLValue = false;
+        return;
+    }
     if (isConstexprContainerExpr(node.lhs.get())) {
         emitError("cannot mutate compile_time container "
                       "(materialized compile_time containers are read-only)",
@@ -4972,6 +5009,12 @@ void SemanticAnalyzer::visit(CommaExprAST& node) {
 
 void SemanticAnalyzer::visit(PostfixIncDecExprAST& node) {
     Type* operandType = getExprType(*node.operand);
+    if (isCompileTimeVariableExpr(node.operand.get())) {
+        emitError("compile_time variable is read-only", node);
+        node.type = nullptr;
+        node.isLValue = false;
+        return;
+    }
     // SEM-17: postfix `x++`/`x--` on an aggregate → `operator++(V, int32)` /
     // `operator--(V, int32)` free function (C++ dummy-int convention).
     if (isOperatorOverloadOperand(operandType)) {

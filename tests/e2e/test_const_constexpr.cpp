@@ -72,6 +72,36 @@ static int runSource(const std::string& source, const std::string& filename) {
     return fn();
 }
 
+static std::vector<std::string> compileErrors(const std::string& source,
+                                              const std::string& filename) {
+    Lexer lexer(filename, source);
+    Parser parser(lexer.tokenize());
+    auto ast = parser.parse();
+    std::vector<std::string> errors;
+    for (auto& d : parser.getErrors()) errors.push_back(d.format());
+    if (!ast) return errors;
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    for (auto& d : analyzer.getErrors()) errors.push_back(d.format());
+    return errors;
+}
+
+static bool hasErrorContaining(const std::vector<std::string>& errors,
+                               const std::string& needle) {
+    for (auto& e : errors) {
+        if (e.find(needle) != std::string::npos) return true;
+    }
+    return false;
+}
+
+TEST_F(ConstConstexprE2E, CompileTimeVariableMutationRejected) {
+    auto errs = compileErrors(R"(
+compile_time int32 N = 1;
+int32 main() { N = 2; return N; }
+)", "ct_mutate.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "read-only"));
+}
+
 TEST_F(ConstConstexprE2E, ConstVariable) {
     EXPECT_EQ(runSource(
         "const int32 x = 42; int32 main() { return x; }", "const_var.cmm"), 42);
