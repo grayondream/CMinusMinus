@@ -228,7 +228,7 @@ compile_only DfaTable build_dfa(string_view p) { ... } // CT-only, no symbol
 - `compile_only` 仅支持自由函数；禁止方法、模板、lambda、地址、函数指针、字段、闭包、vtable。
 - `compile_only` 返回 `void` 或定长、可平凡拷贝的 CT 值：标量、enum、固定数组、POD record；
   禁止指针/引用/拥有型 `string`/`string_view`/union/位域/柔性数组/基类槽。
-- `compile_only` 参数允许 CT 值或只读 `string`/`string_view`；禁止指针/引用参数。
+- `compile_only` 参数允许 CT 值或只读 `string_view`；owning `string` 入参在 v1 的调用重载中仍不接受。禁止指针/引用参数。
 - `compile_only` 体内禁止运行期函数调用、I/O、`volatile`、`atomic`、`asm`、可变全局、
   `thread_local`、`defer`、`compile_time.repeat`；允许 `compile_time`/`compile_only` 调用与
   纯 `string`/`string_view` 的 `len()`/`char_at()`。
