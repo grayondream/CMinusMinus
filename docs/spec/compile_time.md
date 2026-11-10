@@ -8,8 +8,9 @@
 
 - 统一命名空间标识符 `compile_time`，成员用 `.` 访问：`compile_time.static_assert(...)`、`compile_time.if (...)`。
 - 旧名 `comptime` 已移除（DEC-18，token 不再存在）。
-- `compile_time` **不是保留关键字**，按普通标识符处理（见 keywords.md §9）。
-- `constexpr`（现有）与 `compile_time` 的关系见 **DEC-05**（见 §10）。
+- `compile_time` **不是保留关键字**：作为声明修饰符或命名空间时按上下文识别（见 keywords.md §9）。
+- `compile_time` 修饰函数/变量；`compile_only` 修饰仅编译期函数（见 §10）。
+- `constexpr` 已从语言删除；出现时给定向迁移诊断。
 
 ## 2. 静态断言（CT-02）
 
@@ -67,9 +68,9 @@ compile_time.if (compile_time.target.os == "linux") {
 ## 6. 编译期求值器（CT-06）
 
 - 解释 AST 常量子集，支持：整数/浮点/布尔/字符串/字符字面量；算术、位、比较、逻辑、三元；常量数组/结构体成员访问；字符串比较/拼接；`size_of`/`align_of`/`offset_of`。
-- 不得产生副作用；禁止运行时调用（除非标注为 `constexpr` 函数，见 §10）。
+- 不得产生副作用；禁止运行时调用（除非标注为 `compile_time` 函数，见 §10）。
 - 递归深度、迭代次数设上限并报诊断（防止编译期爆栈）。
-- 常量折叠（`constexpr`）复用同一求值器（BASE-05）。
+- 常量折叠（`compile_time`）复用同一求值器（BASE-05）。
 
 ## 7. 反射 API（CT-07 / CT-13）
 
@@ -165,7 +166,7 @@ compile_time.repeat(3) {
 
 ### 7.5 编译期容器与常量表
 
-`constexpr` 函数内可以使用 `std.vec` / `std.deque` / `std.hashmap` / `std.hashset`
+`compile_time` 函数内可以使用 `std.vec` / `std.deque` / `std.hashmap` / `std.hashset`
 的四类容器；求值器按运行时 API 语义执行，不解释 `malloc`/`memcpy`/容器方法 AST，
 也不生成运行时分配。
 
@@ -178,7 +179,7 @@ compile_time.repeat(3) {
 | 回调 | `HashMap`/`HashSet` 的 hash/equal 与 `Vec::contains/index_of` 的相等函数须可在编译期求值 |
 | 限制 | 任意指针、嵌套容器、`string` 元素、128 位整数常量暂不支持 |
 
-- `constexpr` 变量（命名空间或块作用域）可以是上述容器类型；初始值折叠后，
+- `compile_time` 变量（命名空间或块作用域）可以是上述容器类型；初始值折叠后，
   codegen 物化为私有只读常量：每个底层数组一个常量全局，加一个与运行时 ABI
   一致的容器结构体。`Vec`/`Deque` 的 `data` 指向常量数组，`Deque` 归一化
   `head = 0`；`HashMap`/`HashSet` 保留开放寻址的 `keys/values/states` 与回调
@@ -186,10 +187,10 @@ compile_time.repeat(3) {
 - 物化后的容器是**只读**的：`push`/`pop`/`put`/`insert`/`remove`/`clear`/
   `destroy`/字段或元素赋值均诊断拒绝；把常量表复制到可变容器、可变变量或
   `const` 容器也拒绝（v1 尚未对容器方法/字段实施 const 检查），按值传给可变
-  形参同样拒绝。`constexpr Vec B = A` 与按值传参在编译期求值中是深拷贝，允许。
+  形参同样拒绝。`compile_time Vec B = A` 与按值传参在编译期求值中是深拷贝，允许。
   `get_ptr` 以及从 `.data` 取得的可变指针也拒绝；只允许 `get`/`len`/`cap`/
   `contains`/`size`/`bucket_count` 与 `.data[i]` 读取。
-- 返回容器类型的 `constexpr` 函数仍是普通运行时函数；`constexpr` 只增加编译期
+- 返回容器类型的 `compile_time` 函数仍是普通运行时函数；`compile_time` 只增加编译期
   求值能力，运行时调用走正常容器分配/拷贝语义。
 - 求值步数上限 1,000,000；未知回调、不可求值操作或超限都会使该常量求值失败并
   给出定位诊断，不会静默退化成运行时值。
@@ -210,13 +211,63 @@ compile_time.repeat(3) {
   仅 `fields_of`/`attributes_of` 保留运行时只读表；`compile_time.repeat` 展开代码但不生成
   运行时循环计数器。
 
-## 10. 与 `constexpr` 的边界（CT-14 / DEC-05）
+## 10. `compile_time` / `compile_only` 声明（CT-23 ~ CT-27 / DEC-05 superseded）
 
-- 现状 `[impl]`：`constexpr` 变量/函数已被解析、常量折叠部分实现，无独立求值器。
-- 选项（待 DEC-05）：
-  1. 合并：`constexpr` 是 `compile_time` 的语法糖；
-  2. 并存：`constexpr` 负责“可常量折叠的普通代码”，`compile_time` 负责“反射/目标查询/元编程”。
-- 两选项都必须满足：**编译期完成、无运行时开销**（ACC-04）。
+### 10.1 语法
+
+```cmm
+compile_time int32 factorial(int32 n) { ... }       // CT + runtime
+compile_time int32 N = factorial(5);                 // implicit read-only
+compile_only DfaTable build_dfa(string_view p) { ... } // CT-only, no symbol
+```
+
+- `compile_time` 和 `compile_only` 是上下文关键字，不新增保留字。
+- `compile_time` 变量隐式只读；只读性记录在声明/符号上，不修改共享 `Type::isConst`。
+- `compile_time` 函数可在常量上下文求值，也可正常运行期调用；运行期 ABI 不变。
+- `compile_only` 函数只存在于编译期：codegen 不发射 `define` 或 `declare`。
+- `compile_only` 仅支持自由函数；禁止方法、模板、lambda、地址、函数指针、字段、闭包、vtable。
+- `compile_only` 返回 `void` 或定长、可平凡拷贝的 CT 值：标量、enum、固定数组、POD record；
+  禁止指针/引用/拥有型 `string`/`string_view`/union/位域/柔性数组/基类槽。
+- `compile_only` 参数允许 CT 值或只读 `string`/`string_view`；禁止指针/引用参数。
+- `compile_only` 体内禁止运行期函数调用、I/O、`volatile`、`atomic`、`asm`、可变全局、
+  `thread_local`、`defer`、`compile_time.repeat`；允许 `compile_time`/`compile_only` 调用与
+  纯 `string`/`string_view` 的 `len()`/`char_at()`。
+- 调用位置：`compile_time` 变量初始化、`compile_only` 体、`if compile_time` 的 then、
+  `compile_time.static_assert`/`compile_time.if` 条件。运行期路径和 `compile_time` 函数体
+  的直接调用（不在 `if compile_time` 内）报错。
+- parser 级数组维度/模板实参使用命名 `compile_time` 常量承接返回值，不直接调用
+  `compile_only`。
+
+### 10.2 `if compile_time`
+
+```cmm
+compile_time int32 table_at(int32 s, int32 c) {
+    if compile_time {
+        return EMAIL_DFA.next[s][c];   // CT path
+    } else {
+        return EMAIL_DFA.next[s][c];   // runtime path (materialized data)
+    }
+}
+```
+
+- 只允许在 `compile_time`/`compile_only` 函数内；两个分支必须用花括号。
+- `compile_time` 函数：CT 求值执行 then，codegen 只发射 else；sema 分析两分支。
+- `compile_only` 函数：CT 只执行 then；函数整体无运行期符号，else 不分析。
+- 普通运行期函数中出现报错。与 `compile_time.if(cond)` 不同：后者按常量条件选分支。
+
+### 10.3 聚合值
+
+- `CtValue::AGGREGATE` + `CtAggregate` 表示固定数组/POD record；数组行优先，record 按字段序。
+- 求值器支持聚合局部、字段/下标读写、聚合参数/返回、深拷贝和递归物化。
+- `compile_time DfaTable EMAIL_DFA = build_dfa("...");` 由 codegen 发射私有只读常量。
+- 资源上限：递归深度 128、步数 1,000,000、聚合元素 1,000,000（单次求值）。
+
+### 10.4 诊断
+
+- 运行期可达链：`main -> make_table -> build_dfa`，附“移入 compile_time 初始化/加 if compile_time”提示。
+- `compile_time` 函数直接调用 `compile_only`：`outside 'if compile_time'`。
+- 地址/值使用、运行期函数调用、可变全局、非法返回类型均有定向诊断。
+- `constexpr`：`'constexpr' has been removed; use 'compile_time' ... or 'compile_only' ...`。
 
 ## 11. 与泛型的关系（GEN-06 / SEM-06）
 
@@ -227,7 +278,7 @@ compile_time.repeat(3) {
 
 | 决策 | 内容 |
 |---|---|
-| DEC-05 | `constexpr` 与 `compile_time` 是否合并 |
+| DEC-05 | 已由 CT-23/24/27 取代：删除 `constexpr`，使用 `compile_time`/`compile_only` |
 | DEC-09 | 内联 `asm`（与 `compile_time` 正交，但共享目标查询） |
 | CT-13 | 反射 API 精确签名与返回类型 |
 | CT-22 | `for_fields`/`for_enum_values` 的 AST 克隆或 codegen 特化方案 |

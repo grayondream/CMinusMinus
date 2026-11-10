@@ -3171,6 +3171,15 @@ void SemanticAnalyzer::visit(VariableExprAST& node) {
         node.name = key;
         node.isFunctionRef = true;
         node.resolvedFunctionName = mangleFunction(node.name, funcType->paramTypes);
+        FunctionDeclAST* fn = findCtFunction(node.resolvedFunctionName);
+        if (fn && fn->isCompileOnly) {
+            emitError("compile_only function '" + fn->name +
+                          "' cannot be used as a value or take its address",
+                      node);
+            node.type = nullptr;
+            node.isLValue = false;
+            return;
+        }
         node.type = new Type(TypeKind::Pointer, funcType);
         node.isLValue = false;
         return;
@@ -4520,6 +4529,21 @@ void SemanticAnalyzer::visit(CallExprAST& node) {
     // Resolve a namespace-qualified or namespace-local callee to its mangled key.
     node.callee = resolveNamespaceName(node.callee);
 
+    if (currentFunction && currentFunction->isCompileOnly) {
+        static const std::unordered_set<std::string> kRuntimeBuiltins = {
+            "print", "println", "assert", "panic", "format", "split",
+            "split_destroy", "str_from_c",
+        };
+        if (kRuntimeBuiltins.count(node.callee)) {
+            emitError("compile_only function '" + currentFunction->name +
+                          "' cannot call runtime builtin '" + node.callee + "'",
+                      node);
+            node.type = nullptr;
+            node.isLValue = false;
+            return;
+        }
+    }
+
     // PAR-11: a callee is a variable reference too. Local function pointers and
     // stored closures must be captured by every enclosing lambda they cross.
     if (!node.isExprCallee && !calleeRef.empty()) {
@@ -5725,6 +5749,17 @@ void SemanticAnalyzer::visit(MemberAccessExprAST& node) {
 void SemanticAnalyzer::visit(MethodCallExprAST& node) {
     // P1-04 / CT-01/02: compile_time 成员调用特判（先于对象解析，理由同链形）。
     if (tryAnalyzeCompileTimeCall(node)) {
+        return;
+    }
+
+    if (currentFunction && currentFunction->isCompileOnly &&
+        node.methodName != "len" && node.methodName != "char_at" &&
+        node.methodName != "char_count") {
+        emitError("compile_only function '" + currentFunction->name +
+                      "' cannot call runtime method '" + node.methodName + "'",
+                  node);
+        node.type = nullptr;
+        node.isLValue = false;
         return;
     }
 
@@ -7320,6 +7355,11 @@ void SemanticAnalyzer::visit(VarDeclAST& node) {
         bool saved;
         ~CtInitGuard() { flag = saved; }
     } ctInitGuard{m_inCompileTimeInitializer, savedCtInit};
+    if (currentFunction && currentFunction->isCompileOnly && node.type &&
+        (node.type->isVolatile || node.type->isAtomic)) {
+        emitError("compile_only function '" + currentFunction->name +
+                      "' cannot use volatile/atomic variables", node);
+    }
     if (m_ctRepeatDepth > 0 && (node.isStaticLocal || node.isThreadLocal)) {
         emitError("static/thread_local local is not supported inside "
                   "compile_time.repeat",
@@ -8757,6 +8797,11 @@ void SemanticAnalyzer::visit(CompileTimeContextIfStmtAST& node) {
 }
 
 void SemanticAnalyzer::visit(CompileTimeRepeatStmtAST& node) {
+    if (currentFunction && currentFunction->isCompileOnly) {
+        emitError("compile_only function '" + currentFunction->name +
+                      "' cannot use compile_time.repeat", node);
+        return;
+    }
     auto count = evalCompileTime(node.count.get(), node);
     if (!count || count->type != ConstValue::INT) {
         emitError("compile_time.repeat count must be a compile-time integer", node);
@@ -9282,6 +9327,13 @@ static bool hasMemoryClassOutputConstraint(const std::string& c) {
 // inputs 必须是标量，约束串非空；模板 `%` 后只能是 `%`（转义）或数字（操作数
 // 引用）。约束/模板的语义合法性交由 LLVM 后端（D2）。
 void SemanticAnalyzer::visit(AsmExprAST& node) {
+    if (currentFunction && currentFunction->isCompileOnly) {
+        emitError("compile_only function '" + currentFunction->name +
+                      "' cannot use asm", node);
+        node.type = nullptr;
+        node.isLValue = false;
+        return;
+    }
     node.type = typeCtx->getVoid();
     node.isLValue = false;
 
@@ -9634,6 +9686,11 @@ void SemanticAnalyzer::visit(ModuleDeclAST& node) {
 }
 
 void SemanticAnalyzer::visit(DeferStmtAST& node) {
+    if (currentFunction && currentFunction->isCompileOnly) {
+        emitError("compile_only function '" + currentFunction->name +
+                      "' cannot use defer", node);
+        return;
+    }
     // defer 语句：检查表达式是否有效
     if (node.callExpr) {
         visit(*node.callExpr);

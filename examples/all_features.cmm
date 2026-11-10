@@ -650,11 +650,11 @@ void section_casts() {
 }
 
 // ---------------------------------------------------------------------------
-// 18. constexpr 常量 / constexpr 函数 / compile_time 查询与条件编译
+// 18. compile_time 常量 / compile_time 函数 / compile_time 查询与条件编译
 // ---------------------------------------------------------------------------
-constexpr usize N = compile_time.size_of(float64);
-constexpr int32 ct_twice(int32 x) { return x * 2; }
-constexpr int32 ct42 = compile_time.size_of(int32) * 0 + ct_twice(21);
+compile_time usize N = compile_time.size_of(float64);
+compile_time int32 ct_twice(int32 x) { return x * 2; }
+compile_time int32 ct42 = compile_time.size_of(int32) * 0 + ct_twice(21);
 
 compile_time.static_assert(compile_time.size_of(int32) == 4, "int32 is 4 bytes");
 compile_time.if (compile_time.target.os == "linux") {
@@ -664,9 +664,9 @@ compile_time.if (compile_time.target.os == "linux") {
 }
 
 void section_compile_time() {
-    println("== 18. constexpr + compile_time ==");
+    println("== 18. compile_time ==");
     check(N == 8, "compile_time.size_of const");
-    check(ct42 == 42, "constexpr function in ct expr");
+    check(ct42 == 42, "compile_time function in ct expr");
     check(compile_time.size_of(struct BF) == 8, "size_of aggregate");
     check(compile_time.align_of(float64) == 8, "align_of");
     check(compile_time.offset_of(struct R, "b") == 4, "offset_of");
@@ -717,10 +717,10 @@ void section_libc() {
 }
 
 // ---------------------------------------------------------------------------
-// 21. 算术转换 / const·constexpr / 全局 / 方法数组参数
+// 21. 算术转换 / const·compile_time / 全局 / 方法数组参数
 // ---------------------------------------------------------------------------
 const int32 g_const = 7;
-constexpr int32 g_ctexpr = 10 * 4 + 2;
+compile_time int32 g_ctexpr = 10 * 4 + 2;
 int32 g_zero;
 int32 g_init = 5;
 int32 g_counter;
@@ -744,10 +744,10 @@ int32 take_slice(int32[] s) {
 void section_conversions() {
     println("== 21. conversions / const / globals ==");
     const int32 cx = 42;
-    constexpr int32 cy = 42 - 2;
-    check(cx == 42 && cy == 40, "const / constexpr vars");
+    compile_time int32 cy = 42 - 2;
+    check(cx == 42 && cy == 40, "const / compile_time vars");
     check(g_const * 6 == 42, "global const");
-    check(g_ctexpr == 42, "global constexpr expr");
+    check(g_ctexpr == 42, "global compile_time expr");
     check(g_zero == 0, "uninitialized global zero-init");
     check(g_init == 5, "initialized global value");
     bump_global(); bump_global();
@@ -1005,6 +1005,44 @@ void section_atomic_thread() {
     std::atomic_thread_fence_seq_cst();
 }
 
+// ---------------------------------------------------------------------------
+// 29. compile_only + 编译期定长数组/POD 聚合
+// ---------------------------------------------------------------------------
+struct DfaTable {
+    int32 next[4][8];
+    int32 initial;
+};
+
+compile_only DfaTable build_dfa(string_view pattern) {
+    DfaTable t;
+    for (usize s = 0; s < 4; s = s + 1) {
+        for (usize c = 0; c < 8; c = c + 1) {
+            t.next[s][c] = 0;
+        }
+    }
+    t.initial = 0;
+    for (usize i = 0; i < pattern.len(); i = i + 1) {
+        t.next[0][i] = pattern.char_at(i);
+    }
+    return t;
+}
+
+compile_time DfaTable EMAIL_DFA = build_dfa("abc");
+
+compile_time int32 dfa_at(int32 state, int32 c) {
+    if compile_time {
+        return EMAIL_DFA.next[state][c];
+    } else {
+        return EMAIL_DFA.next[state][c];
+    }
+}
+
+void section_compile_only() {
+    println("== 29. compile_only / DfaTable ==");
+    check(EMAIL_DFA.next[0][1] == 'b', "compile_time aggregate table");
+    check(dfa_at(0, 2) == 'c', "if compile_time runtime path");
+}
+
 int32 main() {
     section_types();
     section_aliases();
@@ -1034,6 +1072,7 @@ int32 main() {
     section_declarations();
     section_p1p2_syntax();
     section_atomic_thread();
+    section_compile_only();
     if (fails == 0) {
         println("ALL FEATURES OK");
     }

@@ -259,6 +259,30 @@ int32 main() { return 0; }
     EXPECT_TRUE(hasErrorContaining(errs, "cannot call runtime function"));
 }
 
+TEST_F(CompileOnlyE2E, CompileOnlyValueUseRejected) {
+    auto errs = compileErrors(R"(
+compile_only int32 build(int32 x) { return x; }
+int32 main() { int32 (*p)(int32) = build; return p(1); }
+)", "compile_only_value.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "value"));
+}
+
+TEST_F(CompileOnlyE2E, CompileOnlyBodyCannotPrint) {
+    auto errs = compileErrors(R"(
+compile_only int32 build() { print("x"); return 0; }
+int32 main() { return 0; }
+)", "compile_only_print.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "runtime"));
+}
+
+TEST_F(CompileOnlyE2E, CompileOnlyBodyCannotUseVolatile) {
+    auto errs = compileErrors(R"(
+compile_only int32 build() { volatile int32 x = 1; return x; }
+int32 main() { return 0; }
+)", "compile_only_volatile.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "volatile"));
+}
+
 TEST_F(CompileOnlyE2E, CompileOnlyBodyCannotReadMutableGlobal) {
     auto errs = compileErrors(R"(
 int32 g = 1;

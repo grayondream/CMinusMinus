@@ -1273,3 +1273,31 @@
   - **Important**：`collectImportSpecifiers` 不再把 `import a::b` 预加载成部分模块 `a`；`compile_time.if` 死分支用统一 `isClassLikeRecord` 毒化/移除 class-like struct；struct 解析前按方法/访问段预注册 self 类型占位；`struct`/`class` 交叉继承（含字段查找/访问级别）已支持。
   - **Deferred**：局部作用域内带方法的 record（`int32 main(){ struct S{...} s; }`）仍会崩溃；class 等价写法同样崩溃，属既有独立缺陷，不在本轮 record 文法范围内。
 - 验证：`ctest --test-dir build -j8` **1829/1829** 通过；`build/bin/cmm examples/all_features.cmm -o /tmp/opencode/all_features` 编译成功（仅既有 W3001/W3002 警告），运行输出包含 `ALL FEATURES OK`，退出码 0。
+
+## 2026-11-10 — compile_time / compile_only 设计草案
+
+- 背景：用户要求删除 `constexpr`，改为 `compile_time`（编译期可求值、运行期可调用）+ `compile_only`（仅编译期、无运行期符号），并完整支持 `DfaTable` 这类定长数组/POD 聚合返回。
+- 已确认决策：`compile_time` 变量隐式只读；`compile_time` 函数内直接调用 `compile_only`（不在 `if compile_time` 内）报错；聚合返回必须进第一版（选项 A）。
+- 新增设计：`docs/superpowers/specs/2026-11-10-compile-time-compile-only-design.md`。
+  - 语法：`compile_time` 函数/变量、`compile_only` 自由函数、`if compile_time` 双路径；`constexpr` 硬删除并给迁移诊断。
+  - 语义：CT 上下文表、`compile_only` 调用链诊断、无运行期符号、资源上限。
+  - 值模型：`CtValue::AGGREGATE` + `CtAggregate`，支持嵌套定长数组/POD record、lvalue 路径、递归物化。
+  - 迁移/测试/实现阶段已列出。
+- 当前状态：仅设计，未改代码；待用户批准后写实施计划。基线仍为 **1829/1829**。
+
+## 2026-11-10 — compile_time / compile_only 实施计划
+
+- 用户批准设计及 v1 边界：`compile_only` 返回值通过命名 `compile_time` 常量进入 parser 级数组维度/模板实参；直接调用不纳入第一版。
+- 新增计划：`docs/superpowers/plans/2026-11-10-compile-time-compile-only.md`，拆为 8 个 TDD 任务：改名迁移、变量只读、`compile_only` 无符号、`if compile_time`、调用链/函数体限制、聚合值模型、聚合求值+DfaTable、文档/示例/全量验证。
+- 执行方式：按用户既有约束使用 native（当前会话逐任务实现），不使用 per-task subagent。
+- 当前仍未改代码；基线 **1829/1829**。
+
+## 2026-11-10 — compile_time / compile_only 实现完成
+
+- 语言层：`constexpr` 删除；`compile_time` 函数/变量、变量隐式只读、`compile_only` 自由函数、`if compile_time` 双路径。
+- 求值器：`CtAggregate` 定长数组/POD record、聚合 lvalue 路径（字段/下标）、聚合参数/返回深拷贝、递归 LLVM 常量物化。
+- 安全边界：`compile_only` 无 `define`/`declare`；运行期可达链、`compile_time` 函数直接调用、地址/值使用、运行期函数调用、可变全局、非法返回类型均诊断。
+- 资源：depth 128、steps 1,000,000、aggregate elements 1,000,000。
+- 迁移：`libs/std/*.cmm`、e2e/sema/driver 测试、`examples/all_features.cmm`、`docs/spec/{compile_time,grammar,keywords,semantics,stdlib,conversions}.md`。
+- 新增 e2e：`tests/e2e/test_compile_only.cpp`（10 项），覆盖 DfaTable、IR 无 `build_dfa`、聚合深拷贝、step limit、调用链。
+- 验证：全量 `ctest --test-dir build -j8` **1851/1851** 通过；`build/bin/cmm examples/all_features.cmm` 输出 `ALL FEATURES OK`，退出码 0。

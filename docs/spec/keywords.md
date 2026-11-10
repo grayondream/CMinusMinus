@@ -38,7 +38,7 @@
 |---|---|---|
 | `const` | `[impl]` | |
 | `auto` | `[impl]` | 仅用于变量声明的类型推导，必须有初始化器（Review 2.6） |
-| `constexpr` | `[impl]` | 与 `compile_time` 关系见 DEC-05 |
+| `constexpr` | `[removed]` | 已删除；出现即报迁移诊断，改用 `compile_time` 或 `compile_only`（CT-27） |
 | `static` | `[impl]` | |
 | `extern` | `[impl]` | C 链接（MOD-09） |
 | `volatile` | `[impl]` | |
@@ -90,11 +90,12 @@
 
 | 关键字 | 状态 | 说明 |
 |---|---|---|
-| `constexpr` | `[impl]` | 见 §2 |
+| `constexpr` | `[removed]` | 见 §2；定向迁移诊断保留 |
 | `true` / `false` | `[impl]` | 布尔字面量 |
 | `null` | `[impl]` | 唯一空指针字面量；`nullptr` 不再是关键字（Review 2.3） |
 | `comptime` | `[remove]` | 统一并入 `compile_time`；token 已移除（CT-01 / NG-12 / DEC-18） |
-| `compile_time` | `[impl]` | 编译期命名空间（非保留字，按标识符处理即可） |
+| `compile_time` | `[impl]` | 上下文关键字：声明修饰符（函数/变量）+ 编译期命名空间 |
+| `compile_only` | `[impl]` | 上下文关键字：仅编译期自由函数；无运行期符号（CT-24） |
 | `static_assert` | `[impl]` | 作为 `compile_time.static_assert`，**不设独立关键字**（NG-12） |
 | `sizeof` | `[impl]` | 一元运算符 |
 | `alignof` / `offsetof` | `[impl]` | 独立关键字形式已实现（PAR-14） |

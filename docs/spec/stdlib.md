@@ -77,8 +77,8 @@ namespace 前缀，`namespace std { void abort() { abort(); } }` 会自递归，
 
 | 名字 | 签名 | 说明 |
 |---|---|---|
-| `std::min` | `constexpr int32 min(int32, int32)` | 较小值 |
-| `std::max` | `constexpr int32 max(int32, int32)` | 较大值 |
+| `std::min` | `compile_time int32 min(int32, int32)` | 较小值 |
+| `std::max` | `compile_time int32 max(int32, int32)` | 较大值 |
 | `std::clamp` | `int32 clamp(int32 v, int32 lo, int32 hi)` | 区间截断 |
 
 `optional<T>`/`result<T,E>`（STD-02，2026-10-06）由**语言内建**承载：伪字段
@@ -279,7 +279,7 @@ mimalloc 分配底层区。`Pool` 是固定大小自由链表，`pool_destroy` �
 ## 13. `std.math`（P1-09 / STD-13）`[impl]`
 
 `import std.math;` 后用 `std::sqrt(...)` 等。libc 绑定（驱动自动追加 `-lm`；
-JIT 经进程符号解析）+ `constexpr` 常量 + 位级浮点分类。
+JIT 经进程符号解析）+ `compile_time` 常量 + 位级浮点分类。
 
 | 函数/常量 | 语义 |
 |---|---|
@@ -288,7 +288,7 @@ JIT 经进程符号解析）+ `constexpr` 常量 + 位级浮点分类。
 | `float64 floor/ceil/round/trunc(float64)`（`float32` 对应 `floorf/ceilf/roundf/truncf`） | 取整族 |
 | `float64 pow(float64,float64)` / `float32 powf(float32,float32)` | 幂 |
 | `float64 cos/cosf`、`sin/sinf` | 三角函数 |
-| `constexpr float64 PI` / `constexpr float64 E` | 圆周率 / 自然常数 |
+| `compile_time float64 PI` / `compile_time float64 E` | 圆周率 / 自然常数 |
 | `bool isnan(float64)` / `bool isinf(float64)` / `bool is_finite(float64)` | IEEE754 位级分类（纯语言，不依赖 libc 分类宏） |
 
 **C 符号名说明**：namespace 内 extern C 函数保持 C 裸符号名（`std::sqrt` 链接
@@ -319,7 +319,7 @@ JIT 经进程符号解析）+ `constexpr` 常量 + 位级浮点分类。
 - 键/值/元素不自动销毁：`string` 等拥有型元素须在 `destroy()` 前自行清理。
 - 哈希/相等通过函数指针参数注入（无 trait）；`std.hash` 提供整数与 `string_view` 适配器。
 - 各容器模块只依赖 `std.mem`；`uint8` 状态数组的字节宽度由类型本身保证。
-- 四种容器可在 `constexpr` 求值器中执行；`constexpr` 容器变量由 codegen 物化为
+- 四种容器可在 `compile_time` 求值器中执行；`compile_time` 容器变量由 codegen 物化为
   只读常量数组 + 常量结构体，运行时可经正常 `get`/`contains`/`size` 读取。详见
   [`compile_time.md`](./compile_time.md) §7.5。
 
@@ -461,7 +461,7 @@ detach 后 `join` 均返回 `false` 并写 `last_error`。`Thread` 无析构函�
 - `std.fs`：目录遍历、`stat` 元数据、原子写入；`std.os`：argv/进程控制。
 - `std.testing` + `cmm test` runner（TOOL-01）。
 - `std.atomic`：16 字节/`int128`/`float128`、聚合原子、`atomic_ref`/`atomic_flag`、
-  constexpr atomic 语义；任意 CAS 组合的可读模板常量写法。
+  compile_time atomic 语义；任意 CAS 组合的可读模板常量写法。
 - `std.thread`：mutex/condition_variable、跨平台线程后端、`jthread`/取消、
   多参数/C 捕获 lambda 入口。
 - `assert` 的 Release 释放模式若需要，随 DEC-06/07 裁决；当前**始终启用**。

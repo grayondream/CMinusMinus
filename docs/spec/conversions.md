@@ -126,7 +126,7 @@
 
 ## 7. 常量求值与溢出
 
-- `constexpr` / 常量折叠 `[impl]`（BASE-05）。
+- `compile_time` / 常量折叠 `[impl]`（BASE-05）。
 - 整型字面量溢出诊断：见 LEX-17 `[impl]`——二/八/十六/十进制按 64 位无符号累加，超过 64 位报 `E0003`；分隔符 `_` 仅可位于两个数字之间，违规报 `E0004`（`src/frontend/Lexer.cpp`）。
 - 字面量默认类型与后缀（LEX-15，词法层）`[impl]`：无后缀整型 → `int32`，`u` → `uint32`，`l` → `int64`，`ul`/`lu` → `uint64`；无后缀浮点 → `float64`，`f`/`f32` → `float32`，`f16`/`f64`/`f128` → 对应类型。结果经 `Token::literalKind` + `literalKindName` 暴露；AST/sema/codegen 按字面量类型参与推导与 codegen 已实现（LEX-15 消费端：AST 携带 `literalKind`，sema 按 kind 赋定宽类型，codegen 按宽度/符号与 APFloat 语义生成常量）。
 - 浮点指数（LEX-05）`[impl]`：`e`/`E` + 可选 `+`/`-` + 十进制数字，数字间允许 `_`；带指数者即使无小数点为浮点，默认 `float64`，后缀照常生效（如 `1e10f`→`float32`）。`e` 后不足一个数字时不构成指数（`1e` → `1` + 标识符 `e`）。

@@ -113,7 +113,9 @@
 
 ## 7. 编译期求值边界（CT-14 / DEC-05）
 
-- `constexpr`（`[impl]`）与 `compile_time`（`[plan]`）的职责边界待定：是否合并、各自可访问的能力，见 **DEC-05**。
+- `constexpr` 已删除（CT-27）；`compile_time` 修饰可在编译期求值/运行期调用的函数与隐式只读变量，`compile_only` 修饰仅编译期存在、无运行期符号的自由函数（CT-23/24）。
+- `if compile_time { ... } else { ... }` 在 `compile_time` 函数中 CT 选 then、运行期只出 else；在 `compile_only` 中只走 then；普通运行期函数中使用报错（CT-26）。
+- `compile_only` 调用只允许进入 CT 上下文；运行期可达路径（如 `main -> f -> build_dfa`）按完整链诊断。
 - `compile_time` 必须 **零运行时开销**（ACC-04），求值结果以 LLVM 常量落地（CT-12）。
 - 沙箱：限制文件/网络/系统访问（CT-11）。
 

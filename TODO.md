@@ -1,5 +1,7 @@
 # Cmm 1.0 详细待办（工程 backlog）
 
+> **进度快照（2026-11-10，compile_time / compile_only 完成）**：语言层 `constexpr` 删除，改为 `compile_time`（编译期可求值 + 运行期可调用）与 `compile_only`（仅编译期、无运行期符号）；`compile_time` 变量隐式只读；`if compile_time { ... } else { ... }` 双路径；`compile_only` 支持定长数组/POD 聚合返回，`DfaTable` 用例写入 `examples/all_features.cmm`。调用链诊断覆盖 `main -> f -> build_dfa`；资源上限保留 depth=128、steps=1,000,000、aggregate elements=1,000,000。全量 **1851/1851** 通过，示例输出 `ALL FEATURES OK`。设计/计划：`docs/superpowers/{specs,plans}/2026-11-10-compile-time-compile-only*`。
+
 > **进度快照（2026-11-09，module/namespace 职责分离 + record 文法统一）**：`module`/`import` 只使用点分路径，`namespace` 声明与限定访问只使用 `::`；`import` 只控制可见性——模块根部导出保持非限定访问，namespace 成员必须限定访问（`import std.vec;` → `std::Vec`，不是 `Vec` 或 `std.vec::Vec`）。`struct`/`class` 合并到同一 `parseRecordDecl(bool)`：两者都支持字段、方法、运算符、静态成员、嵌套类型、`using`、访问段与 attached declarator；`struct` 默认 public，`class` 默认 private。带方法/访问段的 `struct` 复用 `ClassType`，纯数据 `struct` 仍为 `StructType`；`union` 模型不变。全量 **1829/1829** 通过，`examples/all_features.cmm` 输出 `ALL FEATURES OK`。终审补丁还修复了：elaborated `struct S` 引用优先解析 ClassType、前向声明不生成空 LLVM 类型、attachedVars 在前向+定义路径不丢、`import a::b` 驱动预扫描不再预加载部分模块、`compile_time.if` 死分支的 class-like struct 毒化、struct 自引用方法/字段、struct/class 交叉继承。`string`/`string_view` 迁移与删除 `struct` 仍为后续项。
 
 > **进度快照（2026-11-07，Cmm 硬改名）**：语言正式命名 **Cmm（C minus minus）**，源文件后缀 **`.cmm`**；CLI/CMake 项目/LLVM module/安装路径统一为 `cmm`/`Cmm`，C++ 内部 namespace 统一为 `cmm`，内部 builtin 与 helper 改为 `__cmm_*`/`cmm.*`。公开语言命名空间与标准库模块保持 `std`。旧扩展名输入/导入明确拒绝。全量 **1802/1802** 通过，`examples/all_features.cmm` 输出 `ALL FEATURES OK`。
@@ -350,6 +352,11 @@
 - `[x]` **CT-20** `(新)` 类型值与模板内省：`type_of/array_of/pointer_to/const_of`、`is_convertible/is_assignable`、`template_name_of/template_arg_*`（2026-11-01）。
 - `[x]` **CT-21** `(新)` `compile_time.repeat(N) { ... }` 编译期展开（上限 1024；零运行时循环）（2026-11-01）。
 - `[ ]` **CT-22** `(新)` `compile_time.for_fields(T, f)` / `for_enum_values(E, v)`——需要 AST 克隆或 codegen 特化，单独设计（不伪装成运行时循环）。
+- `[x]` **CT-23** `(新，2026-11-10 完成)` `compile_time` 函数/变量修饰符替代 `constexpr`；变量隐式只读；函数编译期可求值、运行期可调用。
+- `[x]` **CT-24** `(新，2026-11-10 完成)` `compile_only` 自由函数：仅编译期求值、无运行期符号；禁止地址/函数指针/字段/闭包/vtable；调用链诊断。
+- `[x]` **CT-25** `(新，2026-11-10 完成)` 编译期定长数组/POD 聚合值：`CtAggregate`、lvalue 路径、递归物化；支持 `DfaTable`。
+- `[x]` **CT-26** `(新，2026-11-10 完成)` `if compile_time { ... } else { ... }` 双路径（C++ `if consteval` 对应物）。
+- `[x]` **CT-27** `(新，2026-11-10 完成)` 语言层 `constexpr` 删除与 stdlib/tests/examples/docs 迁移。
 
 ---
 
@@ -516,7 +523,7 @@
 - `[x]` **DEC-02** `import math;` 后符号访问语法：**import 只控制可见性**。模块**根部**导出直接非限定访问（`add`）；namespace 内的导出必须限定访问（`g::add`）。模块名不产生 `math.add` / `math::add` 式限定；module 是物理边界，namespace 是逻辑名字边界。
 - `[x]` **DEC-03** `Result<T,E>` 精确布局与 `.error`/`.value` 语义（显式访问，无 `?`）。**裁决**（2026-10-06，DS4）：`{ bool ok; T value; E error; }` 三字段加判别标志——两字段草案无法区分成功/失败，哨兵约定与任意 E 冲突；与 Optional `{ bool valid; T value; }` 对称。实现见 TYP-14。
 - `[ ]` **DEC-04** 默认参数范围；**确认不做**命名参数。
-- `[x]` **DEC-05** `constexpr` 与 `compile_time` 的关系——裁决：并存 + 共享求值器内核（2026-10-06）；constexpr 保持既有语义（运行时可调用），CT 表达式内 constexpr 函数调用委托 `evaluateConstexpr`。
+- `[x]` **DEC-05** `constexpr` 与 `compile_time` 的关系——裁决：并存 + 共享求值器内核（2026-10-06）；constexpr 保持既有语义（运行时可调用），CT 表达式内 constexpr 函数调用委托 `evaluateConstexpr`。**2026-11-10 设计草案推翻**：删除 `constexpr`，改由 `compile_time`（可运行期调用）与 `compile_only`（无运行期符号）承担；见 CT-23/24/27。
 - `[ ]` **DEC-06** Slice/数组边界检查默认策略：静态可证 or 运行时检查，Debug/Release 差异。
 - `[ ]` **DEC-07** 整数溢出默认行为：Debug 检查 / Release 回绕。
 - `[x]` **DEC-08** 位域布局对齐哪个 C ABI（System V / MSVC）；与 `[[packed]]`/`[[align]]` 交互。**完成**（2026-10-15，P1-07）：对齐 System V / GCC x86-64（非 packed）；packed 用 GCC packed 语义（连续位流 + 零宽按声明类型自然边界取整），各尺寸与 gcc 实测逐一核对；`[[packed]]` 下 bit-field 自然对齐不抬整体对齐。

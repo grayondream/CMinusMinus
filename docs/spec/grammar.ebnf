@@ -122,8 +122,10 @@ qualified-name      = identifier , { '::' , identifier } ;          (* [impl] ':
    §3 声明（PAR-01 / PAR-02 / PAR-21 / GEN / INH）
    ========================================================================= *)
 
-declaration         = [ storage-class ] , decl-core ;
+declaration         = [ 'compile_time' ] , [ storage-class ] , decl-core
+                    | 'compile_only' , function-decl ;
 storage-class       = 'extern' | 'static' | 'inline' | 'thread_local' ;   (* [impl] thread_local CON-04；块内 extern 2026-10-26 *)
+(* [impl] CT-23/24：compile_time/compile_only 为上下文关键字；constexpr 已移除。 *)
 
 decl-core           = type-alias
                     | record-decl
@@ -186,7 +188,7 @@ bit-field-decl      = type , identifier , ':' , const-expr , ';' ;
 enum-decl           = 'enum' , identifier , [ ':' , type ]
                       [ '{' , enumerator , { ',' , enumerator } , [ ',' ] , '}' ] , ';' ;
 (* [impl] 底层类型 ':uint8' 等已实现（默认 i32；TYP-09/TYP-25）
-   [impl] TYP-25 / AGG-14：枚举常量为编译期 int32，可参与运算与 constexpr；
+   [impl] TYP-25 / AGG-14：枚举常量为编译期 int32，可参与运算与 compile_time；
           作为 switch 标签；namespace 内支持限定访问 A::Red *)
 enumerator          = identifier , [ '=' , const-expr ] ;
 
@@ -280,6 +282,7 @@ statement           = declaration-statement
                     | return-statement
                     | defer-statement
                     | compile-time-if
+                    | compile-time-context-if
                     | compile-time-repeat
                     | asm-statement ;                               (* [impl] asm PAR-16/CG-10 P1-08 *)
 
@@ -305,6 +308,9 @@ defer-statement     = 'defer' , expr , ';' ;
 
 compile-time-if     = 'compile_time' , '.' , 'if' , '(' , const-expr , ')' , block , [ 'else' , block ] ;
 (* [impl] CT-03 *)
+
+compile-time-context-if = 'if' , 'compile_time' , block , [ 'else' , block ] ;
+(* [impl] CT-26：then 只走编译期；运行期只发射 else；仅 compile_time/compile_only 函数内 *)
 
 compile-time-repeat = 'compile_time' , '.' , 'repeat' , '(' , const-expr , ')' , block ;
 (* [impl] CTX-01/E2：sema 求值计数，codegen 展开 N 份；不生成运行时循环 *)
