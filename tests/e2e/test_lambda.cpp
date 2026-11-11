@@ -511,3 +511,36 @@ TEST_F(LambdaE2E, AutoReturnCompileTimeRejected) {
     )", "auto_ret_ct.cmm");
     EXPECT_TRUE(hasErrorContaining(errs, "compile_time"));
 }
+
+TEST_F(LambdaE2E, ByReferenceClosureReturnRejected) {
+    auto errs = compileErrors(R"(
+        auto bad() {
+            int32 x = 7;
+            return [&x]() -> int32 { return x; };
+        }
+        int32 main() { return 0; }
+    )", "auto_ret_ref.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "by-reference captures cannot escape by return"));
+}
+
+TEST_F(LambdaE2E, IndirectByReferenceClosureReturnRejected) {
+    auto errs = compileErrors(R"(
+        auto bad() {
+            int32 x = 7;
+            auto f = [&x]() -> int32 { return x; };
+            return f;
+        }
+        int32 main() { return 0; }
+    )", "auto_ret_ref_indirect.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "by-reference captures cannot escape by return"));
+}
+
+TEST_F(LambdaE2E, ByReferenceClosureLocalCallStillAllowed) {
+    EXPECT_EQ(runSource(R"(
+        int32 main() {
+            int32 x = 7;
+            auto f = [&x]() -> int32 { return x; };
+            return f() - 7;
+        }
+    )", "lambda_ref_local_ok.cmm"), 0);
+}

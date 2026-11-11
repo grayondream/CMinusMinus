@@ -358,6 +358,9 @@ private:
     // Rewrite a bare field name to `this->name` when the innermost lambda
     // captures `this`. Returns true when the rewrite happened.
     bool desugarImplicitThis(VariableExprAST& node, const std::string& name);
+    // Reject returning a closure whose environment points into the creating
+    // frame (by-reference capture or captured `this`).
+    void checkClosureReturnEscape(Type* returnValueType, const ASTNode& at);
 
     void visit(ExprAST& expr);
     void visit(StmtAST& stmt);

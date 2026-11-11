@@ -6766,6 +6766,10 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
     }
     if (!retType) retType = typeCtx->getVoid();
     node.returnType = retType;
+    const bool closureHasByRefCapture =
+        std::any_of(effective.begin(), effective.end(),
+                    [](const LambdaExprAST::Capture& c) { return c.byRef; });
+    const bool closureCapturesThis = capturesThis;
     node.captures = std::move(effective);
 
     // 6) 表达式类型落定。
@@ -6776,6 +6780,8 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
         closure->closureCallName = closure->name + "__call";
         closure->closureParamTypes = paramTypes;
         closure->closureReturnType = retType;
+        closure->closureHasByRefCapture = closureHasByRefCapture;
+        closure->closureCapturesThis = closureCapturesThis;
         node.lambdaFnName = closure->closureCallName;
         node.type = node.closureType;
     } else {
@@ -7166,6 +7172,21 @@ void SemanticAnalyzer::visit(ExprStmtAST& node) {
     }
 }
 
+void SemanticAnalyzer::checkClosureReturnEscape(Type* returnValueType,
+                                                const ASTNode& at) {
+    Type* t = stripTypedef(returnValueType);
+    if (!t || t->kind != TypeKind::Struct) return;
+    auto* closure = static_cast<StructType*>(t);
+    if (!closure->isClosure) return;
+    if (closure->closureCapturesThis) {
+        emitError("capturing closure with a 'this' capture cannot escape by return", at);
+        return;
+    }
+    if (closure->closureHasByRefCapture) {
+        emitError("capturing closure with by-reference captures cannot escape by return", at);
+    }
+}
+
 void SemanticAnalyzer::visit(ReturnStmtAST& node) {
     // PAR-11 Task 3: the innermost lambda may infer its return type from the
     // first genuinely non-void value return seen during body traversal.
@@ -7243,6 +7264,7 @@ void SemanticAnalyzer::visit(ReturnStmtAST& node) {
             return;
         }
 
+        checkClosureReturnEscape(retValType, node);
         if (!m_inferredAutoReturn) {
             Type* inferred = decayInferredReturnType(retValType);
             m_inferredAutoReturn = inferred;
@@ -7299,6 +7321,7 @@ void SemanticAnalyzer::visit(ReturnStmtAST& node) {
                 emitError("cannot return a slice view of an array with local storage (dangling view)", node);
                 return;
             }
+            checkClosureReturnEscape(retValType, node);
             if (!typesCompatible(currentFunction->returnType, retValType)) {
                 emitError("return type mismatch in function '" + std::string(currentFunction->name) + "': expected '" 
                     + typeToString(currentFunction->returnType) + "', got '" + typeToString(retValType) + "'", node);

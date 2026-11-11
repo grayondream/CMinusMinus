@@ -156,6 +156,11 @@ public:
     std::string closureCallName;
     std::vector<Type*> closureParamTypes;
     Type* closureReturnType = nullptr;
+    // Capturing-closure escape safety: by-reference capture stores a pointer
+    // into the creating frame; `this` stores the receiver pointer. Returning
+    // such a closure would dangle, so sema rejects it.
+    bool closureHasByRefCapture = false;
+    bool closureCapturesThis = false;
 
     StructType(const std::string& n)
         : Type(TypeKind::Struct), name(n) {}
