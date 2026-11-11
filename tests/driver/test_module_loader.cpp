@@ -224,6 +224,81 @@ TEST_F(ModuleLoaderTest, ExportedTypesVisibleBeforeParsingImporter) {
     fs::remove_all(dir);
 }
 
+TEST_F(ModuleLoaderTest, ExportedNamespaceTypesWithMethodsTemplatesAndInheritance) {
+    const fs::path dir = fs::temp_directory_path() / "cmm_module_namespace_types_test";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    {
+        std::ofstream out(dir / "api_types.cmm");
+        out << "module api_types;\n"
+               "export namespace api {\n"
+               "    struct Point {\n"
+               "        int32 x; int32 y;\n"
+               "        int32 sum() { return this->x + this->y; }\n"
+               "    };\n"
+               "    class Box {\n"
+               "    public:\n"
+               "        int32 v;\n"
+               "        int32 get() { return this->v; }\n"
+               "        static int32 twice(int32 x) { return x * 2; }\n"
+               "    };\n"
+               "    template<typename T> struct Wrap {\n"
+               "        T v;\n"
+               "        T get() { return this->v; }\n"
+               "    };\n"
+               "    class Base { public: int32 b; int32 basev() { return this->b; } };\n"
+               "    class Derived : public Base {\n"
+               "    public:\n"
+               "        int32 d;\n"
+               "        int32 total() { return this->b + this->d; }\n"
+               "    };\n"
+               "}\n";
+    }
+
+    const std::string mainSource = R"(
+        module main;
+        import api_types;
+        int32 main() {
+            api::Point p; p.x = 1; p.y = 2;
+            api::Box b; b.v = 4;
+            api::Wrap<int32> w; w.v = 5;
+            api::Derived d; d.b = 6; d.d = 7;
+            int32 r = p.sum() + b.get() + api::Box::twice(3) + w.get() + d.total();
+            return r - 31;
+        }
+    )";
+    const std::string mainPath = (dir / "main.cmm").string();
+    Lexer lexer(mainPath, mainSource);
+    auto tokens = lexer.tokenize();
+    ASSERT_TRUE(lexer.getDiagnostics().empty());
+
+    std::set<std::string> loaded;
+    std::vector<std::unique_ptr<DeclAST>> imported;
+    std::vector<std::string> errors;
+    const auto specs = cmm::collectImportSpecifiers(tokens);
+    ASSERT_EQ(specs.size(), 1u);
+    cmm::preloadImports(specs, dir.string(), cmm::ModuleSearchPaths{{dir.string()}},
+                        loaded, imported, errors);
+    for (const auto& e : errors) ADD_FAILURE() << e;
+    ASSERT_TRUE(errors.empty());
+
+    Parser parser(tokens);
+    auto ast = parser.parse();
+    ASSERT_NE(ast, nullptr);
+    for (const auto& d : parser.getErrors()) ADD_FAILURE() << d.formatWithSeverity();
+    ASSERT_TRUE(parser.getErrors().empty());
+
+    ast->declarations.insert(ast->declarations.begin(),
+                             std::make_move_iterator(imported.begin()),
+                             std::make_move_iterator(imported.end()));
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    for (const auto& e : analyzer.getErrors()) ADD_FAILURE() << e.formatWithSeverity();
+    ASSERT_TRUE(analyzer.getErrors().empty());
+    EXPECT_EQ(jitRun(*ast), 0);
+    fs::remove_all(dir);
+}
+
 TEST_F(ModuleLoaderTest, RejectsNestedLegacySmcImportWithContext) {
     const fs::path dir = fs::temp_directory_path() / "cmm_legacy_nested_test";
     fs::remove_all(dir);
