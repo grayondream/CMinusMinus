@@ -134,10 +134,11 @@
 - **未捕获诊断**：body 引用的外层自动局部必须已被本层 lambda 捕获；嵌套 lambda 还须被每个中间 lambda 捕获。违反时报 `variable 'x' is not captured by lambda`（跨越中间 lambda 时为 `... not captured by an enclosing lambda`），绝不进入 codegen。body 内块级局部遮蔽捕获名时，该局部按普通词法作用域解析，不读写闭包字段。
 - **全局/静态存储不捕获**：全局/模块作用域变量、函数、枚举，以及函数内 `static`/`thread_local`/块级 `extern` 直接访问，不进入闭包字段；`[=]` 不会为它们生成副本（有意修正旧行为）。名字优先级：块级 `static`/`thread_local`/`extern` 局部与普通局部一样优先于同名字段；在捕获 `this` 的 lambda 中，裸名命中当前类字段且没有局部符号时，字段优先于命名空间作用域枚举（`enum { Red }; ... return Red;` 取字段）。块级 `static` 数组的存储类仍沿用既有存储类缺口（本轮未扩展 `ArrayDeclAST`）。
 - **返回类型推断**：显式 `-> Ret` 权威；省略时在 body 分析中惰性推断——首个带值 `return` 决定类型（`if`/`switch`/循环内均覆盖），可引用 body 内先声明的局部或 `auto` 闭包；无带值 `return` 为 `void`。推断到的数组返回类型按普通数组返回规则 decay 为指向首元素的指针。若后续带值 `return` 使 lambda 非 `void`，此前所有无值 `return` 逐个诊断。嵌套 lambda 独立推断。
+- **自由函数 `auto` 返回类型推断**：运行期自由函数可写 `auto f(...) { ... }`；首个带值 `return` 决定返回类型，数组返回按普通规则 decay，后续带值 `return` 必须兼容；只有 `return;` 或无 `return` 时为 `void`。先出现 `return;`、后出现带值 return 会诊断。签名在 body 分析后注册，因此 `auto` 函数必须先定义后调用；递归、互递归以及调用尚未定义的后置 `auto` 函数不支持。无 body 的 `auto` 原型、方法上的 `auto` 返回、`compile_time`/`compile_only` 函数上的 `auto` 返回均报诊断。
 - **无捕获 → 函数指针**（零开销）：可赋给 `int32 (*)(int32)`、作回调实参（qsort）、直接调用。
 - **有捕获 → 匿名闭包 struct + 调用函数**：按值捕获拷贝、按引用捕获存指针（body 内写穿原对象）；`auto` 可保存闭包并反复调用，也支持立即调用 `[...](...){...}(args)`。按值捕获的字段保存创建点拷贝；每次调用把字段加载进本次调用的局部 alloca，写入只影响该次调用的副本，既不回写原对象也不跨调用保留。本语言无 `mutable`，也没有只读诊断。
-- **有捕获闭包逃逸不保证**：有捕获闭包作为函数返回、struct 字段、数组元素或普通函数参数传递时，其生命周期不在语言保证范围内——闭包按引用捕获的存储以及 `this` 指向的对象，其存活由调用方负责（与 DEC-10 的引用悬垂规则一致）。文件作用域初始化器中的有捕获 lambda 仍被 sema 拒绝（`lambda with captures cannot be used in a global initializer` / `capture initializer requires an enclosing function scope`）。
-- 设计：`docs/superpowers/specs/2026-10-17-lambda-design.md`、`docs/superpowers/specs/2026-11-04-lambda-gaps-design.md`。
+- **按值闭包逃逸**：`auto` 返回函数可以返回按值捕获的闭包；返回时复制闭包 struct，调用方持有独立副本，创建栈帧退出后仍可调用。按引用捕获的闭包、以及捕获 `this` 的闭包返回会编译期拒绝：`capturing closure with by-reference captures cannot escape by return` / `capturing closure with a 'this' capture cannot escape by return`（含通过 `auto` 变量间接返回）。每个 lambda 表达式生成名义匿名闭包类型；即使字段/参数/返回类型相同，不同 lambda 表达式也不是同一类型，因此两个 `return` 分支应返回同一个闭包变量，而不是各自新建 lambda 字面量。struct 字段、数组元素、普通非模板函数参数仍无法命名匿名闭包类型，属于未支持范围；文件作用域初始化器中的有捕获 lambda 仍被 sema 拒绝（`lambda with captures cannot be used in a global initializer` / `capture initializer requires an enclosing function scope`）。
+- 设计：`docs/superpowers/specs/2026-10-17-lambda-design.md`、`docs/superpowers/specs/2026-11-04-lambda-gaps-design.md`、`docs/superpowers/specs/2026-11-11-closure-escape-design.md`。
 
 ## 7.6 字面量与模板值的存储语义（PAR-08 / GEN-02）`[impl]`
 

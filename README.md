@@ -136,9 +136,12 @@ The last line must be `ALL FEATURES OK`.
 ## Status and Limitations
 
 Cmm is an actively developed compiler. The normative spec marks features as
-`[impl]`, `[plan]`, or `[ng]` (non-goal). Current limitations include
-capturing-closure escape, some template-body lambda cases, and platform
-support beyond Linux x86-64; see `TODO.md` for the up-to-date list.
+`[impl]`, `[plan]`, or `[ng]` (non-goal). By-value capturing closures can
+escape by returning them from an `auto`-return function; returning a closure
+with by-reference or `this` captures is rejected at compile time. Anonymous
+closure types stored in struct fields or arrays remain unsupported. Other
+limitations include some template-body lambda cases and platform support
+beyond Linux x86-64; see `TODO.md` for the up-to-date list.
 
 ## Naming
 

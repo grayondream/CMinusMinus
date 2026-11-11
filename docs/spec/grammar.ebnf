@@ -202,7 +202,9 @@ template-argument   = type | const-expr ;  (* [impl] SG-01: 常量表达式实�
 (* [plan] 解析歧义（'<' '>' '>>'）见 GEN-04 / LEX-08 *)
 
 (* --- 函数 --- *)
-function-decl       = type , identifier , '(' , [ parameter-list ] , ')' , ( block | ';' ) ;
+function-decl       = ( type | 'auto' ) , identifier , '(' , [ parameter-list ] , ')' , ( block | ';' ) ;
+                      (* [impl] 2026-11-11: 'auto' return deduction for free runtime functions;
+                         body required; methods/compile_time/compile_only rejected by sema. *)
 (* [impl] PAR-03：类外方法定义 `type Class::method(params) { ... }`——声明在
    类体内、定义在类外；签名须与类内声明一致。 *)
 method-definition   = type , identifier , '::' , identifier , '(' , [ parameter-list ] , ')'

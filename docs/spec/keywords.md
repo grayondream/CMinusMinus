@@ -37,7 +37,7 @@
 | 关键字 | 状态 | 说明 |
 |---|---|---|
 | `const` | `[impl]` | |
-| `auto` | `[impl]` | 仅用于变量声明的类型推导，必须有初始化器（Review 2.6） |
+| `auto` | `[impl]` | 变量声明类型推导（必须有初始化器，Review 2.6）；运行期自由函数的返回类型推导（`auto f(...) { ... }`，2026-11-11） |
 | `constexpr` | `[removed]` | 已删除；出现即报迁移诊断，改用 `compile_time` 或 `compile_only`（CT-27） |
 | `static` | `[impl]` | |
 | `extern` | `[impl]` | C 链接（MOD-09） |

@@ -1317,3 +1317,14 @@
   - 去掉 `&compile_only` 重复地址诊断；step-limit 不再叠加泛化初始化错误。
 - 新增 e2e：模板/方法/仅声明/运算符拒绝、聚合类型转换、嵌套初始化、上下文关键字兼容、延迟数组维度、storage class、位域变量、global initializer 链。
 - 验证：全量 **1865/1865** 通过；示例 `ALL FEATURES OK`。
+
+## 2026-11-11 — capturing-closure escape（按值返回）与模块类型导出复核
+
+- 背景：README 将 capturing-closure escape 列为当前限制；用户同时反馈模块系统无法跨模块导出 struct/class/template。复核当前 HEAD：namespace 内 `struct`/`class`/`template`（含方法、静态方法、继承）已可跨模块使用；`std.mem` 的 `Allocator`/`Arena`/`Pool`、`std.vec`/`std.deque`/`std.hashmap`/`std.hashset` 导入用例可编译运行。模块部分不改实现，新增回归测试锁定。
+- 设计/计划：`docs/superpowers/specs/2026-11-11-closure-escape-design.md`、`docs/superpowers/plans/2026-11-11-closure-escape.md`。用户裁决：按值捕获闭包允许返回；按引用捕获（含 `this`）返回编译期拒绝。
+- sema：自由运行期函数支持 `auto` 返回类型推导；首个带值 `return` 定类型，数组 decay，后续 return 兼容，裸 return/无 return 为 `void`。签名在 body 分析后注册，因此必须先定义后调用；递归/互递归/后置 auto 调用不支持。方法、`compile_time`、`compile_only` 上的 `auto` 返回定向拒绝；无 body 原型拒绝。
+- 闭包安全：`StructType` 增加 `closureHasByRefCapture`/`closureCapturesThis`；返回带引用捕获或 `this` 捕获的闭包（含通过 `auto` 变量间接返回）报 `capturing closure with by-reference captures cannot escape by return` / `capturing closure with a 'this' capture cannot escape by return`。按值闭包返回复制闭包 struct，调用方持有独立副本。
+- 名义类型：每个 lambda 表达式生成独立匿名闭包类型（调用函数不同）；两个 return 分支必须返回同一个闭包变量，不能各自新建 lambda 字面量。
+- 测试：`tests/e2e/test_lambda.cpp` 新增 14 项（auto 返回 7、引用逃逸 3、按值闭包返回 4）；`tests/driver/test_module_loader.cpp` 新增 1 项 namespace 类型导出回归。模块回归覆盖 struct/class/template 方法、静态方法、继承。
+- 文档：`README.md`、`docs/spec/semantics.md`、`docs/spec/keywords.md`、`docs/spec/grammar.ebnf`、`TODO.md` 同步；`examples/all_features.cmm` 未改（避免影响既有 tour 输出）。
+- 验证：全量 `ctest --test-dir build -j8` **1880/1880** 通过；`build/bin/cmm examples/all_features.cmm` 输出 `ALL FEATURES OK`；模块/闭包聚焦测试通过。
