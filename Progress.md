@@ -1325,6 +1325,12 @@
 - sema：自由运行期函数支持 `auto` 返回类型推导；首个带值 `return` 定类型，数组 decay，后续 return 兼容，裸 return/无 return 为 `void`。签名在 body 分析后注册，因此必须先定义后调用；递归/互递归/后置 auto 调用不支持。方法、`compile_time`、`compile_only` 上的 `auto` 返回定向拒绝；无 body 原型拒绝。
 - 闭包安全：`StructType` 增加 `closureHasByRefCapture`/`closureCapturesThis`；返回带引用捕获或 `this` 捕获的闭包（含通过 `auto` 变量间接返回）报 `capturing closure with by-reference captures cannot escape by return` / `capturing closure with a 'this' capture cannot escape by return`。按值闭包返回复制闭包 struct，调用方持有独立副本。
 - 名义类型：每个 lambda 表达式生成独立匿名闭包类型（调用函数不同）；两个 return 分支必须返回同一个闭包变量，不能各自新建 lambda 字面量。
-- 测试：`tests/e2e/test_lambda.cpp` 新增 14 项（auto 返回 7、引用逃逸 3、按值闭包返回 4）；`tests/driver/test_module_loader.cpp` 新增 1 项 namespace 类型导出回归。模块回归覆盖 struct/class/template 方法、静态方法、继承。
+- 测试：`tests/e2e/test_lambda.cpp` 新增 22 项（auto 返回/诊断、引用逃逸、按值闭包返回、嵌套逃逸、悬垂返回、顺序/递归）；`tests/driver/test_module_loader.cpp` 新增 1 项 namespace 类型导出回归。模块回归覆盖 struct/class/template 方法、静态方法、继承及继承方法调用。
 - 文档：`README.md`、`docs/spec/semantics.md`、`docs/spec/keywords.md`、`docs/spec/grammar.ebnf`、`TODO.md` 同步；`examples/all_features.cmm` 未改（避免影响既有 tour 输出）。
-- 验证：全量 `ctest --test-dir build -j8` **1880/1880** 通过；`build/bin/cmm examples/all_features.cmm` 输出 `ALL FEATURES OK`；模块/闭包聚焦测试通过。
+- 终审修复（Critical/Important）：
+  - `auto` 返回分支此前绕过 PAR-08/TYP-11 悬垂检查；抽出 `checkDanglingReturnValue` 并在所有值返回、lambda/auto 推断前调用。新增复合字面量与 slice literal 负向测试。
+  - 闭包逃逸标志按捕获类型递归传播；按值捕获的嵌套引用闭包不再漏检。新增嵌套引用闭包返回负向测试。
+  - 类外静态方法定义在清除 `className` 前记录 `isMethodDecl`，`auto` 返回仍按方法拒绝。新增 OOC static 测试。
+  - 递归 `auto` 函数在返回表达式已失败时不再追加 `<unknown>` 类型噪声；补顺序、递归、先裸返回后带值返回、方法原型诊断测试。
+  - 模块回归加入 `d.basev()`，覆盖跨模块继承方法分派。
+- 验证：全量 `ctest --test-dir build -j8` **1888/1888** 通过；`build/bin/cmm examples/all_features.cmm` 输出 `ALL FEATURES OK`；模块/闭包聚焦测试通过。
