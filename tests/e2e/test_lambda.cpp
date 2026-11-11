@@ -544,3 +544,57 @@ TEST_F(LambdaE2E, ByReferenceClosureLocalCallStillAllowed) {
         }
     )", "lambda_ref_local_ok.cmm"), 0);
 }
+
+TEST_F(LambdaE2E, ByValueClosureReturn) {
+    EXPECT_EQ(runSource(R"(
+        auto make_adder(int32 x) {
+            return [x](int32 y) -> int32 { return x + y; };
+        }
+        int32 main() {
+            auto f = make_adder(40);
+            return f(2) - 42;
+        }
+    )", "auto_ret_closure.cmm"), 0);
+}
+
+TEST_F(LambdaE2E, ReturnedClosureIsIndependentCopy) {
+    EXPECT_EQ(runSource(R"(
+        auto make_adder(int32 x) {
+            return [x](int32 y) -> int32 { return x + y; };
+        }
+        int32 main() {
+            auto add40 = make_adder(40);
+            auto add2 = make_adder(2);
+            return add40(2) + add2(2) - 46;
+        }
+    )", "auto_ret_closure_copy.cmm"), 0);
+}
+
+TEST_F(LambdaE2E, ReturnedClosureCalledRepeatedly) {
+    EXPECT_EQ(runSource(R"(
+        auto make_counter(int32 start) {
+            return [start]() -> int32 { return start + 1; };
+        }
+        int32 main() {
+            auto f = make_counter(10);
+            if (f() != 11) return 1;
+            if (f() != 11) return 2;
+            return 0;
+        }
+    )", "auto_ret_closure_repeat.cmm"), 0);
+}
+
+TEST_F(LambdaE2E, ReturnedClosureFromBranch) {
+    EXPECT_EQ(runSource(R"(
+        auto make(int32 x) {
+            auto f = [x](int32 y) -> int32 { return x + y; };
+            if (x > 0) return f;
+            return f;
+        }
+        int32 main() {
+            auto plus = make(10);
+            auto minus = make(-10);
+            return plus(3) + minus(3) - 6;
+        }
+    )", "auto_ret_closure_branch.cmm"), 0);
+}
