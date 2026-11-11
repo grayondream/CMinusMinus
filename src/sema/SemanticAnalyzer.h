@@ -361,6 +361,11 @@ private:
     // Reject returning a closure whose environment points into the creating
     // frame (by-reference capture or captured `this`).
     void checkClosureReturnEscape(Type* returnValueType, const ASTNode& at);
+    // Reject returning stack-backed compound literals/slice literals and
+    // slice views of local arrays. Shared by declared, lambda-inferred, and
+    // auto-inferred returns.
+    bool checkDanglingReturnValue(ExprAST& value, Type* valueType,
+                                  Type* expectedReturnType, const ASTNode& at);
 
     void visit(ExprAST& expr);
     void visit(StmtAST& stmt);

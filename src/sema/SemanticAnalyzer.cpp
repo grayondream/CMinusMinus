@@ -39,6 +39,26 @@ static Type* decayInferredReturnType(Type* type) {
     return type;
 }
 
+// Propagate escape hazards through by-value captures whose type is a closure
+// (or an array of closures). A closure that captures a by-reference closure by
+// value still contains a pointer into the creating frame, so it must not itself
+// escape by return.
+static void collectClosureEscapeFlags(Type* type, bool& hasByRef,
+                                      bool& capturesThis) {
+    Type* t = stripTypedef(type);
+    if (!t) return;
+    if (t->kind == TypeKind::Array) {
+        collectClosureEscapeFlags(static_cast<ArrayType*>(t)->elementType,
+                                  hasByRef, capturesThis);
+        return;
+    }
+    if (t->kind != TypeKind::Struct) return;
+    auto* closure = static_cast<StructType*>(t);
+    if (!closure->isClosure) return;
+    hasByRef = hasByRef || closure->closureHasByRefCapture;
+    capturesThis = capturesThis || closure->closureCapturesThis;
+}
+
 // Review 2.5: a view/literal may implicitly become a read-only C string,
 // never a mutable char*. Explicit casts remain the interop escape hatch.
 static bool isConstCharPointer(Type* t) {
@@ -6766,10 +6786,14 @@ void SemanticAnalyzer::visit(LambdaExprAST& node) {
     }
     if (!retType) retType = typeCtx->getVoid();
     node.returnType = retType;
-    const bool closureHasByRefCapture =
+    bool closureHasByRefCapture =
         std::any_of(effective.begin(), effective.end(),
                     [](const LambdaExprAST::Capture& c) { return c.byRef; });
-    const bool closureCapturesThis = capturesThis;
+    bool closureCapturesThis = capturesThis;
+    for (Type* capturedType : effectiveTypes) {
+        collectClosureEscapeFlags(capturedType, closureHasByRefCapture,
+                                  closureCapturesThis);
+    }
     node.captures = std::move(effective);
 
     // 6) 表达式类型落定。
@@ -7172,6 +7196,41 @@ void SemanticAnalyzer::visit(ExprStmtAST& node) {
     }
 }
 
+bool SemanticAnalyzer::checkDanglingReturnValue(ExprAST& value,
+                                                Type* valueType,
+                                                Type* expectedReturnType,
+                                                const ASTNode& at) {
+    // PAR-08: returning an array/slice compound literal escapes the temporary —
+    // dangling view/pointer. Reject (design §2.4).
+    if (auto* cl = dynamic_cast<CompoundLiteralExprAST*>(&value)) {
+        Type* lt = stripTypedef(cl->literalType);
+        if (lt && (lt->kind == TypeKind::Array || lt->kind == TypeKind::Slice)) {
+            emitError("cannot return a compound literal with local storage (dangling)", at);
+            return true;
+        }
+    }
+    // PAR-08 (Task 5): returning a slice whose storage is a stack anonymous
+    // array is a dangling escape (design §2.5).
+    if (auto* ve = dynamic_cast<VariableExprAST*>(&value)) {
+        if (currentFunction &&
+            m_sliceLiteralVars.count(sliceLiteralKey(currentFunction, ve->name))) {
+            emitError("cannot return a slice backed by a stack literal (dangling)", at);
+            return true;
+        }
+    }
+    // TYP-11 D4: returning a local array as a slice view is dangling UB (the
+    // stack frame dies at return). All current ArrayType values are local, so
+    // reject conservatively.
+    Type* expected = stripTypedef(expectedReturnType);
+    Type* val = stripTypedef(valueType);
+    if (expected && val && expected->kind == TypeKind::Slice &&
+        val->kind == TypeKind::Array) {
+        emitError("cannot return a slice view of an array with local storage (dangling view)", at);
+        return true;
+    }
+    return false;
+}
+
 void SemanticAnalyzer::checkClosureReturnEscape(Type* returnValueType,
                                                 const ASTNode& at) {
     Type* t = stripTypedef(returnValueType);
@@ -7194,6 +7253,13 @@ void SemanticAnalyzer::visit(ReturnStmtAST& node) {
     // second time).
     Type* retValType = node.value ? getExprType(*node.value) : nullptr;
     Type* strippedVal = retValType ? stripTypedef(retValType) : nullptr;
+
+    if (node.value) {
+        Type* expected = currentFunction ? currentFunction->returnType : nullptr;
+        if (checkDanglingReturnValue(*node.value, retValType, expected, node))
+            return;
+        checkClosureReturnEscape(retValType, node);
+    }
 
     bool voidLikeHandled = false;
     if (!lambdaFrames.empty() && lambdaFrames.back().inferReturn) {
@@ -7264,7 +7330,7 @@ void SemanticAnalyzer::visit(ReturnStmtAST& node) {
             return;
         }
 
-        checkClosureReturnEscape(retValType, node);
+        if (!retValType) return;
         if (!m_inferredAutoReturn) {
             Type* inferred = decayInferredReturnType(retValType);
             m_inferredAutoReturn = inferred;
@@ -7287,45 +7353,13 @@ void SemanticAnalyzer::visit(ReturnStmtAST& node) {
     }
 
     if (node.value) {
-        if (currentFunction && retValType) {
-            // PAR-08: returning an array/slice compound literal escapes the
-            // temporary — dangling view/pointer. Reject (design §2.4).
-            if (auto* cl = dynamic_cast<CompoundLiteralExprAST*>(node.value.get())) {
-                Type* lt = cl->literalType;
-                while (lt && lt->kind == TypeKind::Typedef)
-                    lt = static_cast<TypedefType*>(lt)->aliasedType;
-                if (lt && (lt->kind == TypeKind::Array || lt->kind == TypeKind::Slice)) {
-                    emitError("cannot return a compound literal with local storage (dangling)", node);
-                    return;
-                }
-            }
-            // PAR-08 (Task 5): returning a slice whose storage is a stack
-            // anonymous array is a dangling escape (design §2.5).
-            if (auto* ve = dynamic_cast<VariableExprAST*>(node.value.get())) {
-                if (m_sliceLiteralVars.count(
-                        sliceLiteralKey(currentFunction, ve->name))) {
-                    emitError("cannot return a slice backed by a stack literal (dangling)", node);
-                    return;
-                }
-            }
-            // TYP-11 D4: 返回局部数组的 slice 视图是悬垂 UB（栈帧随 return
-            // 消亡）。当前所有 ArrayType 值均为局部变量，保守拒绝。
-            Type* fnRet = currentFunction->returnType;
-            while (fnRet && fnRet->kind == TypeKind::Typedef)
-                fnRet = static_cast<TypedefType*>(fnRet)->aliasedType;
-            Type* val = retValType;
-            while (val && val->kind == TypeKind::Typedef)
-                val = static_cast<TypedefType*>(val)->aliasedType;
-            if (fnRet && val && fnRet->kind == TypeKind::Slice &&
-                val->kind == TypeKind::Array) {
-                emitError("cannot return a slice view of an array with local storage (dangling view)", node);
-                return;
-            }
-            checkClosureReturnEscape(retValType, node);
-            if (!typesCompatible(currentFunction->returnType, retValType)) {
-                emitError("return type mismatch in function '" + std::string(currentFunction->name) + "': expected '" 
-                    + typeToString(currentFunction->returnType) + "', got '" + typeToString(retValType) + "'", node);
-            }
+        if (currentFunction && retValType &&
+            !typesCompatible(currentFunction->returnType, retValType)) {
+            emitError("return type mismatch in function '" +
+                          std::string(currentFunction->name) + "': expected '" +
+                          typeToString(currentFunction->returnType) + "', got '" +
+                          typeToString(retValType) + "'",
+                      node);
         }
     } else if (currentFunction && currentFunction->returnType->kind != TypeKind::Void) {
         emitError("non-void function '" + std::string(currentFunction->name) + "' must return a value", node);
@@ -8660,6 +8694,9 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
     // definition and the call site mangle against {Class*, params...}.
     ClassType* oocClass = nullptr;
     ClassType* oocSavedClass = currentClass;
+    // Capture method-ness before the out-of-class static path clears
+    // className/oocClass; Auto-return rejection must still see it.
+    const bool isMethodDecl = currentClass != nullptr || !node.className.empty();
     if (!node.className.empty()) {
         oocClass = typeCtx->getClass(node.className);
         if (!oocClass) {
@@ -8731,12 +8768,12 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
     const bool isAutoReturn =
         resolvedReturn && resolvedReturn->kind == TypeKind::Auto;
     if (isAutoReturn) {
-        if (!node.body) {
-            emitError("auto function '" + node.name + "' must have a body", node);
+        if (isMethodDecl) {
+            emitError("auto return type is not supported on methods", node);
             return;
         }
-        if (currentClass != nullptr || !node.className.empty()) {
-            emitError("auto return type is not supported on methods", node);
+        if (!node.body) {
+            emitError("auto function '" + node.name + "' must have a body", node);
             return;
         }
         if (node.isCompileTime || node.isCompileOnly) {

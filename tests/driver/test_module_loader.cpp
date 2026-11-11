@@ -263,8 +263,8 @@ TEST_F(ModuleLoaderTest, ExportedNamespaceTypesWithMethodsTemplatesAndInheritanc
             api::Box b; b.v = 4;
             api::Wrap<int32> w; w.v = 5;
             api::Derived d; d.b = 6; d.d = 7;
-            int32 r = p.sum() + b.get() + api::Box::twice(3) + w.get() + d.total();
-            return r - 31;
+            int32 r = p.sum() + b.get() + api::Box::twice(3) + w.get() + d.total() + d.basev();
+            return r - 37;
         }
     )";
     const std::string mainPath = (dir / "main.cmm").string();

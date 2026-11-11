@@ -71,9 +71,11 @@ static int runSource(const std::string& source, const std::string& filename) {
 static std::vector<std::string> compileErrors(const std::string& source,
                                               const std::string& filename) {
     Lexer lexer(filename, source);
-    Parser parser(lexer.tokenize());
-    auto ast = parser.parse();
+    auto tokens = lexer.tokenize();
     std::vector<std::string> errors;
+    for (auto& d : lexer.getDiagnostics()) errors.push_back(d.format());
+    Parser parser(tokens);
+    auto ast = parser.parse();
     for (auto& d : parser.getErrors()) errors.push_back(d.format());
     if (!ast) return errors;
     SemanticAnalyzer analyzer;
@@ -597,4 +599,85 @@ TEST_F(LambdaE2E, ReturnedClosureFromBranch) {
             return plus(3) + minus(3) - 6;
         }
     )", "auto_ret_closure_branch.cmm"), 0);
+}
+
+TEST_F(LambdaE2E, AutoReturnCompoundLiteralRejected) {
+    auto errs = compileErrors(R"(
+        auto make() { return (int32[2]){1, 2}; }
+        int32 main() { return 0; }
+    )", "auto_ret_compound_literal.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "cannot return a compound literal"));
+}
+
+TEST_F(LambdaE2E, AutoReturnSliceLiteralRejected) {
+    auto errs = compileErrors(R"(
+        auto make() {
+            int32[] s = {1, 2};
+            return s;
+        }
+        int32 main() { return 0; }
+    )", "auto_ret_slice_literal.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "cannot return a slice backed by a stack literal"));
+}
+
+TEST_F(LambdaE2E, NestedByReferenceClosureReturnRejected) {
+    auto errs = compileErrors(R"(
+        auto bad() {
+            int32 y = 7;
+            auto inner = [&y]() -> int32 { return y; };
+            auto outer = [inner]() -> int32 { return inner(); };
+            return outer;
+        }
+        int32 main() { return 0; }
+    )", "auto_ret_nested_ref.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "by-reference captures cannot escape by return"));
+}
+
+TEST_F(LambdaE2E, AutoReturnOutOfClassStaticRejected) {
+    auto errs = compileErrors(R"(
+        class C { public: static int32 f(); };
+        auto C::f() { return 1; }
+        int32 main() { return 0; }
+    )", "auto_ret_ooc_static.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "not supported on methods"));
+}
+
+TEST_F(LambdaE2E, AutoReturnCallBeforeDefinitionRejected) {
+    auto errs = compileErrors(R"(
+        auto early(int32 x) { return later(x); }
+        auto later(int32 x) { return x; }
+        int32 main() { return 0; }
+    )", "auto_ret_order.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "use of undeclared function 'later'"));
+}
+
+TEST_F(LambdaE2E, AutoReturnRecursiveRejected) {
+    auto errs = compileErrors(R"(
+        auto fac(int32 n) {
+            if (n <= 1) return 1;
+            return n * fac(n - 1);
+        }
+        int32 main() { return 0; }
+    )", "auto_ret_recursive.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "use of undeclared function 'fac'"));
+    EXPECT_FALSE(hasErrorContaining(errs, "<unknown>"));
+}
+
+TEST_F(LambdaE2E, AutoReturnBareBeforeValueRejected) {
+    auto errs = compileErrors(R"(
+        auto bad(int32 x) {
+            if (x > 0) return;
+            return x;
+        }
+        int32 main() { return 0; }
+    )", "auto_ret_bare_before_value.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "must return a value"));
+}
+
+TEST_F(LambdaE2E, AutoReturnMethodPrototypeDiagnostic) {
+    auto errs = compileErrors(R"(
+        class C { public: auto f(); };
+        int32 main() { return 0; }
+    )", "auto_ret_method_proto.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "not supported on methods"));
 }
