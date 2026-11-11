@@ -7221,6 +7221,49 @@ void SemanticAnalyzer::visit(ReturnStmtAST& node) {
     // checks so they do not emit a second diagnostic.
     if (voidLikeHandled) return;
 
+    // Auto-return free functions infer their return type from the first value
+    // return; subsequent returns must agree. Keep this after the lambda-frame
+    // branch so returns inside nested lambdas still use lambda inference.
+    if (currentFunction && currentFunction == m_autoReturnFunction) {
+        const bool bareReturn = !node.value;
+        const bool voidExprReturn =
+            strippedVal && strippedVal->kind == TypeKind::Void;
+        auto nonVoidMessage = [&]() {
+            return "non-void function '" + currentFunction->name +
+                   "' must return a value";
+        };
+
+        if (bareReturn || voidExprReturn) {
+            if (m_inferredAutoReturn &&
+                stripTypedef(m_inferredAutoReturn)->kind != TypeKind::Void) {
+                emitError(nonVoidMessage(), node);
+            } else {
+                m_pendingAutoVoidReturns.push_back(&node);
+            }
+            return;
+        }
+
+        if (!m_inferredAutoReturn) {
+            Type* inferred = decayInferredReturnType(retValType);
+            m_inferredAutoReturn = inferred;
+            currentFunction->returnType = inferred;
+            Type* deduced = stripTypedef(inferred);
+            if (deduced && deduced->kind != TypeKind::Void) {
+                for (ReturnStmtAST* pending : m_pendingAutoVoidReturns) {
+                    emitError(nonVoidMessage(), *pending);
+                }
+            }
+            m_pendingAutoVoidReturns.clear();
+        } else if (!typesCompatible(m_inferredAutoReturn, retValType)) {
+            emitError("auto function '" + currentFunction->name +
+                          "' has inconsistent return types: '" +
+                          typeToString(m_inferredAutoReturn) + "' vs '" +
+                          typeToString(retValType) + "'",
+                      node);
+        }
+        return;
+    }
+
     if (node.value) {
         if (currentFunction && retValType) {
             // PAR-08: returning an array/slice compound literal escapes the
@@ -8658,6 +8701,28 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
     checkDeprecatedTypeUse(node.returnType, node);
     for (auto& p : node.params) checkDeprecatedTypeUse(p->type, node);
 
+    // Auto return type deduction is only supported for free runtime functions
+    // in v1. Reject the unsupported shapes before the normal signature and body
+    // path, which assumes a concrete return type.
+    Type* resolvedReturn = stripTypedef(node.returnType);
+    const bool isAutoReturn =
+        resolvedReturn && resolvedReturn->kind == TypeKind::Auto;
+    if (isAutoReturn) {
+        if (!node.body) {
+            emitError("auto function '" + node.name + "' must have a body", node);
+            return;
+        }
+        if (currentClass != nullptr || !node.className.empty()) {
+            emitError("auto return type is not supported on methods", node);
+            return;
+        }
+        if (node.isCompileTime || node.isCompileOnly) {
+            emitError("auto return type is not supported on compile_time/compile_only functions",
+                      node);
+            return;
+        }
+    }
+
     // Validate compile_time/compile_only function constraints. CT values are
     // scalars, containers, fixed arrays, and POD records; compile_only may not
     // return pointers/references/owning strings.
@@ -8785,6 +8850,47 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
         }
     }
 
+    // Auto-return functions are analyzed body-first: the first value return
+    // determines the return type, then the final signature is registered so
+    // later declarations can call it. Recursion and calls to later auto
+    // functions are therefore unsupported in v1.
+    if (isAutoReturn) {
+        FunctionDeclAST* prevFunc = currentFunction;
+        currentFunction = &node;
+        enterScope();
+        for (auto& param : node.params) {
+            if (!declare(param->name, param->type)) {
+                emitError("redeclaration of parameter '" + param->name +
+                              "' in function '" + node.name + "'",
+                          *param);
+            }
+        }
+
+        node.returnType = typeCtx->getVoid();
+        m_autoReturnFunction = &node;
+        m_inferredAutoReturn = nullptr;
+        m_pendingAutoVoidReturns.clear();
+        visit(*node.body);
+        checkInitialization(node);
+
+        node.returnType = m_inferredAutoReturn ? m_inferredAutoReturn
+                                               : typeCtx->getVoid();
+        Type* finalRet = stripTypedef(node.returnType);
+        if (finalRet && finalRet->kind != TypeKind::Void) {
+            for (ReturnStmtAST* pending : m_pendingAutoVoidReturns) {
+                emitError("non-void function '" + node.name +
+                              "' must return a value",
+                          *pending);
+            }
+        }
+        m_pendingAutoVoidReturns.clear();
+        m_autoReturnFunction = nullptr;
+        m_inferredAutoReturn = nullptr;
+
+        exitScope();
+        currentFunction = prevFunc;
+    }
+
     std::vector<Type*> paramTypes;
     for (auto& param : node.params) {
         paramTypes.push_back(param->type);
@@ -8838,23 +8944,25 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
         if (node.body) definedFunctions.insert(signature);
     }
 
-    FunctionDeclAST* prevFunc = currentFunction;
-    currentFunction = &node;
-    enterScope();
+    if (!isAutoReturn) {
+        FunctionDeclAST* prevFunc = currentFunction;
+        currentFunction = &node;
+        enterScope();
 
-    for (auto& param : node.params) {
-        if (!declare(param->name, param->type)) {
-            emitError("redeclaration of parameter '" + param->name + "' in function '" + node.name + "'", *param);
+        for (auto& param : node.params) {
+            if (!declare(param->name, param->type)) {
+                emitError("redeclaration of parameter '" + param->name + "' in function '" + node.name + "'", *param);
+            }
         }
-    }
 
-    if (node.body) {
-        visit(*node.body);
-        checkInitialization(node);
-    }
+        if (node.body) {
+            visit(*node.body);
+            checkInitialization(node);
+        }
 
-    exitScope();
-    currentFunction = prevFunc;
+        exitScope();
+        currentFunction = prevFunc;
+    }
     if (oocClass) currentClass = oocSavedClass;
 }
 

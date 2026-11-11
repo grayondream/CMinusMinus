@@ -381,6 +381,11 @@ private:
     std::unique_ptr<Scope> globalScope;
     Scope* currentScope;
     FunctionDeclAST* currentFunction;
+    // Auto-return inference for the free function currently being analyzed.
+    // Non-null only while visiting that function's body.
+    FunctionDeclAST* m_autoReturnFunction = nullptr;
+    Type* m_inferredAutoReturn = nullptr;
+    std::vector<ReturnStmtAST*> m_pendingAutoVoidReturns;
     ClassType* currentClass = nullptr; // SEM-04: class whose method is being analyzed
 
     // AGG-10: desugared static-member symbol key -> {defining class, member

@@ -1,6 +1,9 @@
 // PAR-11/CG-11: lambda codegen e2e —— 无捕获=函数指针；有捕获=立即调用闭包。
 #include <gtest/gtest.h>
 
+#include <string>
+#include <vector>
+
 #include "codegen/CodegenContext.h"
 #include "frontend/Lexer.h"
 #include "frontend/Parser.h"
@@ -63,6 +66,28 @@ static int runSource(const std::string& source, const std::string& filename) {
     if (!sym) return -1;
     auto mainFn = sym->toPtr<int32_t(*)()>();
     return mainFn();
+}
+
+static std::vector<std::string> compileErrors(const std::string& source,
+                                              const std::string& filename) {
+    Lexer lexer(filename, source);
+    Parser parser(lexer.tokenize());
+    auto ast = parser.parse();
+    std::vector<std::string> errors;
+    for (auto& d : parser.getErrors()) errors.push_back(d.format());
+    if (!ast) return errors;
+    SemanticAnalyzer analyzer;
+    analyzer.analyze(*ast);
+    for (auto& d : analyzer.getErrors()) errors.push_back(d.format());
+    return errors;
+}
+
+static bool hasErrorContaining(const std::vector<std::string>& errors,
+                               const std::string& needle) {
+    for (auto& e : errors) {
+        if (e.find(needle) != std::string::npos) return true;
+    }
+    return false;
 }
 
 // 含 std prelude（qsort 等 libc 绑定经 std.c）。CLI 自动注入，JIT harness 需
@@ -425,4 +450,64 @@ TEST_F(LambdaE2E, EnumeratorLosesToSameNamedField) {
             return c.f() - 7;
         }
     )", "lam_enum_shadow.cmm"), 0);
+}
+
+TEST_F(LambdaE2E, AutoReturnScalar) {
+    EXPECT_EQ(runSource(R"(
+        auto twice(int32 x) { return x * 2; }
+        int32 main() { auto y = twice(21); return y - 42; }
+    )", "auto_ret_scalar.cmm"), 0);
+}
+
+TEST_F(LambdaE2E, AutoReturnVoid) {
+    EXPECT_EQ(runSource(R"(
+        auto noop() { return; }
+        int32 main() { noop(); return 0; }
+    )", "auto_ret_void.cmm"), 0);
+}
+
+TEST_F(LambdaE2E, AutoReturnInconsistentTypesRejected) {
+    auto errs = compileErrors(R"(
+        auto bad(int32 x) {
+            if (x > 0) return x;
+            return "no";
+        }
+        int32 main() { return 0; }
+    )", "auto_ret_mismatch.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "inconsistent return types"));
+}
+
+TEST_F(LambdaE2E, AutoReturnBareAfterValueRejected) {
+    auto errs = compileErrors(R"(
+        auto bad(int32 x) {
+            if (x > 0) return x;
+            return;
+        }
+        int32 main() { return 0; }
+    )", "auto_ret_bare.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "must return a value"));
+}
+
+TEST_F(LambdaE2E, AutoReturnPrototypeRejected) {
+    auto errs = compileErrors(R"(
+        auto f(int32 x);
+        int32 main() { return 0; }
+    )", "auto_ret_proto.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "must have a body"));
+}
+
+TEST_F(LambdaE2E, AutoReturnMethodRejected) {
+    auto errs = compileErrors(R"(
+        class C { public: auto f() { return 1; } };
+        int32 main() { return 0; }
+    )", "auto_ret_method.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "not supported on methods"));
+}
+
+TEST_F(LambdaE2E, AutoReturnCompileTimeRejected) {
+    auto errs = compileErrors(R"(
+        compile_time auto f() { return 1; }
+        int32 main() { return 0; }
+    )", "auto_ret_ct.cmm");
+    EXPECT_TRUE(hasErrorContaining(errs, "compile_time"));
 }
