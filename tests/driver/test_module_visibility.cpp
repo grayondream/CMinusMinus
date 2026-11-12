@@ -48,9 +48,9 @@ protected:
         }
         // CTest runs each gtest case in its own process; a fixed directory
         // makes concurrent ModuleVisibility tests overwrite each other's
-        // util.cmm. Isolate by pid so -j8 is deterministic.
+        // util.cdd. Isolate by pid so -j8 is deterministic.
         dir = fs::temp_directory_path() /
-              ("cmm_module_visibility_test_" + std::to_string(::getpid()));
+              ("cdd_module_visibility_test_" + std::to_string(::getpid()));
         fs::remove_all(dir);
         fs::create_directories(dir);
     }
@@ -67,9 +67,9 @@ protected:
     // the spliced translation unit plus any loader errors.
     std::unique_ptr<TranslationUnitAST> loadMain(const std::string& mainSource,
                                                  std::vector<std::string>& errors) {
-        auto ast = cmm::parseStdCPrelude(mainSource, (dir / "main.cmm").string());
+        auto ast = cdd::parseStdCPrelude(mainSource, (dir / "main.cdd").string());
         std::set<std::string> loaded;
-        cmm::processImports(*ast, dir.string(), {}, loaded, errors);
+        cdd::processImports(*ast, dir.string(), {}, loaded, errors);
         return ast;
     }
 
@@ -78,11 +78,11 @@ protected:
     // matching CompilerDriver/runWithImports order.
     std::unique_ptr<TranslationUnitAST> loadMainWithPreloadedImports(
         const std::string& mainSource, std::vector<std::string>& errors) {
-        Lexer lexer((dir / "main.cmm").string(), mainSource);
+        Lexer lexer((dir / "main.cdd").string(), mainSource);
         auto tokens = lexer.tokenize();
         std::set<std::string> loaded;
         std::vector<std::unique_ptr<DeclAST>> importedDecls;
-        cmm::preloadImports(cmm::collectImportSpecifiers(tokens), dir.string(), {},
+        cdd::preloadImports(cdd::collectImportSpecifiers(tokens), dir.string(), {},
                             loaded, importedDecls, errors);
         Parser parser(tokens);
         auto ast = parser.parse();
@@ -92,14 +92,14 @@ protected:
                                      std::make_move_iterator(importedDecls.begin()),
                                      std::make_move_iterator(importedDecls.end()));
         }
-        cmm::processImports(*ast, dir.string(), {}, loaded, errors);
+        cdd::processImports(*ast, dir.string(), {}, loaded, errors);
         return ast;
     }
 
     // Runs sema + codegen + JIT for a unit whose `main` returns an int.
     int jitRun(TranslationUnitAST& ast) {
         CodegenContext ctx;
-        ctx.setSourceFile("module_visibility_test.cmm");
+        ctx.setSourceFile("module_visibility_test.cdd");
         ast.codegen(ctx);
         ctx.finalizeDebugInfo();
 
@@ -140,7 +140,7 @@ bool hasStringContaining(const std::vector<std::string>& errors, const std::stri
 } // namespace
 
 TEST_F(ModuleVisibilityTest, ExportedFunctionIsVisible) {
-    write(dir / "util.cmm", "module util;\nexport int32 helper() { return 5; }\n");
+    write(dir / "util.cdd", "module util;\nexport int32 helper() { return 5; }\n");
 
     std::vector<std::string> errors;
     auto ast = loadMain("import util;\nint32 main() { return helper() - 5; }\n", errors);
@@ -153,7 +153,7 @@ TEST_F(ModuleVisibilityTest, ExportedFunctionIsVisible) {
 }
 
 TEST_F(ModuleVisibilityTest, NonExportedFunctionIsHidden) {
-    write(dir / "util.cmm", "module util;\nint32 helper() { return 5; }\n");
+    write(dir / "util.cdd", "module util;\nint32 helper() { return 5; }\n");
 
     std::vector<std::string> errors;
     auto ast = loadMain("import util;\nint32 main() { return helper(); }\n", errors);
@@ -167,7 +167,7 @@ TEST_F(ModuleVisibilityTest, NonExportedFunctionIsHidden) {
 }
 
 TEST_F(ModuleVisibilityTest, PrivateHelperUsableInsideModule) {
-    write(dir / "util.cmm",
+    write(dir / "util.cdd",
           "module util;\n"
           "int32 helper() { return 7; }\n"
           "export int32 compute() { return helper() + 1; }\n");
@@ -183,7 +183,7 @@ TEST_F(ModuleVisibilityTest, PrivateHelperUsableInsideModule) {
 }
 
 TEST_F(ModuleVisibilityTest, LegacyUnitWithoutModuleDeclIsFullyVisible) {
-    write(dir / "util.cmm", "int32 helper() { return 3; }\n");
+    write(dir / "util.cdd", "int32 helper() { return 3; }\n");
 
     std::vector<std::string> errors;
     auto ast = loadMain("import util;\nint32 main() { return helper() - 3; }\n", errors);
@@ -196,7 +196,7 @@ TEST_F(ModuleVisibilityTest, LegacyUnitWithoutModuleDeclIsFullyVisible) {
 }
 
 TEST_F(ModuleVisibilityTest, ExportedNamespaceMembersAreVisible) {
-    write(dir / "geom.cmm",
+    write(dir / "geom.cdd",
           "module geom;\n"
           "export namespace g { int32 add(int32 a, int32 b) { return a + b; } }\n");
 
@@ -211,7 +211,7 @@ TEST_F(ModuleVisibilityTest, ExportedNamespaceMembersAreVisible) {
 }
 
 TEST_F(ModuleVisibilityTest, DottedModuleNameMustMatchPath) {
-    write(dir / "lib" / "util.cmm",
+    write(dir / "lib" / "util.cdd",
           "module lib.util;\nexport int32 f() { return 9; }\n");
 
     std::vector<std::string> errors;
@@ -225,7 +225,7 @@ TEST_F(ModuleVisibilityTest, DottedModuleNameMustMatchPath) {
 }
 
 TEST_F(ModuleVisibilityTest, ModuleNameMismatchIsReported) {
-    write(dir / "util.cmm", "module other;\nexport int32 helper() { return 1; }\n");
+    write(dir / "util.cdd", "module other;\nexport int32 helper() { return 1; }\n");
 
     std::vector<std::string> errors;
     auto ast = loadMain("import util;\nint32 main() { return helper(); }\n", errors);
@@ -233,7 +233,7 @@ TEST_F(ModuleVisibilityTest, ModuleNameMismatchIsReported) {
 }
 
 TEST_F(ModuleVisibilityTest, RootExportIsUnqualified) {
-    write(dir / "util.cmm", "module util;\nexport int32 helper() { return 5; }\n");
+    write(dir / "util.cdd", "module util;\nexport int32 helper() { return 5; }\n");
 
     std::vector<std::string> errors;
     auto ast = loadMain("import util;\nint32 main() { return helper() - 5; }\n", errors);
@@ -246,7 +246,7 @@ TEST_F(ModuleVisibilityTest, RootExportIsUnqualified) {
 }
 
 TEST_F(ModuleVisibilityTest, NamespaceMemberRequiresQualification) {
-    write(dir / "geom.cmm",
+    write(dir / "geom.cdd",
           "module geom;\n"
           "export namespace g { int32 add(int32 a, int32 b) { return a + b; } }\n");
 
@@ -260,7 +260,7 @@ TEST_F(ModuleVisibilityTest, NamespaceMemberRequiresQualification) {
 }
 
 TEST_F(ModuleVisibilityTest, ModuleNameDoesNotCreateQualifier) {
-    write(dir / "std" / "vec.cmm",
+    write(dir / "std" / "vec.cdd",
           "module std.vec;\n"
           "export namespace std { struct Vec { int32 x; }; }\n");
 

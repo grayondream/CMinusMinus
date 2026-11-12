@@ -98,66 +98,66 @@ TEST_F(ConstConstexprE2E, CompileTimeVariableMutationRejected) {
     auto errs = compileErrors(R"(
 compile_time int32 N = 1;
 int32 main() { N = 2; return N; }
-)", "ct_mutate.cmm");
+)", "ct_mutate.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "read-only"));
 }
 
 TEST_F(ConstConstexprE2E, ConstVariable) {
     EXPECT_EQ(runSource(
-        "const int32 x = 42; int32 main() { return x; }", "const_var.cmm"), 42);
+        "const int32 x = 42; int32 main() { return x; }", "const_var.cdd"), 42);
 }
 
 TEST_F(ConstConstexprE2E, ConstexprVariable) {
     EXPECT_EQ(runSource(
-        "compile_time int32 x = 42; int32 main() { return x; }", "constexpr_var.cmm"), 42);
+        "compile_time int32 x = 42; int32 main() { return x; }", "constexpr_var.cdd"), 42);
 }
 
 TEST_F(ConstConstexprE2E, ConstexprTwoGlobals) {
     EXPECT_EQ(runSource(
         "compile_time int32 a = 10; compile_time int32 b = 23; int32 main() { return b; }",
-        "constexpr_two.cmm"), 23);
+        "constexpr_two.cdd"), 23);
 }
 
 TEST_F(ConstConstexprE2E, ConstexprExpression) {
     EXPECT_EQ(runSource(
         "compile_time int32 a = 10; compile_time int32 b = a * 2 + 3; int32 main() { return b; }",
-        "constexpr_expr.cmm"), 23);
+        "constexpr_expr.cdd"), 23);
 }
 
 TEST_F(ConstConstexprE2E, LocalConstVariable) {
     EXPECT_EQ(runSource(
-        "int32 main() { const int32 x = 42; return x; }", "local_const.cmm"), 42);
+        "int32 main() { const int32 x = 42; return x; }", "local_const.cdd"), 42);
 }
 
 TEST_F(ConstConstexprE2E, LocalConstexprVariable) {
     EXPECT_EQ(runSource(
-        "int32 main() { compile_time int32 x = 42; return x; }", "local_constexpr.cmm"), 42);
+        "int32 main() { compile_time int32 x = 42; return x; }", "local_constexpr.cdd"), 42);
 }
 
 TEST_F(ConstConstexprE2E, MixedConstConstexpr) {
     EXPECT_EQ(runSource(
         "compile_time int32 a = 10; const int32 b = 20; int32 main() { return a + b; }",
-        "mixed.cmm"), 30);
+        "mixed.cdd"), 30);
 }
 
 TEST_F(ConstConstexprE2E, ConstexprInFunction) {
     EXPECT_EQ(runSource(
         "int32 main() { compile_time int32 x = 5; compile_time int32 y = x * 3; return y; }",
-        "constexpr_func.cmm"), 15);
+        "constexpr_func.cdd"), 15);
 }
 
 TEST_F(ConstConstexprE2E, ConstFromResourceFile) {
-    std::ifstream ifs(fs::path(E2E_RESOURCE_DIR) / "test_const.cmm");
+    std::ifstream ifs(fs::path(E2E_RESOURCE_DIR) / "test_const.cdd");
     ASSERT_TRUE(ifs.is_open());
     std::stringstream ss;
     ss << ifs.rdbuf();
-    EXPECT_EQ(runSource(ss.str(), "test_const.cmm"), 0);
+    EXPECT_EQ(runSource(ss.str(), "test_const.cdd"), 0);
 }
 
 TEST_F(ConstConstexprE2E, DriverBasicUsage) {
     CompilerDriver driver;
-    std::string testFile = std::string(E2E_RESOURCE_DIR) + "/test_const.cmm";
-    const char* argv[] = {"cmm", "-o", "test_const_e2e", testFile.c_str()};
+    std::string testFile = std::string(E2E_RESOURCE_DIR) + "/test_const.cdd";
+    const char* argv[] = {"cdd", "-o", "test_const_e2e", testFile.c_str()};
     ASSERT_TRUE(driver.parseArguments(4, argv));
     EXPECT_EQ(driver.run(), 0);
     EXPECT_EQ(system("./test_const_e2e"), 0);

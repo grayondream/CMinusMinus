@@ -49,11 +49,11 @@ static int runWithImports(const std::string& source, const std::string& filename
     auto tokens = lexer.tokenize();
     if (!lexer.getDiagnostics().empty()) return -1;
 
-    cmm::ModuleSearchPaths paths{{STD_DIR}};
+    cdd::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::unique_ptr<DeclAST>> importedDecls;
     std::vector<std::string> errors;
-    cmm::preloadImports(cmm::collectImportSpecifiers(tokens), ".", paths, loaded,
+    cdd::preloadImports(cdd::collectImportSpecifiers(tokens), ".", paths, loaded,
                         importedDecls, errors);
     if (!errors.empty()) return -1;
 
@@ -65,7 +65,7 @@ static int runWithImports(const std::string& source, const std::string& filename
                                  std::make_move_iterator(importedDecls.begin()),
                                  std::make_move_iterator(importedDecls.end()));
     }
-    cmm::processImports(*ast, ".", paths, loaded, errors);
+    cdd::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) return -1;
 
     SemanticAnalyzer analyzer;
@@ -103,7 +103,7 @@ TEST_F(StdMemTest, AllocReturnsNonNull) {
             std::dealloc(p);
             return 0;
         }
-    )", "mem_alloc.cmm"), 0);
+    )", "mem_alloc.cdd"), 0);
 }
 
 TEST_F(StdMemTest, AllocZeroedClearsMemory) {
@@ -116,7 +116,7 @@ TEST_F(StdMemTest, AllocZeroedClearsMemory) {
             std::dealloc(p);
             return 0;
         }
-    )", "mem_zeroed.cmm"), 0);
+    )", "mem_zeroed.cdd"), 0);
 }
 
 TEST_F(StdMemTest, ResizePreservesData) {
@@ -132,7 +132,7 @@ TEST_F(StdMemTest, ResizePreservesData) {
             std::dealloc(q);
             return 0;
         }
-    )", "mem_resize.cmm"), 0);
+    )", "mem_resize.cdd"), 0);
 }
 
 TEST_F(StdMemTest, AlignUpDown) {
@@ -145,7 +145,7 @@ TEST_F(StdMemTest, AlignUpDown) {
             if (std::align_down(8, 8) != 8) return 4;
             return 0;
         }
-    )", "mem_alignup.cmm"), 0);
+    )", "mem_alignup.cdd"), 0);
 }
 
 TEST_F(StdMemTest, IsAligned) {
@@ -161,7 +161,7 @@ TEST_F(StdMemTest, IsAligned) {
             std::aligned_free(p);
             return 0;
         }
-    )", "mem_isaligned.cmm"), 0);
+    )", "mem_isaligned.cdd"), 0);
 }
 
 TEST_F(StdMemTest, AlignedAllocIsAligned) {
@@ -174,7 +174,7 @@ TEST_F(StdMemTest, AlignedAllocIsAligned) {
             std::aligned_free(p);
             return 0;
         }
-    )", "mem_alignalloc.cmm"), 0);
+    )", "mem_alignalloc.cdd"), 0);
 }
 
 TEST_F(StdMemTest, AlignedAllocFailsOnBadAlignment) {
@@ -185,7 +185,7 @@ TEST_F(StdMemTest, AlignedAllocFailsOnBadAlignment) {
             void* p = std::aligned_alloc(24, 128);
             return p == null ? 0 : 1;
         }
-    )", "mem_alignfail.cmm"), 0);
+    )", "mem_alignfail.cdd"), 0);
 }
 
 TEST_F(StdMemTest, BackendIsMimalloc) {
@@ -198,7 +198,7 @@ TEST_F(StdMemTest, BackendIsMimalloc) {
             std::dealloc(p);
             return 0;
         }
-    )", "mem_backend.cmm"), 0);
+    )", "mem_backend.cdd"), 0);
 }
 
 TEST_F(StdMemTest, AllocatorInterface) {
@@ -213,7 +213,7 @@ TEST_F(StdMemTest, AllocatorInterface) {
             std::allocator_free(&a, p);
             return 0;
         }
-    )", "mem_allocator.cmm"), 0);
+    )", "mem_allocator.cdd"), 0);
 }
 
 TEST_F(StdMemTest, ArenaBumpAllocator) {
@@ -234,7 +234,7 @@ TEST_F(StdMemTest, ArenaBumpAllocator) {
             if (std::arena_alloc(&a, 512, 8) != null) return 6;
             return 0;
         }
-    )", "mem_arena.cmm"), 0);
+    )", "mem_arena.cdd"), 0);
 }
 
 TEST_F(StdMemTest, PoolReusesBlocks) {
@@ -254,7 +254,7 @@ TEST_F(StdMemTest, PoolReusesBlocks) {
             std::pool_destroy(&p);
             return 0;
         }
-    )", "mem_pool.cmm"), 0);
+    )", "mem_pool.cdd"), 0);
 }
 
 }  // namespace

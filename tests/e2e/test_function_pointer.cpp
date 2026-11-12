@@ -40,17 +40,17 @@ protected:
 // Compile `source` together with the built-in std.c binding layer and run main
 // in-process. Returns main's value, or -1 on any failure.
 static int runWithPrelude(const std::string& source, const std::string& filename) {
-    auto ast = cmm::parseStdCPrelude(source, filename);
+    auto ast = cdd::parseStdCPrelude(source, filename);
     if (!ast) {
         ADD_FAILURE() << "user parse failed";
         return -1;
     }
-    auto prelude = cmm::parseStdCPrelude(cmm::loadStdCPrelude({STD_DIR}), "<std.c>");
+    auto prelude = cdd::parseStdCPrelude(cdd::loadStdCPrelude({STD_DIR}), "<std.c>");
     if (!prelude) {
         ADD_FAILURE() << "prelude parse failed";
         return -1;
     }
-    cmm::prependDeclarations(*ast, *prelude);
+    cdd::prependDeclarations(*ast, *prelude);
 
     SemanticAnalyzer analyzer;
     analyzer.analyze(*ast);
@@ -108,7 +108,7 @@ TEST_F(FunctionPointerE2E, FunctionPointerVariable) {
             int32 (*fp)(int32, int32) = add;
             return fp(3, 4) - 7;
         }
-    )", "fp_var.cmm"), 0);
+    )", "fp_var.cdd"), 0);
 }
 
 TEST_F(FunctionPointerE2E, FunctionPointerParameter) {
@@ -116,7 +116,7 @@ TEST_F(FunctionPointerE2E, FunctionPointerParameter) {
         int32 apply(int32 (*cb)(int32, int32), int32 a, int32 b) { return cb(a, b); }
         int32 mul(int32 a, int32 b) { return a * b; }
         int32 main() { return apply(mul, 6, 7) - 42; }
-    )", "fp_param.cmm"), 0);
+    )", "fp_param.cdd"), 0);
 }
 
 TEST_F(FunctionPointerE2E, UnnamedFunctionPointerParameter) {
@@ -125,7 +125,7 @@ TEST_F(FunctionPointerE2E, UnnamedFunctionPointerParameter) {
     EXPECT_EQ(runWithPrelude(R"(
         int32 apply(int32 (*)(int32), int32 x) { return x + 1; }
         int32 main() { return apply(0, 41) - 42; }
-    )", "fp_unnamed.cmm"), 0);
+    )", "fp_unnamed.cdd"), 0);
 }
 
 TEST_F(FunctionPointerE2E, NestedCallback) {
@@ -134,7 +134,7 @@ TEST_F(FunctionPointerE2E, NestedCallback) {
         int32 twice(int32 (*f)(int32), int32 x) { return f(f(x)); }
         int32 inc(int32 x) { return x + 1; }
         int32 main() { return twice(inc, 5) - 7; }
-    )", "fp_nested.cmm"), 0);
+    )", "fp_nested.cdd"), 0);
 }
 
 TEST_F(FunctionPointerE2E, LibcQsortCallback) {
@@ -157,7 +157,7 @@ TEST_F(FunctionPointerE2E, LibcQsortCallback) {
             }
             return 0;
         }
-    )", "fp_qsort.cmm"), 0);
+    )", "fp_qsort.cdd"), 0);
 }
 
 TEST_F(FunctionPointerE2E, LibcBsearchCallback) {
@@ -177,7 +177,7 @@ TEST_F(FunctionPointerE2E, LibcBsearchCallback) {
             if (found == null) return 1;
             return *found - 4;
         }
-    )", "fp_bsearch.cmm"), 0);
+    )", "fp_bsearch.cdd"), 0);
 }
 
 TEST_F(FunctionPointerE2E, CastRvaluePointerMemberAccess) {
@@ -194,7 +194,7 @@ TEST_F(FunctionPointerE2E, CastRvaluePointerMemberAccess) {
             int32 viaCast = ((struct Point*)p)->y;
             return viaVar + viaCast - 11;
         }
-    )", "fp_cast_member.cmm"), 0);
+    )", "fp_cast_member.cdd"), 0);
 }
 
 TEST_F(FunctionPointerE2E, CastPointerRoundTrip) {
@@ -205,7 +205,7 @@ TEST_F(FunctionPointerE2E, CastPointerRoundTrip) {
             int32* q = (int32*)p;
             return *q - 7;
         }
-    )", "fp_cast_roundtrip.cmm"), 0);
+    )", "fp_cast_roundtrip.cdd"), 0);
 }
 
 TEST_F(FunctionPointerE2E, FunctionReturningFunctionPointer) {
@@ -217,7 +217,7 @@ TEST_F(FunctionPointerE2E, FunctionReturningFunctionPointer) {
             int32 (*p)(int32) = get(1);
             return p(3) - 4;
         }
-    )", "fp_ret_fnptr.cmm"), 0);
+    )", "fp_ret_fnptr.cdd"), 0);
 }
 
 TEST_F(FunctionPointerE2E, FunctionTypeAlias) {
@@ -229,7 +229,7 @@ TEST_F(FunctionPointerE2E, FunctionTypeAlias) {
             F* f = get();
             return f(1) == 2 ? 0 : 1;
         }
-    )", "fp_fn_type_alias.cmm"), 0);
+    )", "fp_fn_type_alias.cdd"), 0);
 }
 
 TEST_F(FunctionPointerE2E, PointerToArrayDeclarator) {
@@ -240,7 +240,7 @@ TEST_F(FunctionPointerE2E, PointerToArrayDeclarator) {
             (*p)[1] = 7;
             return a[1] - 7;
         }
-    )", "fp_ptr_to_array.cmm"), 0);
+    )", "fp_ptr_to_array.cdd"), 0);
 }
 
 TEST_F(FunctionPointerE2E, ArrayOfFunctionPointers) {
@@ -253,5 +253,5 @@ TEST_F(FunctionPointerE2E, ArrayOfFunctionPointers) {
             if (arr[1](3) != 6) return 2;
             return 0;
         }
-    )", "fp_array_fnptr.cmm"), 0);
+    )", "fp_array_fnptr.cdd"), 0);
 }

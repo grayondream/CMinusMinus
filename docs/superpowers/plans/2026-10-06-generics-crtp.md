@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Cmm 获得函数/类/别名模板 + 非类型参数 + 单态化实例化 + `this` 表达式，端到端支撑 CRTP。
+**Goal:** CDD 获得函数/类/别名模板 + 非类型参数 + 单态化实例化 + `this` 表达式，端到端支撑 CRTP。
 
 **Architecture:** 模板定义处只 parse 存 AST（`TemplateDeclAST`）；使用点惰性触发实例化——`TemplateInstantiator` 深克隆 AST 并把 `TypeVarType` 占位替换为具体 `Type*`，实例以普通 `FunctionDeclAST`/`StructDeclAST` 走既有 sema + codegen；`TemplateRegistry` 按规范键去重并维护 `NotInstantiated → Instantiating → Done` 状态机。
 

@@ -48,11 +48,11 @@ static int runWithImports(const std::string& source, const std::string& filename
     auto tokens = lexer.tokenize();
     if (!lexer.getDiagnostics().empty()) return -1;
 
-    cmm::ModuleSearchPaths paths{{STD_DIR}};
+    cdd::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::unique_ptr<DeclAST>> importedDecls;
     std::vector<std::string> errors;
-    cmm::preloadImports(cmm::collectImportSpecifiers(tokens), ".", paths, loaded,
+    cdd::preloadImports(cdd::collectImportSpecifiers(tokens), ".", paths, loaded,
                         importedDecls, errors);
     if (!errors.empty()) {
         for (auto& e : errors) std::cerr << "import error: " << e << "\n";
@@ -67,7 +67,7 @@ static int runWithImports(const std::string& source, const std::string& filename
                                  std::make_move_iterator(importedDecls.begin()),
                                  std::make_move_iterator(importedDecls.end()));
     }
-    cmm::processImports(*ast, ".", paths, loaded, errors);
+    cdd::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) {
         for (auto& e : errors) std::cerr << "import error: " << e << "\n";
         return -1;
@@ -131,7 +131,7 @@ TEST_F(StdCollectionsTest, VecGrowPushInsertRemove) {
             v.destroy();
             return 0;
         }
-    )", "coll_vec.cmm"), 0);
+    )", "coll_vec.cdd"), 0);
 }
 
 TEST_F(StdCollectionsTest, DequeRingWrap) {
@@ -155,7 +155,7 @@ TEST_F(StdCollectionsTest, DequeRingWrap) {
             d.destroy();
             return 0;
         }
-    )", "coll_deque.cmm"), 0);
+    )", "coll_deque.cdd"), 0);
 }
 
 TEST_F(StdCollectionsTest, HashMapPutGetRemoveTombstone) {
@@ -183,7 +183,7 @@ TEST_F(StdCollectionsTest, HashMapPutGetRemoveTombstone) {
             m.destroy();
             return 0;
         }
-    )", "coll_map.cmm"), 0);
+    )", "coll_map.cdd"), 0);
 }
 
 TEST_F(StdCollectionsTest, HashSetInsertRemove) {
@@ -208,7 +208,7 @@ TEST_F(StdCollectionsTest, HashSetInsertRemove) {
             s.destroy();
             return 0;
         }
-    )", "coll_set.cmm"), 0);
+    )", "coll_set.cdd"), 0);
 }
 
 // Each container lives in its own module and must be usable on its own.
@@ -243,5 +243,5 @@ TEST_F(StdCollectionsTest, DirectContainerModuleImports) {
             s.destroy();
             return 0;
         }
-    )", "coll_direct.cmm"), 0);
+    )", "coll_direct.cdd"), 0);
 }

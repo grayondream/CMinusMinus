@@ -566,7 +566,7 @@ TEST_F(CompileTimeErgonomics, BuildQueries) {
     ASSERT_NO_FATAL_FAILURE(extract(compiler, "", "compile_time.build.compiler"));
     auto c = evalExpr(compiler);
     ASSERT_TRUE(c.has_value());
-    EXPECT_EQ(c->strVal, "cmm");
+    EXPECT_EQ(c->strVal, "cdd");
 
     Extracted host;
     ASSERT_NO_FATAL_FAILURE(extract(host, "", "compile_time.build.host_os"));

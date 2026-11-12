@@ -10,7 +10,7 @@
 class TranslationUnitAST;
 class DeclAST;
 
-namespace cmm {
+namespace cdd {
 
 // Ordered directories used to resolve `import` specifiers (P0-04 / MOD-04).
 struct ModuleSearchPaths {
@@ -18,9 +18,9 @@ struct ModuleSearchPaths {
 };
 
 // Resolve an import specifier to a readable file path, or "" when not found.
-// A specifier containing '/' (or ending in ".cmm") is treated as a relative
-// path; otherwise dots map to directory separators and ".cmm" is appended
-// (`std.c` -> `std/c.cmm`). `paths.dirs` are searched in order.
+// A specifier containing '/' (or ending in ".cdd") is treated as a relative
+// path; otherwise dots map to directory separators and ".cdd" is appended
+// (`std.c` -> `std/c.cdd`). `paths.dirs` are searched in order.
 std::string resolveImport(const std::string& specifier, const ModuleSearchPaths& paths);
 
 // P0-04/MOD-04: collect top-level `import` specifiers from a token stream
@@ -60,4 +60,4 @@ void processImports(TranslationUnitAST& tu,
                     std::set<std::string>& loaded,
                     std::vector<std::string>& errors);
 
-} // namespace cmm
+} // namespace cdd

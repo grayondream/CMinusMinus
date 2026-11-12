@@ -67,7 +67,7 @@ static int runSource(const std::string& source, const std::string& filename) {
 
 // 语义分析是否通过（供负向用例：期望编译失败）。
 static bool semaOk(const std::string& source) {
-    Lexer lexer("anon_neg.cmm", source);
+    Lexer lexer("anon_neg.cdd", source);
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
     auto ast = parser.parse();
@@ -105,7 +105,7 @@ TEST_F(AnonTypeE2E, UsingNamedAnonymousStructsAreSameType) {
             if (b.v != 3) return 1;
             return 0;
         }
-    )", "anon_using.cmm"), 0);
+    )", "anon_using.cdd"), 0);
 }
 
 TEST_F(AnonTypeE2E, SameDefinitionMultipleDeclaratorsShareType) {
@@ -118,7 +118,7 @@ TEST_F(AnonTypeE2E, SameDefinitionMultipleDeclaratorsShareType) {
             if (b.v != 5) return 1;
             return 0;
         }
-    )", "anon_multi_same.cmm"), 0);
+    )", "anon_multi_same.cdd"), 0);
 }
 
 TEST_F(AnonTypeE2E, AnonymousStructAsFieldArrayPointerNested) {
@@ -139,7 +139,7 @@ TEST_F(AnonTypeE2E, AnonymousStructAsFieldArrayPointerNested) {
             if (qs[1].q != 4) return 4;
             return 0;
         }
-    )", "anon_nested.cmm"), 0);
+    )", "anon_nested.cdd"), 0);
 }
 
 TEST_F(AnonTypeE2E, AnonymousReturnTypeDefinitionUses) {
@@ -152,7 +152,7 @@ TEST_F(AnonTypeE2E, AnonymousReturnTypeDefinitionUses) {
             if (r.v != 42) return 1;
             return 0;
         }
-    )", "anon_ret.cmm"), 0);
+    )", "anon_ret.cdd"), 0);
 }
 
 TEST_F(AnonTypeE2E, DistinctAnonymousArgsRejected) {

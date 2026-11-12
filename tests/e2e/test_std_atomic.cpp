@@ -49,11 +49,11 @@ static int runWithImports(const std::string& source, const std::string& filename
     auto tokens = lexer.tokenize();
     if (!lexer.getDiagnostics().empty()) return -1;
 
-    cmm::ModuleSearchPaths paths{{STD_DIR}};
+    cdd::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::unique_ptr<DeclAST>> importedDecls;
     std::vector<std::string> errors;
-    cmm::preloadImports(cmm::collectImportSpecifiers(tokens), ".", paths, loaded,
+    cdd::preloadImports(cdd::collectImportSpecifiers(tokens), ".", paths, loaded,
                         importedDecls, errors);
     if (!errors.empty()) return -1;
 
@@ -65,7 +65,7 @@ static int runWithImports(const std::string& source, const std::string& filename
                                  std::make_move_iterator(importedDecls.begin()),
                                  std::make_move_iterator(importedDecls.end()));
     }
-    cmm::processImports(*ast, ".", paths, loaded, errors);
+    cdd::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) return -1;
 
     SemanticAnalyzer analyzer;
@@ -113,7 +113,7 @@ TEST_F(StdAtomicTest, PerOrderAndRuntimeOrder) {
             if (a.load() != 4) return 3;
             return 0;
         }
-    )", "std_atomic_order.cmm"), 0);
+    )", "std_atomic_order.cdd"), 0);
 }
 
 TEST_F(StdAtomicTest, RuntimeOrderRmwAndFences) {
@@ -139,7 +139,7 @@ TEST_F(StdAtomicTest, RuntimeOrderRmwAndFences) {
             std::atomic_signal_fence_seq_cst();
             return 0;
         }
-    )", "std_atomic_rmw_order.cmm"), 0);
+    )", "std_atomic_rmw_order.cdd"), 0);
 }
 
 TEST_F(StdAtomicTest, ExplicitCompareExchange) {
@@ -158,7 +158,7 @@ TEST_F(StdAtomicTest, ExplicitCompareExchange) {
                     &a.value, &expected, 3)) return 2;
             return a.load() == 3 ? 0 : 3;
         }
-    )", "std_atomic_cas_explicit.cmm"), 0);
+    )", "std_atomic_cas_explicit.cdd"), 0);
 }
 
 TEST_F(StdAtomicTest, FloatBoolEnumAndPointer) {
@@ -204,7 +204,7 @@ TEST_F(StdAtomicTest, FloatBoolEnumAndPointer) {
             if (a8.load() != 4) return 12;
             return 0;
         }
-    )", "std_atomic_types.cmm"), 0);
+    )", "std_atomic_types.cdd"), 0);
 }
 
 TEST_F(StdAtomicTest, LockFreeQueries) {
@@ -216,7 +216,7 @@ TEST_F(StdAtomicTest, LockFreeQueries) {
             if (!a.is_always_lock_free()) return 2;
             return 0;
         }
-    )", "std_atomic_lockfree.cmm"), 0);
+    )", "std_atomic_lockfree.cdd"), 0);
 }
 
 TEST_F(StdAtomicTest, UnsupportedSizeRejected) {
@@ -227,7 +227,7 @@ TEST_F(StdAtomicTest, UnsupportedSizeRejected) {
             std::Atomic<int128> a = {0};
             return (int32)a.value;
         }
-    )", "std_atomic_bad_size.cmm", &errors);
+    )", "std_atomic_bad_size.cdd", &errors);
     EXPECT_EQ(rc, -1);
     ASSERT_FALSE(errors.empty());
     bool mentionsLimit = false;
@@ -244,7 +244,7 @@ TEST_F(StdAtomicTest, UnsupportedSizeRejected) {
             std::Atomic<Pair> a;
             return a.is_lock_free() ? 0 : 1;
         }
-    )", "std_atomic_bad_struct.cmm", &aggregateErrors);
+    )", "std_atomic_bad_struct.cdd", &aggregateErrors);
     EXPECT_EQ(aggregateRc, -1);
     EXPECT_FALSE(aggregateErrors.empty());
 }
@@ -264,7 +264,7 @@ TEST_F(StdAtomicTest, SeqCstConvenience) {
             if (wrong != a.load()) return 4;
             return a.load() == 11 ? 0 : 5;
         }
-    )", "std_atomic_seq.cmm"), 0);
+    )", "std_atomic_seq.cdd"), 0);
 }
 
 } // namespace

@@ -127,7 +127,7 @@
 4. 成员体 `using` + 访问控制。
 5. 文档（grammar/keywords/semantics）、TODO/Progress、示例增补。
 
-每步 TDD：先写失败测试，再实现，`ctest -j8` 全绿后提交。最终用 `examples/all_features.cmm` 与新增 e2e 验证。
+每步 TDD：先写失败测试，再实现，`ctest -j8` 全绿后提交。最终用 `examples/all_features.cdd` 与新增 e2e 验证。
 
 ## 9. Builder-check 决议（覆盖前文的实现细节）
 

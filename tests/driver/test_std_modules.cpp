@@ -41,13 +41,13 @@ protected:
 };
 
 int runWithImports(const std::string& source, const std::string& filename) {
-    auto ast = cmm::parseStdCPrelude(source, filename);
+    auto ast = cdd::parseStdCPrelude(source, filename);
     if (!ast) return -1;
 
-    cmm::ModuleSearchPaths paths{{STD_DIR}};
+    cdd::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::string> errors;
-    cmm::processImports(*ast, ".", paths, loaded, errors);
+    cdd::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) return -1;
 
     SemanticAnalyzer analyzer;
@@ -80,13 +80,13 @@ int runWithImports(const std::string& source, const std::string& filename) {
 // Used for the terminating builtins (`assert`/`panic`), which cannot be run
 // in-process because they abort.
 std::string compileToIR(const std::string& source, const std::string& filename) {
-    auto ast = cmm::parseStdCPrelude(source, filename);
+    auto ast = cdd::parseStdCPrelude(source, filename);
     if (!ast) return "";
 
-    cmm::ModuleSearchPaths paths{{STD_DIR}};
+    cdd::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::string> errors;
-    cmm::processImports(*ast, ".", paths, loaded, errors);
+    cdd::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) return "";
 
     SemanticAnalyzer analyzer;
@@ -111,22 +111,22 @@ std::string compileToIR(const std::string& source, const std::string& filename) 
 } // namespace
 
 TEST_F(StdModulesTest, ResolvesModulesFromStdDir) {
-    cmm::ModuleSearchPaths paths{{STD_DIR}};
-    EXPECT_FALSE(cmm::resolveImport("std.core", paths).empty());
-    EXPECT_FALSE(cmm::resolveImport("std.io", paths).empty());
+    cdd::ModuleSearchPaths paths{{STD_DIR}};
+    EXPECT_FALSE(cdd::resolveImport("std.core", paths).empty());
+    EXPECT_FALSE(cdd::resolveImport("std.io", paths).empty());
 }
 
 TEST_F(StdModulesTest, CoreMinMax) {
     EXPECT_EQ(runWithImports(
         "import std.core;\nint32 main() { return std::min(3, 5) + std::max(2, 9) - 12; }\n",
-        "std_core_minmax.cmm"), 0);
+        "std_core_minmax.cdd"), 0);
 }
 
 TEST_F(StdModulesTest, CoreClamp) {
     EXPECT_EQ(runWithImports(
         "import std.core;\n"
         "int32 main() { return std::clamp(42, 0, 10) - 10; }\n",
-        "std_core_clamp.cmm"), 0);
+        "std_core_clamp.cdd"), 0);
 }
 
 TEST_F(StdModulesTest, CoreConstexprUse) {
@@ -134,13 +134,13 @@ TEST_F(StdModulesTest, CoreConstexprUse) {
     EXPECT_EQ(runWithImports(
         "import std.core;\n"
         "int32 main() { compile_time int32 m = std::min(4, 7); return m - 4; }\n",
-        "std_core_constexpr.cmm"), 0);
+        "std_core_constexpr.cdd"), 0);
 }
 
 TEST_F(StdModulesTest, IoPrintInt) {
     EXPECT_EQ(runWithImports(
         "import std.io;\nint32 main() { std::print_int(7); return 0; }\n",
-        "std_io_print_int.cmm"), 0);
+        "std_io_print_int.cdd"), 0);
 }
 
 // ----- P0-05 / STD-01: builtin assert/panic (location-aware terminators) -----
@@ -149,25 +149,25 @@ TEST_F(StdModulesTest, AssertTrueRuns) {
     // A satisfied assertion is a no-op; execution continues.
     EXPECT_EQ(runWithImports(
         "int32 main() { assert(1 + 1 == 2); return 7; }\n",
-        "assert_true.cmm"), 7);
+        "assert_true.cdd"), 7);
 }
 
 TEST_F(StdModulesTest, AssertFalseEmitsAbortWithLocation) {
     std::string ir = compileToIR(
         "int32 main() { int32 x = 0; assert(x); return 0; }\n",
-        "assert_false.cmm");
+        "assert_false.cdd");
     ASSERT_FALSE(ir.empty());
     EXPECT_NE(ir.find("@abort"), std::string::npos);
-    EXPECT_NE(ir.find("assert_false.cmm:1"), std::string::npos);
+    EXPECT_NE(ir.find("assert_false.cdd:1"), std::string::npos);
 }
 
 TEST_F(StdModulesTest, PanicEmitsAbortWithLocation) {
     std::string ir = compileToIR(
         "int32 main() { panic(\"boom\"); return 0; }\n",
-        "panic.cmm");
+        "panic.cdd");
     ASSERT_FALSE(ir.empty());
     EXPECT_NE(ir.find("@abort"), std::string::npos);
-    EXPECT_NE(ir.find("panic.cmm:1"), std::string::npos);
+    EXPECT_NE(ir.find("panic.cdd:1"), std::string::npos);
     EXPECT_NE(ir.find("panic: %s"), std::string::npos);
 }
 
@@ -177,13 +177,13 @@ TEST_F(StdModulesTest, FileWriteReadRoundTrip) {
     EXPECT_EQ(runWithImports(
         "import std.io;\n"
         "int32 main() {\n"
-        "    void* f = std::file_open(\"/tmp/cmm_std_io_test.txt\", \"w\");\n"
+        "    void* f = std::file_open(\"/tmp/cdd_std_io_test.txt\", \"w\");\n"
         "    if (f == null) return 1;\n"
         "    char out[4];\n"
         "    out[0] = 'a'; out[1] = 'b'; out[2] = 'c'; out[3] = 0;\n"
         "    std::file_write(f, out, 3);\n"
         "    std::file_close(f);\n"
-        "    void* g = std::file_open(\"/tmp/cmm_std_io_test.txt\", \"r\");\n"
+        "    void* g = std::file_open(\"/tmp/cdd_std_io_test.txt\", \"r\");\n"
         "    if (g == null) return 2;\n"
         "    char in[8];\n"
         "    usize n = std::file_read(g, in, 3);\n"
@@ -192,22 +192,22 @@ TEST_F(StdModulesTest, FileWriteReadRoundTrip) {
         "    if (n != 3) return 3;\n"
         "    if (in[0] != 'a' || in[1] != 'b' || in[2] != 'c') return 4;\n"
         "    return 0;\n"
-        "}\n", "std_io_file.cmm"), 0);
+        "}\n", "std_io_file.cdd"), 0);
 }
 
 TEST_F(StdModulesTest, IoReadWriteChar) {
     EXPECT_EQ(runWithImports(
         "import std.io;\n"
         "int32 main() {\n"
-        "    void* f = std::file_open(\"/tmp/cmm_std_io_char.txt\", \"w\");\n"
+        "    void* f = std::file_open(\"/tmp/cdd_std_io_char.txt\", \"w\");\n"
         "    if (f == null) return 1;\n"
         "    std::file_write_char(f, 'Z');\n"
         "    std::file_close(f);\n"
-        "    void* g = std::file_open(\"/tmp/cmm_std_io_char.txt\", \"r\");\n"
+        "    void* g = std::file_open(\"/tmp/cdd_std_io_char.txt\", \"r\");\n"
         "    if (g == null) return 2;\n"
         "    int32 c = std::file_read_char(g);\n"
         "    std::file_close(g);\n"
         "    if (c != 'Z') return 3;\n"
         "    return 0;\n"
-        "}\n", "std_io_char.cmm"), 0);
+        "}\n", "std_io_char.cdd"), 0);
 }

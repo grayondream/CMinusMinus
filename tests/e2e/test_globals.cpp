@@ -73,7 +73,7 @@ TEST_F(GlobalsE2E, UninitializedGlobalZeroInitialized) {
     EXPECT_EQ(runSource(R"(
         int32 g;
         int32 main() { return g; }
-    )", "test_global_zero.cmm"), 0);
+    )", "test_global_zero.cdd"), 0);
 }
 
 // An initialized global keeps its value.
@@ -81,7 +81,7 @@ TEST_F(GlobalsE2E, InitializedGlobalValue) {
     EXPECT_EQ(runSource(R"(
         int32 g = 5;
         int32 main() { return g - 5; }
-    )", "test_global_init.cmm"), 0);
+    )", "test_global_init.cdd"), 0);
 }
 
 // Writes to a global are visible across calls.
@@ -94,7 +94,7 @@ TEST_F(GlobalsE2E, GlobalWriteVisible) {
             bump();
             return counter == 2 ? 0 : 1;
         }
-    )", "test_global_write.cmm"), 0);
+    )", "test_global_write.cdd"), 0);
 }
 
 // TYP-12 D3 via the global fix: an uninitialized global slice is the
@@ -103,5 +103,5 @@ TEST_F(GlobalsE2E, GlobalSliceZeroInitialized) {
     EXPECT_EQ(runSource(R"(
         int32[] g;
         int32 main() { return g.len == 0 ? 0 : 1; }
-    )", "test_global_slice.cmm"), 0);
+    )", "test_global_slice.cdd"), 0);
 }

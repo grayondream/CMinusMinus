@@ -3,7 +3,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="${PROJECT_ROOT}/build"
-EXECUTABLE="${BUILD_DIR}/bin/cmm"
+EXECUTABLE="${BUILD_DIR}/bin/cdd"
 
 set -e
 

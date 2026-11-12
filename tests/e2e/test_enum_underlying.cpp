@@ -35,7 +35,7 @@ protected:
     }
 };
 
-static int runSource(const std::string& source, const std::string& file = "enum.cmm") {
+static int runSource(const std::string& source, const std::string& file = "enum.cdd") {
     Lexer lexer(file, source);
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
@@ -74,7 +74,7 @@ struct AnalyzeResult {
 };
 
 static AnalyzeResult analyzeSource(const std::string& source,
-                                   const std::string& file = "enum.cmm") {
+                                   const std::string& file = "enum.cdd") {
     Lexer lexer(file, source);
     auto tokens = lexer.tokenize();
     Parser parser(tokens);

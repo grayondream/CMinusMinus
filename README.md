@@ -1,15 +1,15 @@
-# Cmm
+# CDD
 
-**Cmm** — *C minus minus* — is a statically typed, C-like systems language
+**CDD** — *C dot dot* — is a statically typed, C-like systems language
 compiled with LLVM. It keeps C's predictable memory model and ABI, removes the
 preprocessor and legacy numeric types, and adds modules, classes, templates,
-`compile_time` evaluation, and a standard library written in Cmm itself.
+`compile_time` evaluation, and a standard library written in CDD itself.
 
-Cmm source files use the **`.cmm`** suffix. The public standard-library
-namespace is **`std`**; the compiler's internal C++ namespace is **`cmm`**.
+CDD source files use the **`.cdd`** suffix. The public standard-library
+namespace is **`std`**; the compiler's internal C++ namespace is **`cdd`**.
 Legacy `.smc` sources are not supported.
 
-## Why Cmm
+## Why CDD
 
 - **Predictable by construction** — explicit fixed-width types (`int8` …
   `int128`, `float16` … `float128`), a C-compatible memory model, and a stable
@@ -21,7 +21,7 @@ Legacy `.smc` sources are not supported.
   `compile_time.repeat`, reflection helpers, and container evaluation.
 - **A real standard library** — `std.io`, `std.mem`, `std.string`, `std.vec`,
   `std.deque`, `std.hashmap`, `std.hashset`, `std.math`, `std.atomic`,
-  `std.thread`, and more, implemented in `libs/std/*.cmm`.
+  `std.thread`, and more, implemented in `libs/std/*.cdd`.
 - **LLVM backend** — native object files and linked executables, plus an
   in-process JIT used by the test suite.
 
@@ -48,17 +48,17 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j"$(nproc)"
 ```
 
-The compiler is written to `build/bin/cmm`.
+The compiler is written to `build/bin/cdd`.
 
-### Hello, Cmm
+### Hello, CDD
 
-Create `hello.cmm`:
+Create `hello.cdd`:
 
-```cmm
+```cdd
 module hello;
 
 int32 main() {
-    println("Hello, Cmm!");
+    println("Hello, CDD!");
     return 0;
 }
 ```
@@ -66,19 +66,19 @@ int32 main() {
 Compile and run:
 
 ```bash
-build/bin/cmm hello.cmm -o hello
+build/bin/cdd hello.cdd -o hello
 ./hello
 ```
 
 The module name must match the file name: `module hello;` lives in
-`hello.cmm`.
+`hello.cdd`.
 
 ## Modules and the Standard Library
 
 The public namespace is `std`, and standard-library modules are imported by
 dotted name:
 
-```cmm
+```cdd
 module vec_demo;
 import std.vec;
 
@@ -100,8 +100,8 @@ built-in `println` / `print` family is always available.
 | Path | Contents |
 |---|---|
 | `src/` | Compiler implementation: lexer, parser, AST, sema, codegen, driver |
-| `libs/std/` | Cmm standard library (`.cmm`) |
-| `examples/` | `all_features.cmm` — end-to-end feature tour |
+| `libs/std/` | CDD standard library (`.cdd`) |
+| `examples/` | `all_features.cdd` — end-to-end feature tour |
 | `tests/` | GoogleTest unit, integration, driver, and e2e tests |
 | `docs/spec/` | Normative language specification |
 | `docs/superpowers/` | Design and implementation records |
@@ -116,7 +116,7 @@ ctest --test-dir build -j8
 Run the full feature tour:
 
 ```bash
-build/bin/cmm examples/all_features.cmm -o /tmp/all_features
+build/bin/cdd examples/all_features.cdd -o /tmp/all_features
 /tmp/all_features
 ```
 
@@ -135,7 +135,7 @@ The last line must be `ALL FEATURES OK`.
 
 ## Status and Limitations
 
-Cmm is an actively developed compiler. The normative spec marks features as
+CDD is an actively developed compiler. The normative spec marks features as
 `[impl]`, `[plan]`, or `[ng]` (non-goal). By-value capturing closures can
 escape by returning them from an `auto`-return function; returning a closure
 with by-reference or `this` captures is rejected at compile time. Anonymous
@@ -145,26 +145,26 @@ beyond Linux x86-64; see `TODO.md` for the up-to-date list.
 
 ## Naming
 
-- Language: **Cmm** (pronounced “C minus minus”)
-- Source suffix: **`.cmm`**
+- Language: **CDD** (pronounced “C dot dot”)
+- Source suffix: **`.cdd`**
 - Standard-library namespace/modules: **`std`**
-- Compiler binary: **`cmm`**
+- Compiler binary: **`cdd`**
 - Legacy `.smc` input is rejected with a migration hint: rename the file to
-  `.cmm`.
+  `.cdd`.
 
 ## 中文简介
 
-**Cmm（C minus minus）** 是一门基于 LLVM 的静态类型、C 风格系统编程语言，
+**CDD（C dot dot）** 是一门基于 LLVM 的静态类型、C 风格系统编程语言，
 强调可预测的 C 内存模型与 ABI、定宽数值类型、无预处理器、模块、类与模板、
-`compile_time` 编译期求值，以及用 Cmm 自身编写的标准库。
+`compile_time` 编译期求值，以及用 CDD 自身编写的标准库。
 
-源文件后缀为 **`.cmm`**；标准库的公开命名空间/模块保持 **`std`**
+源文件后缀为 **`.cdd`**；标准库的公开命名空间/模块保持 **`std`**
 （例如 `import std.io;`、`std::Vec<int32>`）；编译器内部 C++ 命名空间为
-`cmm`。旧 `.smc` 源文件不再兼容。
+`cdd`。旧 `.smc` 源文件不再兼容。
 
 ```bash
 ./scripts/build.sh
-build/bin/cmm hello.cmm -o hello
+build/bin/cdd hello.cdd -o hello
 ./hello
 ```
 

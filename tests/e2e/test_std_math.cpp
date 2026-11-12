@@ -44,13 +44,13 @@ protected:
 };
 
 static int runWithImports(const std::string& source, const std::string& filename) {
-    auto ast = cmm::parseStdCPrelude(source, filename);
+    auto ast = cdd::parseStdCPrelude(source, filename);
     if (!ast) return -1;
 
-    cmm::ModuleSearchPaths paths{{STD_DIR}};
+    cdd::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::string> errors;
-    cmm::processImports(*ast, ".", paths, loaded, errors);
+    cdd::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) return -1;
 
     SemanticAnalyzer analyzer;
@@ -88,7 +88,7 @@ TEST_F(StdMathTest, SqrtAndSqrtf) {
             if (std::sqrt(2.0) < 1.41 || std::sqrt(2.0) > 1.42) return 3;
             return 0;
         }
-    )", "math_sqrt.cmm"), 0);
+    )", "math_sqrt.cdd"), 0);
 }
 
 TEST_F(StdMathTest, AbsFloorCeilRoundTrunc) {
@@ -102,7 +102,7 @@ TEST_F(StdMathTest, AbsFloorCeilRoundTrunc) {
             if (std::trunc(-2.7) != -2.0) return 5;
             return 0;
         }
-    )", "math_floor.cmm"), 0);
+    )", "math_floor.cdd"), 0);
 }
 
 TEST_F(StdMathTest, PowCosSin) {
@@ -114,7 +114,7 @@ TEST_F(StdMathTest, PowCosSin) {
             if (std::sin(0.0) != 0.0) return 3;
             return 0;
         }
-    )", "math_pow.cmm"), 0);
+    )", "math_pow.cdd"), 0);
 }
 
 TEST_F(StdMathTest, ConstantsPIAndE) {
@@ -125,7 +125,7 @@ TEST_F(StdMathTest, ConstantsPIAndE) {
             if (std::E < 2.7182 || std::E > 2.7183) return 2;
             return 0;
         }
-    )", "math_const.cmm"), 0);
+    )", "math_const.cdd"), 0);
 }
 
 TEST_F(StdMathTest, IsNanIsInfIsFinite) {
@@ -142,7 +142,7 @@ TEST_F(StdMathTest, IsNanIsInfIsFinite) {
             if (std::is_finite(inf)) return 6;
             return 0;
         }
-    )", "math_class.cmm"), 0);
+    )", "math_class.cdd"), 0);
 }
 
 // F1 (review): a non-extern user function whose name coincides with a libc
@@ -161,25 +161,25 @@ TEST_F(StdMathTest, SameNamedUserFunctionKeepsNamespaceSymbol) {
             if (std::cos(0.0) != 1.0) return 2;
             return 0;
         }
-    )", "math_f1.cmm"), 0);
+    )", "math_f1.cdd"), 0);
 }
 
 // F2 (review): a global-scope extern (prelude `malloc`) is NOT reachable as
 // `std::malloc` — namespace isolation preserved (compile-time diagnostic).
 TEST_F(StdMathTest, GlobalExternNotReachableViaNamespace) {
-    auto ast = cmm::parseStdCPrelude(R"(
+    auto ast = cdd::parseStdCPrelude(R"(
         import std.math;
         int32 main() {
             void* p = std::malloc(100);
             return p != null ? 0 : 1;
         }
-    )", "math_f2.cmm");
+    )", "math_f2.cdd");
     ASSERT_NE(ast, nullptr);
 
-    cmm::ModuleSearchPaths paths{{STD_DIR}};
+    cdd::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::string> errors;
-    cmm::processImports(*ast, ".", paths, loaded, errors);
+    cdd::processImports(*ast, ".", paths, loaded, errors);
     ASSERT_TRUE(errors.empty());
 
     SemanticAnalyzer analyzer;
@@ -210,7 +210,7 @@ TEST_F(StdMathTest, Float32FamilyAndF32Bitcast) {
             if (back != 1.5f) return 9;
             return 0;
         }
-    )", "math_f32.cmm"), 0);
+    )", "math_f32.cdd"), 0);
 }
 
 }  // namespace

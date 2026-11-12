@@ -4,7 +4,7 @@
 
 **Goal:** 落地 STD-10（字符串操作库）+ STD-11（format 内建与 FMT-08 规格集），print/println/format 共享一套格式解析，新诊断 E2020~E2022，文档与 TODO 收口。
 
-**Architecture:** 分层复用——`src/ast/PrintFormat.cpp` 提供 PrintSpec 结构化解析 + printf 转译（print/format 共享）；`format()` 为内建（sema 全检 + codegen 直拼，字面量走直线的 memcpy/snprintf，动态串走合成 helper）；`find`/`rfind`/`sub`/`split`/`split_destroy` 为内建原语（.cmm 无法触达 str 内部与构造切片值）；其余组合 API 全部进 `libs/std/string.cmm`。
+**Architecture:** 分层复用——`src/ast/PrintFormat.cpp` 提供 PrintSpec 结构化解析 + printf 转译（print/format 共享）；`format()` 为内建（sema 全检 + codegen 直拼，字面量走直线的 memcpy/snprintf，动态串走合成 helper）；`find`/`rfind`/`sub`/`split`/`split_destroy` 为内建原语（.cdd 无法触达 str 内部与构造切片值）；其余组合 API 全部进 `libs/std/string.cdd`。
 
 **Tech Stack:** C++20 / LLVM ORC LLJIT / gtest / libc (snprintf/memcpy/malloc)；`%b` 依赖 glibc ≥ 2.35（C23 二进制转换）。
 
@@ -12,7 +12,7 @@
 
 ## 对 spec 的两处已论证偏差（执行者须知）
 
-1. **`split`/`split_destroy` 改为内建**（spec §3.2 曾将其列入 string.cmm）：.cmm 只能经数组 decay 得到切片，无法从 `ptr+len` 构造 `[]str` 值（test_slice.cpp 证实无此语法）。而 `string.new/destroy` 本就是 codegen 内建（同样原因），split 与之同构。拼写仍为自由函数 `split(s, sep)` / `split_destroy(parts)`，user-defined 优先规则与 print 一致。其余 API 全部留在库层。
+1. **`split`/`split_destroy` 改为内建**（spec §3.2 曾将其列入 string.cdd）：.cdd 只能经数组 decay 得到切片，无法从 `ptr+len` 构造 `[]str` 值（test_slice.cpp 证实无此语法）。而 `string.new/destroy` 本就是 codegen 内建（同样原因），split 与之同构。拼写仍为自由函数 `split(s, sep)` / `split_destroy(parts)`，user-defined 优先规则与 print 一致。其余 API 全部留在库层。
 2. **`split` 空 sep 为运行时 panic**（spec §4 曾标「编译期」）：库函数无法产生编译期诊断，`split` 又是内建——内建 sema 对字面量空 sep 可编译期拒绝，非字面量运行时 panic。两态都做。
 3. **StrBuilder 为值类型**（spec §3.2 曾写「destroy 释放自身 malloc」）：语言无 `new` 表达式，按值返回含 malloc 字段的类有别名双 free 陷阱（I4 同型）。钉死为栈值 + `init()`，`destroy()` 只释放内部 string。
 
@@ -223,7 +223,7 @@ git commit -m "feat(fmt): builtin format() sema with compile-time checks (FMT-07
 
 **Interfaces:**
 - Consumes: Task 2 的 `isFormat/formatLiteral/formatSpecs/printArgKinds`；`promotePrintArg`、`builtinStrArg`（Expr.cpp 既有 static，string→str 投影）。
-- Produces: `CodegenContext::getFormatDynFn()` — 合成 `internal {i8*, i64, i64} @cmm.format.dyn(i8* fmt, i64 fmtLen, i8** chunkPtrs, i64* chunkLens, i64 n)`，返回值直接是 string 三域布局 `{ptr, len, cap}`（Task 4/5 无依赖，供本任务动态路径）。
+- Produces: `CodegenContext::getFormatDynFn()` — 合成 `internal {i8*, i64, i64} @cdd.format.dyn(i8* fmt, i64 fmtLen, i8** chunkPtrs, i64* chunkLens, i64 n)`，返回值直接是 string 三域布局 `{ptr, len, cap}`（Task 4/5 无依赖，供本任务动态路径）。
 
 - [ ] **Step 1: 写失败测试（tests/e2e/test_string.cpp 追加，值断言经 `str v = s; v == "..."` 比较、main 返回码）**
 
@@ -362,15 +362,15 @@ git commit -m "feat(str): builtin split/split_destroy returning zero-copy []str 
 
 ---
 
-### Task 6: libs/std/string.cmm 组合库
+### Task 6: libs/std/string.cdd 组合库
 
 **Files:**
-- Create: `libs/std/string.cmm`
+- Create: `libs/std/string.cdd`
 - Create: `tests/e2e/test_std_string_lib.cpp`（fixture 复制 test_std_modules.cpp 的 `runWithImports`，`import std.string;`）
 - 重配置：`cmake -B build`（新测试文件进 GLOB）
 
 **Interfaces:**
-- Consumes: Task 4 的 `find/rfind/sub`、Task 5 的 `split/split_destroy`（内建，无需 import 即可用；库内亦可直用）；`string.new/append/push/len/destroy`、`char_len_at/char_count`（P1-06 内建）；`extern malloc/free/isspace` 自包含声明（io.cmm 先例）。
+- Consumes: Task 4 的 `find/rfind/sub`、Task 5 的 `split/split_destroy`（内建，无需 import 即可用；库内亦可直用）；`string.new/append/push/len/destroy`、`char_len_at/char_count`（P1-06 内建）；`extern malloc/free/isspace` 自包含声明（io.cdd 先例）。
 - Produces（stdlib.md 文档对象）: `export namespace std { contains, starts_with, ends_with, trim_left, trim_right, trim, join, concat, repeat, utf8_sub, class StrBuilder }`。签名钉死：
 
 ```
@@ -412,9 +412,9 @@ SplitEmptySepPanic: split("a", "") 运行时 panic → 编译不执行（Task 5 
 Run: `cmake -B build && cmake --build build -j && ctest --test-dir build -R StdStringLib --output-on-failure`
 Expected: FAIL（module 文件不存在，import 失败）。
 
-- [ ] **Step 3: 实现 libs/std/string.cmm**
+- [ ] **Step 3: 实现 libs/std/string.cdd**
 
-模块头 `module std.string;` + `export namespace std { ... }`（io.cmm 范式）；libc extern 自包含；实现按 Interfaces 签名与语义注释逐条落地。`return this.buf;` 若直返不受支持，退 `str v = this.buf; return v;`。
+模块头 `module std.string;` + `export namespace std { ... }`（io.cdd 范式）；libc extern 自包含；实现按 Interfaces 签名与语义注释逐条落地。`return this.buf;` 若直返不受支持，退 `str v = this.buf; return v;`。
 
 - [ ] **Step 4: 确认 PASS**
 
@@ -423,7 +423,7 @@ Run: `ctest --test-dir build -R StdStringLib --output-on-failure` → PASS。
 - [ ] **Step 5: 全量 + 提交**
 
 ```bash
-git add libs/std/string.cmm tests/e2e/test_std_string_lib.cpp
+git add libs/std/string.cdd tests/e2e/test_std_string_lib.cpp
 git commit -m "feat(std): std.string combinators - trim/split-view/join/concat/repeat/StrBuilder/utf8_sub (STD-10)"
 ```
 

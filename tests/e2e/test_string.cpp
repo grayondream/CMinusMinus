@@ -107,7 +107,7 @@ TEST_F(StringE2E, LiteralToCharPointer) {
             if (p[1] != 'i') { return 2; }
             return 0;
         }
-    )", "str1.cmm"), 0);
+    )", "str1.cdd"), 0);
 }
 
 TEST_F(StringE2E, PrintStrArg) {
@@ -118,7 +118,7 @@ TEST_F(StringE2E, PrintStrArg) {
             print("{}x", "ab");
             return 0;
         }
-    )", "str2.cmm"), 0);
+    )", "str2.cdd"), 0);
 }
 
 TEST_F(StringE2E, StrCompareRuntime) {
@@ -140,7 +140,7 @@ TEST_F(StringE2E, StrCompareRuntime) {
             if (a == c) { return 0; }
             return 3;
         }
-    )", "str3.cmm"), 0);
+    )", "str3.cdd"), 0);
 }
 
 // ---- T3: str 内建方法与 str_from_c ----
@@ -152,7 +152,7 @@ TEST_F(StringE2E, StrLen) {
             if (s.len() != 5) { return 1; }
             return 0;
         }
-    )", "str4.cmm"), 0);
+    )", "str4.cdd"), 0);
 }
 
 TEST_F(StringE2E, StrCharCount) {
@@ -164,7 +164,7 @@ TEST_F(StringE2E, StrCharCount) {
             if (s.char_count() != 5) { return 2; }
             return 0;
         }
-    )", "str5.cmm"), 0);
+    )", "str5.cdd"), 0);
 }
 
 TEST_F(StringE2E, StrCharAt) {
@@ -175,7 +175,7 @@ TEST_F(StringE2E, StrCharAt) {
             if (s.char_at(1) != '\xC3') { return 1; }
             return 0;
         }
-    )", "str6.cmm"), 0);
+    )", "str6.cdd"), 0);
 }
 
 TEST_F(StringE2E, StrCharLenAt) {
@@ -186,7 +186,7 @@ TEST_F(StringE2E, StrCharLenAt) {
             if (s.char_len_at(1) != 2) { return 2; }
             return 0;
         }
-    )", "str7.cmm"), 0);
+    )", "str7.cdd"), 0);
 }
 
 TEST_F(StringE2E, StrFromCExec) {
@@ -197,7 +197,7 @@ TEST_F(StringE2E, StrFromCExec) {
             if (s.len() != 3) { return 1; }
             return 0;
         }
-    )", "str8.cmm"), 0);
+    )", "str8.cdd"), 0);
 }
 
 // ---- T4: string 内存与方法 ----
@@ -209,7 +209,7 @@ TEST_F(StringE2E, NewLenExec) {
             if (s.len() != 5) { return 1; }
             return 0;
         }
-    )", "str9.cmm"), 0);
+    )", "str9.cdd"), 0);
 }
 
 TEST_F(StringE2E, AppendExec) {
@@ -221,7 +221,7 @@ TEST_F(StringE2E, AppendExec) {
             if (s[2] != 'c') { return 2; }
             return 0;
         }
-    )", "str10.cmm"), 0);
+    )", "str10.cdd"), 0);
 }
 
 TEST_F(StringE2E, AppendGrowthExec) {
@@ -237,7 +237,7 @@ TEST_F(StringE2E, AppendGrowthExec) {
             if (s[198] != 'a' || s[199] != 'b') { return 2; }
             return 0;
         }
-    )", "str11.cmm"), 0);
+    )", "str11.cdd"), 0);
 }
 
 TEST_F(StringE2E, PushExec) {
@@ -251,7 +251,7 @@ TEST_F(StringE2E, PushExec) {
             if (s[2] != 'z') { return 2; }
             return 0;
         }
-    )", "str12.cmm"), 0);
+    )", "str12.cdd"), 0);
 }
 
 TEST_F(StringE2E, CapacityExec) {
@@ -264,7 +264,7 @@ TEST_F(StringE2E, CapacityExec) {
             if (s.capacity() < 5) { return 3; }
             return 0;
         }
-    )", "str13.cmm"), 0);
+    )", "str13.cdd"), 0);
 }
 
 TEST_F(StringE2E, DestroyFrees) {
@@ -276,7 +276,7 @@ TEST_F(StringE2E, DestroyFrees) {
             if (s.capacity() != 0) { return 2; }
             return 0;
         }
-    )", "str14.cmm"), 0);
+    )", "str14.cdd"), 0);
 }
 
 TEST_F(StringE2E, StringToStrView) {
@@ -287,7 +287,7 @@ TEST_F(StringE2E, StringToStrView) {
             if (v.len() != 2) { return 1; }
             return 0;
         }
-    )", "str15.cmm"), 0);
+    )", "str15.cdd"), 0);
 }
 
 TEST_F(StringE2E, AppendAcceptsString) {
@@ -300,7 +300,7 @@ TEST_F(StringE2E, AppendAcceptsString) {
             if (a[1] != 'y') { return 2; }
             return 0;
         }
-    )", "str16.cmm"), 0);
+    )", "str16.cdd"), 0);
 }
 
 TEST_F(StringE2E, SubscriptExec) {
@@ -312,7 +312,7 @@ TEST_F(StringE2E, SubscriptExec) {
             if (s[2] != 'c') { return 3; }
             return 0;
         }
-    )", "str17.cmm"), 0);
+    )", "str17.cdd"), 0);
 }
 
 // P1-06 / T5: str_from_c over a runtime buffer validates UTF-8 and panics on
@@ -350,9 +350,9 @@ TEST_F(StringE2E, StrFromCRuntimeValidates) {
             string_view s = str_from_c(buf);
             return 0;
         }
-    )", "str18.cmm");
+    )", "str18.cdd");
     ASSERT_FALSE(ir.empty());
-    EXPECT_NE(ir.find("cmm.utf8.validate"), std::string::npos);
+    EXPECT_NE(ir.find("cdd.utf8.validate"), std::string::npos);
 }
 
 TEST_F(StringE2E, StrFromCRuntimeValidExec) {
@@ -368,7 +368,7 @@ TEST_F(StringE2E, StrFromCRuntimeValidExec) {
             if (s.len() != 3) { return 1; }
             return 0;
         }
-    )", "str19.cmm"), 0);
+    )", "str19.cdd"), 0);
 }
 
 // ---- T6: 硬化与边界（Review Focus pin）----
@@ -384,7 +384,7 @@ TEST_F(StringE2E, DoubleDestroySafe) {
             if (s.capacity() != 0) { return 2; }
             return 0;
         }
-    )", "str21.cmm"), 0);
+    )", "str21.cdd"), 0);
 }
 
 TEST_F(StringE2E, DataIsNulTerminatedForLibcInterop) {
@@ -402,7 +402,7 @@ TEST_F(StringE2E, DataIsNulTerminatedForLibcInterop) {
             s.destroy();
             return 0;
         }
-    )", "str23.cmm"), 0);
+    )", "str23.cdd"), 0);
 }
 
 TEST_F(StringE2E, EmptyStringInvariants) {
@@ -417,7 +417,7 @@ TEST_F(StringE2E, EmptyStringInvariants) {
             if (p == null) { return 3; }
             return 0;
         }
-    )", "str22.cmm"), 0);
+    )", "str22.cdd"), 0);
 }
 
 TEST_F(StringE2E, SubscriptCompilesWithoutBoundsCheck) {
@@ -429,7 +429,7 @@ TEST_F(StringE2E, SubscriptCompilesWithoutBoundsCheck) {
             if (s[2] != 'c') { return 1; }
             return 0;
         }
-    )", "str23.cmm"), 0);
+    )", "str23.cdd"), 0);
 }
 
 // 终审 I3（修复轮守卫）：自别名 append —— 源缓冲区可能与接收者相同。
@@ -442,7 +442,7 @@ TEST_F(StringE2E, AppendSelfAlias) {
             if (s[2] != 'a' || s[3] != 'b') { return 2; }
             return 0;
         }
-    )", "str24.cmm"), 0);
+    )", "str24.cdd"), 0);
 }
 
 // ===== P1-09 (FMT-07/08/12): builtin format() 值断言 =====
@@ -456,7 +456,7 @@ TEST_F(StringE2E, FormatBasicExec) {
             if (v == "x=7 y=-3") { return 0; }
             return 1;
         }
-    )", "fmt01.cmm"), 0);
+    )", "fmt01.cdd"), 0);
 }
 
 TEST_F(StringE2E, FormatEmptyExec) {
@@ -466,7 +466,7 @@ TEST_F(StringE2E, FormatEmptyExec) {
             if (s.len() != 0) { return 1; }
             return 0;
         }
-    )", "fmt02.cmm"), 0);
+    )", "fmt02.cdd"), 0);
 }
 
 TEST_F(StringE2E, FormatSpecsExec) {
@@ -477,7 +477,7 @@ TEST_F(StringE2E, FormatSpecsExec) {
             if (v == "ff FF 10 101") { return 0; }
             return 1;
         }
-    )", "fmt03.cmm"), 0);
+    )", "fmt03.cdd"), 0);
 }
 
 TEST_F(StringE2E, FormatZeroPadExec) {
@@ -488,7 +488,7 @@ TEST_F(StringE2E, FormatZeroPadExec) {
             if (v == "[05:45]") { return 0; }
             return 1;
         }
-    )", "fmt04.cmm"), 0);
+    )", "fmt04.cdd"), 0);
 }
 
 TEST_F(StringE2E, FormatFloatPrecExec) {
@@ -499,7 +499,7 @@ TEST_F(StringE2E, FormatFloatPrecExec) {
             if (v == "3.14 3.141593e+04") { return 0; }
             return 1;
         }
-    )", "fmt05.cmm"), 0);
+    )", "fmt05.cdd"), 0);
 }
 
 TEST_F(StringE2E, FormatWidthAlignExec) {
@@ -510,7 +510,7 @@ TEST_F(StringE2E, FormatWidthAlignExec) {
             if (v == "   42|42   |") { return 0; }
             return 1;
         }
-    )", "fmt06.cmm"), 0);
+    )", "fmt06.cdd"), 0);
 }
 
 TEST_F(StringE2E, FormatCenteredExec) {
@@ -521,7 +521,7 @@ TEST_F(StringE2E, FormatCenteredExec) {
             if (v == " 42  |") { return 0; }
             return 1;
         }
-    )", "fmt07.cmm"), 0);
+    )", "fmt07.cdd"), 0);
 }
 
 TEST_F(StringE2E, FormatCustomFillExec) {
@@ -532,7 +532,7 @@ TEST_F(StringE2E, FormatCustomFillExec) {
             if (v == "42***") { return 0; }
             return 1;
         }
-    )", "fmt08.cmm"), 0);
+    )", "fmt08.cdd"), 0);
 }
 
 TEST_F(StringE2E, FormatStrExec) {
@@ -543,7 +543,7 @@ TEST_F(StringE2E, FormatStrExec) {
             if (v == "s=ab t=cd") { return 0; }
             return 1;
         }
-    )", "fmt09.cmm"), 0);
+    )", "fmt09.cdd"), 0);
 }
 
 TEST_F(StringE2E, FormatStrNulPreserved) {
@@ -558,7 +558,7 @@ TEST_F(StringE2E, FormatStrNulPreserved) {
             if (s[2] != 'b') { return 3; }
             return 0;
         }
-    )", "fmt10.cmm"), 0);
+    )", "fmt10.cdd"), 0);
 }
 
 TEST_F(StringE2E, FormatStringArgExec) {
@@ -569,7 +569,7 @@ TEST_F(StringE2E, FormatStringArgExec) {
             if (v == "vv") { return 0; }
             return 1;
         }
-    )", "fmt11.cmm"), 0);
+    )", "fmt11.cdd"), 0);
 }
 
 TEST_F(StringE2E, FormatToStringExec) {
@@ -582,7 +582,7 @@ TEST_F(StringE2E, FormatToStringExec) {
             if (v == "P!") { return 0; }
             return 1;
         }
-    )", "fmt12.cmm"), 0);
+    )", "fmt12.cdd"), 0);
 }
 
 TEST_F(StringE2E, FormatEscapesExec) {
@@ -593,7 +593,7 @@ TEST_F(StringE2E, FormatEscapesExec) {
             if (v == "{a}") { return 0; }
             return 1;
         }
-    )", "fmt13.cmm"), 0);
+    )", "fmt13.cdd"), 0);
 }
 
 TEST_F(StringE2E, FormatDynExec) {
@@ -605,7 +605,7 @@ TEST_F(StringE2E, FormatDynExec) {
             if (v == "1-2") { return 0; }
             return 1;
         }
-    )", "fmt14.cmm"), 0);
+    )", "fmt14.cdd"), 0);
 }
 
 TEST_F(StringE2E, FormatDynEscapeExec) {
@@ -617,7 +617,7 @@ TEST_F(StringE2E, FormatDynEscapeExec) {
             if (v == "a{b") { return 0; }
             return 1;
         }
-    )", "fmt15.cmm"), 0);
+    )", "fmt15.cdd"), 0);
 }
 
 TEST_F(StringE2E, FormatDynExtraExec) {
@@ -629,7 +629,7 @@ TEST_F(StringE2E, FormatDynExtraExec) {
             if (v == "1") { return 0; }
             return 1;
         }
-    )", "fmt16.cmm"), 0);
+    )", "fmt16.cdd"), 0);
 }
 
 // Review Focus 2: dynamic format strings ignore spec text — args render with
@@ -643,7 +643,7 @@ TEST_F(StringE2E, FormatDynSpecIgnored) {
             if (v == "10") { return 0; }
             return 1;
         }
-    )", "fmt17.cmm"), 0);
+    )", "fmt17.cdd"), 0);
 }
 
 TEST_F(StringE2E, FormatDynShortExec) {
@@ -655,7 +655,7 @@ TEST_F(StringE2E, FormatDynShortExec) {
             if (v == "1 ") { return 0; }
             return 1;
         }
-    )", "fmt18.cmm"), 0);
+    )", "fmt18.cdd"), 0);
 }
 
 TEST_F(StringE2E, FormatLargeExec) {
@@ -667,7 +667,7 @@ TEST_F(StringE2E, FormatLargeExec) {
             if (v == "1 2 3 4 5 6 7 8 9 10") { return 0; }
             return 1;
         }
-    )", "fmt19.cmm"), 0);
+    )", "fmt19.cdd"), 0);
 }
 
 // print/println 的渲染槽位（^ / 自定义 fill）冒烟：编译执行不崩即通过。
@@ -679,7 +679,7 @@ TEST_F(StringE2E, PrintRenderSlotSmoke) {
             println("{:b}", 5);
             return 0;
         }
-    )", "fmt20.cmm"), 0);
+    )", "fmt20.cdd"), 0);
 }
 
 // ===== P1-09 (STD-10): find/rfind/sub 内建原语 =====
@@ -697,7 +697,7 @@ TEST_F(StringE2E, FindRFindExec) {
             if (t.rfind("") != 5) { return 6; }
             return 0;
         }
-    )", "str19.cmm"), 0);
+    )", "str19.cdd"), 0);
 }
 
 TEST_F(StringE2E, SubExec) {
@@ -712,7 +712,7 @@ TEST_F(StringE2E, SubExec) {
             if (c.len() == 0) { return 0; }
             return 9;
         }
-    )", "str20.cmm"), 0);
+    )", "str20.cdd"), 0);
 }
 
 TEST_F(StringE2E, FindOnStringView) {
@@ -723,7 +723,7 @@ TEST_F(StringE2E, FindOnStringView) {
             if (v.find("b") != 2) { return 1; }
             return 0;
         }
-    )", "str22.cmm"), 0);
+    )", "str22.cdd"), 0);
 }
 
 TEST_F(StringE2E, SubBoundsPanicPath) {
@@ -734,7 +734,7 @@ TEST_F(StringE2E, SubBoundsPanicPath) {
             string_view a = s.sub(3, 2);
             return 0;
         }
-    )", "str21.cmm");
+    )", "str21.cdd");
     ASSERT_FALSE(ir.empty());
 }
 
@@ -748,7 +748,7 @@ TEST_F(StringE2E, SplitExec) {
             if (parts[1] == "b") { return 0; }
             return 2;
         }
-    )", "str23.cmm"), 0);
+    )", "str23.cdd"), 0);
 }
 
 TEST_F(StringE2E, SplitNoSepExec) {
@@ -759,7 +759,7 @@ TEST_F(StringE2E, SplitNoSepExec) {
             if (parts[0] == "abc") { return 0; }
             return 2;
         }
-    )", "str24.cmm"), 0);
+    )", "str24.cdd"), 0);
 }
 
 TEST_F(StringE2E, SplitTailEmpty) {
@@ -771,7 +771,7 @@ TEST_F(StringE2E, SplitTailEmpty) {
             if (parts[1].len() == 0) { return 0; }
             return 2;
         }
-    )", "str25.cmm"), 0);
+    )", "str25.cdd"), 0);
 }
 
 TEST_F(StringE2E, SplitViewAndDestroy) {
@@ -784,7 +784,7 @@ TEST_F(StringE2E, SplitViewAndDestroy) {
             split_destroy(parts);
             return 0;
         }
-    )", "str26.cmm"), 0);
+    )", "str26.cdd"), 0);
 }
 
 // P1-09: && / || 为 C 语义逻辑运算符——判零真值 + 短路求值。
@@ -810,7 +810,7 @@ TEST_F(StringE2E, LogicalOpsTruthinessAndShortCircuit) {
             if (calls != 2) { bad = bad + 256; }
             return bad;
         }
-    )", "logic1.cmm"), 0);
+    )", "logic1.cdd"), 0);
 }
 
 // ===== 终审修复回归 =====
@@ -832,7 +832,7 @@ TEST_F(StringE2E, LogicalOpsBlockProducingRhs) {
             if (!(a && s == "x" && b == 1)) { bad = bad + 16; }
             return bad;
         }
-    )", "logic2.cmm"), 0);
+    )", "logic2.cdd"), 0);
 }
 
 // C2: snprintf 截断时返回「本应写入」的长度——chunk 长度必须 clamp 到
@@ -850,5 +850,5 @@ TEST_F(StringE2E, FormatClampsTruncatedChunks) {
             if (s[70] != '9') { return 4; }
             return 0;
         }
-    )", "clamp1.cmm"), 0);
+    )", "clamp1.cdd"), 0);
 }

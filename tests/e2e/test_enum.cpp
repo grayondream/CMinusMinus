@@ -31,7 +31,7 @@ protected:
 };
 
 static int runSource(const std::string& source) {
-    Lexer lexer("enum.cmm", source);
+    Lexer lexer("enum.cdd", source);
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
     auto ast = parser.parse();
@@ -42,7 +42,7 @@ static int runSource(const std::string& source) {
     if (!analyzer.getErrors().empty()) return -1;
 
     CodegenContext ctx;
-    ctx.setSourceFile("enum.cmm");
+    ctx.setSourceFile("enum.cdd");
     ast->codegen(ctx);
     ctx.finalizeDebugInfo();
 

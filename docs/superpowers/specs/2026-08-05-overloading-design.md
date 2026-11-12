@@ -2,7 +2,7 @@
 
 ## Overview
 
-Add function overloading (multiple functions with the same name but different parameter types) and operator overloading (custom operators on structs/unions) to the Cmm compiler.
+Add function overloading (multiple functions with the same name but different parameter types) and operator overloading (custom operators on structs/unions) to the CDD compiler.
 
 **Key decisions**:
 - Exact-match resolution (no implicit conversions)

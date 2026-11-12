@@ -1110,7 +1110,7 @@ Token Lexer::scanToken() {
         }
         break;
     case '#':
-        // Legal to lex, but the parser rejects it: Cmm has no
+        // Legal to lex, but the parser rejects it: CDD has no
         // preprocessor (NG-02).
         token = makeToken(TokenType::TOKEN_HASH, lexeme());
         break;

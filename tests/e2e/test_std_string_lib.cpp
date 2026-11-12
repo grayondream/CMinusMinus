@@ -44,13 +44,13 @@ protected:
 };
 
 static int runWithImports(const std::string& source, const std::string& filename) {
-    auto ast = cmm::parseStdCPrelude(source, filename);
+    auto ast = cdd::parseStdCPrelude(source, filename);
     if (!ast) return -1;
 
-    cmm::ModuleSearchPaths paths{{STD_DIR}};
+    cdd::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::string> errors;
-    cmm::processImports(*ast, ".", paths, loaded, errors);
+    cdd::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) return -1;
 
     SemanticAnalyzer analyzer;
@@ -81,13 +81,13 @@ static int runWithImports(const std::string& source, const std::string& filename
 
 // 编译不执行（用于会 abort 的运行时 panic 路径）。
 static std::string compileIRWithImports(const std::string& source, const std::string& filename) {
-    auto ast = cmm::parseStdCPrelude(source, filename);
+    auto ast = cdd::parseStdCPrelude(source, filename);
     if (!ast) return "";
 
-    cmm::ModuleSearchPaths paths{{STD_DIR}};
+    cdd::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::string> errors;
-    cmm::processImports(*ast, ".", paths, loaded, errors);
+    cdd::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) return "";
 
     SemanticAnalyzer analyzer;
@@ -124,7 +124,7 @@ TEST_F(StdStringLibTest, ContainsStartsEndsExec) {
             if (std::ends_with(s, "hello")) { return 6; }
             return 0;
         }
-    )", "sslib01.cmm"), 0);
+    )", "sslib01.cdd"), 0);
 }
 
 TEST_F(StdStringLibTest, TrimExec) {
@@ -140,7 +140,7 @@ TEST_F(StdStringLibTest, TrimExec) {
             if (b == "hi there") { return 0; }
             return 9;
         }
-    )", "sslib02.cmm"), 0);
+    )", "sslib02.cdd"), 0);
 }
 
 TEST_F(StdStringLibTest, JoinExec) {
@@ -157,7 +157,7 @@ TEST_F(StdStringLibTest, JoinExec) {
             if (e.len() == 0) { return 0; }
             return 9;
         }
-    )", "sslib03.cmm"), 0);
+    )", "sslib03.cdd"), 0);
 }
 
 TEST_F(StdStringLibTest, ConcatRepeatExec) {
@@ -177,7 +177,7 @@ TEST_F(StdStringLibTest, ConcatRepeatExec) {
             z.destroy();
             return 9;
         }
-    )", "sslib04.cmm"), 0);
+    )", "sslib04.cdd"), 0);
 }
 
 // 字符串构建惯用法：string 自身即 builder（P1-06 append/push）。
@@ -195,7 +195,7 @@ TEST_F(StdStringLibTest, BuilderIdiomExec) {
             b.destroy();
             return 9;
         }
-    )", "sslib05.cmm"), 0);
+    )", "sslib05.cdd"), 0);
 }
 
 TEST_F(StdStringLibTest, Utf8SubExec) {
@@ -207,7 +207,7 @@ TEST_F(StdStringLibTest, Utf8SubExec) {
             if (t == "él") { return 0; }
             return 9;
         }
-    )", "sslib06.cmm"), 0);
+    )", "sslib06.cdd"), 0);
 }
 
 TEST_F(StdStringLibTest, SplitDynamicEmptySepPanicPath) {
@@ -220,6 +220,6 @@ TEST_F(StdStringLibTest, SplitDynamicEmptySepPanicPath) {
             string_view[] parts = split("a", sep);
             return 0;
         }
-    )", "sslib07.cmm");
+    )", "sslib07.cdd");
     ASSERT_FALSE(ir.empty());
 }

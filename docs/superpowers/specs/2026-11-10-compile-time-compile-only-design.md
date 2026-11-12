@@ -1,4 +1,4 @@
-# Cmm 1.0 — `compile_time` / `compile_only` 设计
+# CDD 1.0 — `compile_time` / `compile_only` 设计
 
 > 状态：**已实施（2026-11-10）**
 > 日期：2026-11-10
@@ -16,7 +16,7 @@
 
 目标写法：
 
-```cmm
+```cdd
 struct DfaTable {
     int32 next[4][8];
     int32 initial;
@@ -45,7 +45,7 @@ compile_time DfaTable EMAIL_DFA = build_dfa("[a-z]+@[a-z]+");
 
 第二个核心能力：
 
-```cmm
+```cdd
 compile_time int32 table_at(int32 state, char c) {
     if compile_time {
         // 仅编译期路径；可以直接调用 compile_only
@@ -57,7 +57,7 @@ compile_time int32 table_at(int32 state, char c) {
 }
 ```
 
-`if compile_time` 是语句形式，语义等价于 C++ `if consteval` 的 Cmm 版本；现有的 `compile_time.if(cond)` 仍表示“按常量条件选择分支”，两者不合并。
+`if compile_time` 是语句形式，语义等价于 C++ `if consteval` 的 CDD 版本；现有的 `compile_time.if(cond)` 仍表示“按常量条件选择分支”，两者不合并。
 
 ## 2. 目标
 
@@ -79,7 +79,7 @@ compile_time int32 table_at(int32 state, char c) {
 - `compile_only` 体内不允许运行期函数调用、I/O、`volatile`、`atomic`、`asm`、可变全局、`thread_local`、运行期地址。
 - 不支持在 parser 级数组维度/模板实参中直接写 `compile_only` 调用；先用命名 `compile_time` 常量承接返回值：
 
-  ```cmm
+  ```cdd
   compile_time int32 DFA_STATES = build_dfa("...").initial;
   int32 table[DFA_STATES];
   ```
@@ -107,7 +107,7 @@ decl-core          = type-alias | record-decl | enum-decl | template-decl
 - `compile_only`只修饰自由函数；变量、参数、字段、方法、lambda 上出现时定向报错。
 - `compile_time` 变量隐式只读；显式 `const` 可写但冗余：
 
-  ```cmm
+  ```cdd
   compile_time DfaTable T = ...;
   compile_time const DfaTable T2 = ...;   // 允许，const 冗余
   ```
@@ -157,7 +157,7 @@ compile-time-context-if = 'if' , 'compile_time' , block ,
 - 运行期调用始终走正常函数体；`compile_time` 不改变运行期 ABI。
 - `compile_time` 函数内直接调用 `compile_only` 且没有包在 `if compile_time` 中 → **编译错误**（已确认）。必须写成：
 
-  ```cmm
+  ```cdd
   compile_time Ret f(...) {
       if compile_time {
           return build_dfa(...);   // 仅编译期
@@ -444,17 +444,17 @@ std::shared_ptr<CtAggregate> foldedAggregate; // 聚合常量
 
 把语言层 `constexpr` 全部迁移为 `compile_time`：
 
-- `libs/std/core.cmm`：`min`/`max`；
-- `libs/std/math.cmm`：`PI`/`E`；
-- `libs/std/thread.cmm`：`SYS_NPROCESSORS_ONLN`；
-- `libs/std/time.cmm`：`CLOCKS_PER_SEC`；
+- `libs/std/core.cdd`：`min`/`max`；
+- `libs/std/math.cdd`：`PI`/`E`；
+- `libs/std/thread.cdd`：`SYS_NPROCESSORS_ONLN`；
+- `libs/std/time.cdd`：`CLOCKS_PER_SEC`；
 - `tests/e2e/test_const_constexpr.cpp`（可改名/改内容）；
 - `tests/e2e/test_constexpr_function.cpp`；
 - `tests/e2e/test_constexpr_containers.cpp`；
 - `tests/e2e/test_compile_time.cpp`；
 - `tests/frontend/test_parser.cpp` 的 `constexpr` 词法/解析测试改为迁移诊断 + `compile_time` 正向测试；
 - `tests/sema/test_semantic_analyzer.cpp` 对应诊断；
-- `examples/all_features.cmm` 增加 DfaTable/`compile_only`/`if compile_time` 节。
+- `examples/all_features.cdd` 增加 DfaTable/`compile_only`/`if compile_time` 节。
 
 C++ 内部的 `static constexpr` 常量不受影响。历史 `docs/superpowers/` 设计文档不重写；当前 `docs/spec/` 更新。
 
@@ -524,13 +524,13 @@ C++ 内部的 `static constexpr` 常量不受影响。历史 `docs/superpowers/`
 6. 普通函数调用 `compile_only` 的完整链路诊断。
 7. `compile_only` 函数体调用运行期函数诊断。
 8. `constexpr` 迁移诊断。
-9. `examples/all_features.cmm` 输出 `ALL FEATURES OK`。
+9. `examples/all_features.cdd` 输出 `ALL FEATURES OK`。
 10. 全量 `ctest --test-dir build -j8` 通过。
 
 ### 9.5 验收
 
 - 全量测试（基线 1829）全部通过，新增测试全绿。
-- `examples/all_features.cmm` 编译成功并输出 `ALL FEATURES OK`。
+- `examples/all_features.cdd` 编译成功并输出 `ALL FEATURES OK`。
 - 仓库内语言层 `constexpr` 清零（C++ `static constexpr` 除外）。
 - `DfaTable` 示例的 IR 中不存在 `build_dfa` 符号。
 - 诊断示例覆盖 §5.8 的链路/hint。
@@ -546,9 +546,9 @@ C++ 内部的 `static constexpr` 常量不受影响。历史 `docs/superpowers/`
 | AST | `src/ast/Decl.h/.cpp`、`Stmt.h`、`Expr.h`、`CtValue.h/.cpp` |
 | Sema | `src/sema/SemanticAnalyzer.h/.cpp`、`CompileTimeEvaluator.h/.cpp` |
 | Codegen | `src/ast/Decl.cpp`、`src/codegen/CodegenContext.*` |
-| Stdlib | `libs/std/core.cmm`、`math.cmm`、`thread.cmm`、`time.cmm` |
+| Stdlib | `libs/std/core.cdd`、`math.cdd`、`thread.cdd`、`time.cdd` |
 | Tests | `tests/frontend`、`tests/sema`、`tests/e2e`、`tests/ast`、`tests/codegen`（IR 断言） |
-| Docs | `docs/spec/*`、`TODO.md`、`Progress.md`、`examples/all_features.cmm` |
+| Docs | `docs/spec/*`、`TODO.md`、`Progress.md`、`examples/all_features.cdd` |
 
 ### 10.2 推荐阶段
 

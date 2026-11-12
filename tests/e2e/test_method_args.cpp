@@ -83,7 +83,7 @@ TEST_F(MethodArgsE2E, MethodArrayParamWriteThrough) {
             b.bump(arr);
             return (arr[0] == 101 && arr[1] == 2 && b.x == 1) ? 0 : 1;
         }
-    )", "test_mc_writethrough.cmm"), 0);
+    )", "test_mc_writethrough.cdd"), 0);
 }
 
 TEST_F(MethodArgsE2E, MethodArrayParamReturnValue) {
@@ -97,7 +97,7 @@ TEST_F(MethodArgsE2E, MethodArrayParamReturnValue) {
             int32 arr[2] = {3, 4};
             return m.total(arr) == 7 ? 0 : 1;
         }
-    )", "test_mc_retval.cmm"), 0);
+    )", "test_mc_retval.cdd"), 0);
 }
 
 // Review Focus 3: resolution through the inheritance chain must store the
@@ -119,5 +119,5 @@ TEST_F(MethodArgsE2E, MethodInheritedArrayParam) {
             d.bump(arr);
             return (arr[0] == 42 && arr[1] == 9) ? 0 : 1;
         }
-    )", "test_mc_inherited.cmm"), 0);
+    )", "test_mc_inherited.cdd"), 0);
 }

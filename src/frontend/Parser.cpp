@@ -455,14 +455,14 @@ std::optional<Token> Parser::match(TokenType type) {
 
 // ========== Precedence & Associativity ==========
 
-// Precedence/associativity live in the normative table (cmm::getOperatorInfo),
+// Precedence/associativity live in the normative table (cdd::getOperatorInfo),
 // which mirrors docs/spec/grammar.ebnf §9 and is pinned by unit tests.
 int Parser::getPrecedence(TokenType op) const {
-    return cmm::getOperatorInfo(op).precedence;
+    return cdd::getOperatorInfo(op).precedence;
 }
 
 bool Parser::isRightAssociative(TokenType op) const {
-    return cmm::getOperatorInfo(op).rightAssociative;
+    return cdd::getOperatorInfo(op).rightAssociative;
 }
 
 // ========== Token to Operator Conversion ==========
@@ -1663,7 +1663,7 @@ std::unique_ptr<CompoundStmtAST> Parser::parseCompoundStmt() {
 bool Parser::rejectPreprocessorDirective() {
     if (!check(TokenType::TOKEN_HASH)) return false;
     auto hash = advance();
-    error("preprocessor directives are not supported (Cmm has no preprocessor)", *hash);
+    error("preprocessor directives are not supported (CDD has no preprocessor)", *hash);
     // Skip the remainder of the directive line to avoid cascading errors.
     while (peek() && peek()->type != TokenType::TOKEN_EOS && peek()->line == hash->line) {
         advance();
@@ -2261,7 +2261,7 @@ std::unique_ptr<TranslationUnitAST> Parser::parse() {
             continue;
         }
         
-        // import declaration: `import a.b;` or `import "dir/file.cmm";`
+        // import declaration: `import a.b;` or `import "dir/file.cdd";`
         if (check(TokenType::TOKEN_IMPORT)) {
             advance(); // consume "import"
             std::string importName;

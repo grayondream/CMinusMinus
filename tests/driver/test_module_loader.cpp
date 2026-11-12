@@ -48,7 +48,7 @@ protected:
 
 int jitRun(TranslationUnitAST& ast) {
     CodegenContext ctx;
-    ctx.setSourceFile("module_test.cmm");
+    ctx.setSourceFile("module_test.cdd");
     ast.codegen(ctx);
     ctx.finalizeDebugInfo();
 
@@ -72,49 +72,49 @@ int jitRun(TranslationUnitAST& ast) {
 } // namespace
 
 TEST_F(ModuleLoaderTest, ResolvesStdCFromLibsDir) {
-    cmm::ModuleSearchPaths paths{{STD_DIR}};
-    std::string resolved = cmm::resolveImport("std.c", paths);
+    cdd::ModuleSearchPaths paths{{STD_DIR}};
+    std::string resolved = cdd::resolveImport("std.c", paths);
     ASSERT_FALSE(resolved.empty());
-    EXPECT_NE(resolved.find("c.cmm"), std::string::npos);
+    EXPECT_NE(resolved.find("c.cdd"), std::string::npos);
 }
 
 TEST_F(ModuleLoaderTest, StdPreludeLoadsFromFile) {
-    const std::string text = cmm::loadStdCPrelude({STD_DIR});
+    const std::string text = cdd::loadStdCPrelude({STD_DIR});
     EXPECT_NE(text.find("memcpy"), std::string::npos);
     EXPECT_NE(text.find("malloc"), std::string::npos);
     EXPECT_NE(text.find("abs"), std::string::npos);
 }
 
 TEST_F(ModuleLoaderTest, UnresolvedImportReturnsEmpty) {
-    cmm::ModuleSearchPaths paths{{STD_DIR}};
-    EXPECT_TRUE(cmm::resolveImport("no_such_module_xyz", paths).empty());
+    cdd::ModuleSearchPaths paths{{STD_DIR}};
+    EXPECT_TRUE(cdd::resolveImport("no_such_module_xyz", paths).empty());
 }
 
 TEST_F(ModuleLoaderTest, DottedSpecifierMapsToPath) {
-    cmm::ModuleSearchPaths paths{{STD_DIR}};
-    // `std.c` resolves through the dotted-name rule to `<dir>/std/c.cmm`.
-    EXPECT_FALSE(cmm::resolveImport("std.c", paths).empty());
+    cdd::ModuleSearchPaths paths{{STD_DIR}};
+    // `std.c` resolves through the dotted-name rule to `<dir>/std/c.cdd`.
+    EXPECT_FALSE(cdd::resolveImport("std.c", paths).empty());
     // A specifier with a slash is treated as a relative path.
-    EXPECT_FALSE(cmm::resolveImport("std/c.cmm", paths).empty());
+    EXPECT_FALSE(cdd::resolveImport("std/c.cdd", paths).empty());
 }
 
 TEST_F(ModuleLoaderTest, ProcessImportsSplicesDeclarations) {
-    const fs::path dir = fs::temp_directory_path() / "cmm_module_loader_test";
+    const fs::path dir = fs::temp_directory_path() / "cdd_module_loader_test";
     fs::remove_all(dir);
     fs::create_directories(dir);
     {
-        std::ofstream out(dir / "util.cmm");
+        std::ofstream out(dir / "util.cdd");
         out << "int32 helper() { return 5; }\n";
     }
 
-    auto ast = cmm::parseStdCPrelude(
+    auto ast = cdd::parseStdCPrelude(
         "import util;\nint32 main() { return helper() - 5; }\n",
-        (dir / "main.cmm").string());
+        (dir / "main.cdd").string());
     ASSERT_NE(ast, nullptr);
 
     std::set<std::string> loaded;
     std::vector<std::string> errors;
-    cmm::processImports(*ast, dir.string(), {}, loaded, errors);
+    cdd::processImports(*ast, dir.string(), {}, loaded, errors);
     for (const auto& e : errors) ADD_FAILURE() << e;
     ASSERT_TRUE(errors.empty());
     ASSERT_FALSE(ast->declarations.empty());
@@ -133,25 +133,25 @@ TEST_F(ModuleLoaderTest, ProcessImportsSplicesDeclarations) {
 }
 
 TEST_F(ModuleLoaderTest, CyclicImportsReported) {
-    const fs::path dir = fs::temp_directory_path() / "cmm_module_cycle_test";
+    const fs::path dir = fs::temp_directory_path() / "cdd_module_cycle_test";
     fs::remove_all(dir);
     fs::create_directories(dir);
     {
-        std::ofstream out(dir / "a.cmm");
+        std::ofstream out(dir / "a.cdd");
         out << "import b;\nint32 fa() { return 1; }\n";
     }
     {
-        std::ofstream out(dir / "b.cmm");
+        std::ofstream out(dir / "b.cdd");
         out << "import a;\nint32 fb() { return 2; }\n";
     }
 
-    auto ast = cmm::parseStdCPrelude("import a;\nint32 main() { return fa() + fb() - 3; }\n",
-                                     (dir / "main.cmm").string());
+    auto ast = cdd::parseStdCPrelude("import a;\nint32 main() { return fa() + fb() - 3; }\n",
+                                     (dir / "main.cdd").string());
     ASSERT_NE(ast, nullptr);
 
     std::set<std::string> loaded;
     std::vector<std::string> errors;
-    cmm::processImports(*ast, dir.string(), {}, loaded, errors);
+    cdd::processImports(*ast, dir.string(), {}, loaded, errors);
 
     // MOD-07: an import cycle is reported (and loading terminates).
     bool reported = false;
@@ -166,11 +166,11 @@ TEST_F(ModuleLoaderTest, CyclicImportsReported) {
 }
 
 TEST_F(ModuleLoaderTest, ExportedTypesVisibleBeforeParsingImporter) {
-    const fs::path dir = fs::temp_directory_path() / "cmm_module_types_test";
+    const fs::path dir = fs::temp_directory_path() / "cdd_module_types_test";
     fs::remove_all(dir);
     fs::create_directories(dir);
     {
-        std::ofstream out(dir / "types.cmm");
+        std::ofstream out(dir / "types.cdd");
         out << "module types;\n"
                "export struct Point { int32 x; int32 y; };\n"
                "export using Handle = int32;\n"
@@ -190,7 +190,7 @@ TEST_F(ModuleLoaderTest, ExportedTypesVisibleBeforeParsingImporter) {
             return add(p.x + p.y, h + b.v + w.v) - 15;
         }
     )";
-    const std::string mainPath = (dir / "main.cmm").string();
+    const std::string mainPath = (dir / "main.cdd").string();
     Lexer lexer(mainPath, mainSource);
     auto tokens = lexer.tokenize();
     ASSERT_TRUE(lexer.getDiagnostics().empty());
@@ -198,10 +198,10 @@ TEST_F(ModuleLoaderTest, ExportedTypesVisibleBeforeParsingImporter) {
     std::set<std::string> loaded;
     std::vector<std::unique_ptr<DeclAST>> imported;
     std::vector<std::string> errors;
-    const auto specs = cmm::collectImportSpecifiers(tokens);
+    const auto specs = cdd::collectImportSpecifiers(tokens);
     ASSERT_EQ(specs.size(), 1u);
     EXPECT_EQ(specs[0], "types");
-    cmm::preloadImports(specs, dir.string(), cmm::ModuleSearchPaths{{dir.string()}},
+    cdd::preloadImports(specs, dir.string(), cdd::ModuleSearchPaths{{dir.string()}},
                         loaded, imported, errors);
     for (const auto& e : errors) ADD_FAILURE() << e;
     ASSERT_TRUE(errors.empty());
@@ -225,11 +225,11 @@ TEST_F(ModuleLoaderTest, ExportedTypesVisibleBeforeParsingImporter) {
 }
 
 TEST_F(ModuleLoaderTest, ExportedNamespaceTypesWithMethodsTemplatesAndInheritance) {
-    const fs::path dir = fs::temp_directory_path() / "cmm_module_namespace_types_test";
+    const fs::path dir = fs::temp_directory_path() / "cdd_module_namespace_types_test";
     fs::remove_all(dir);
     fs::create_directories(dir);
     {
-        std::ofstream out(dir / "api_types.cmm");
+        std::ofstream out(dir / "api_types.cdd");
         out << "module api_types;\n"
                "export namespace api {\n"
                "    struct Point {\n"
@@ -267,7 +267,7 @@ TEST_F(ModuleLoaderTest, ExportedNamespaceTypesWithMethodsTemplatesAndInheritanc
             return r - 37;
         }
     )";
-    const std::string mainPath = (dir / "main.cmm").string();
+    const std::string mainPath = (dir / "main.cdd").string();
     Lexer lexer(mainPath, mainSource);
     auto tokens = lexer.tokenize();
     ASSERT_TRUE(lexer.getDiagnostics().empty());
@@ -275,9 +275,9 @@ TEST_F(ModuleLoaderTest, ExportedNamespaceTypesWithMethodsTemplatesAndInheritanc
     std::set<std::string> loaded;
     std::vector<std::unique_ptr<DeclAST>> imported;
     std::vector<std::string> errors;
-    const auto specs = cmm::collectImportSpecifiers(tokens);
+    const auto specs = cdd::collectImportSpecifiers(tokens);
     ASSERT_EQ(specs.size(), 1u);
-    cmm::preloadImports(specs, dir.string(), cmm::ModuleSearchPaths{{dir.string()}},
+    cdd::preloadImports(specs, dir.string(), cdd::ModuleSearchPaths{{dir.string()}},
                         loaded, imported, errors);
     for (const auto& e : errors) ADD_FAILURE() << e;
     ASSERT_TRUE(errors.empty());
@@ -300,48 +300,48 @@ TEST_F(ModuleLoaderTest, ExportedNamespaceTypesWithMethodsTemplatesAndInheritanc
 }
 
 TEST_F(ModuleLoaderTest, RejectsNestedLegacySmcImportWithContext) {
-    const fs::path dir = fs::temp_directory_path() / "cmm_legacy_nested_test";
+    const fs::path dir = fs::temp_directory_path() / "cdd_legacy_nested_test";
     fs::remove_all(dir);
     fs::create_directories(dir);
     {
-        std::ofstream out(dir / "a.cmm");
+        std::ofstream out(dir / "a.cdd");
         out << "module a;\nimport x.smc;\n"
                "export int32 fa() { return 1; }\n";
     }
-    auto ast = cmm::parseStdCPrelude(
+    auto ast = cdd::parseStdCPrelude(
         "import a;\nint32 main() { return 0; }\n",
-        (dir / "main.cmm").string());
+        (dir / "main.cdd").string());
     ASSERT_NE(ast, nullptr);
     std::set<std::string> loaded;
     std::vector<std::string> errors;
-    cmm::processImports(*ast, dir.string(), {}, loaded, errors);
+    cdd::processImports(*ast, dir.string(), {}, loaded, errors);
     ASSERT_FALSE(errors.empty());
     EXPECT_NE(errors[0].find("legacy .smc source is not supported"),
               std::string::npos);
     EXPECT_NE(errors[0].find("x.smc"), std::string::npos);
-    EXPECT_NE(errors[0].find("a.cmm"), std::string::npos);
+    EXPECT_NE(errors[0].find("a.cdd"), std::string::npos);
     fs::remove_all(dir);
 }
 
 TEST_F(ModuleLoaderTest, RejectsLegacySmcImport) {
-    const fs::path dir = fs::temp_directory_path() / "cmm_legacy_import_test";
+    const fs::path dir = fs::temp_directory_path() / "cdd_legacy_import_test";
     fs::remove_all(dir);
     fs::create_directories(dir);
-    auto ast = cmm::parseStdCPrelude(
+    auto ast = cdd::parseStdCPrelude(
         "import \"old.smc\";\nint32 main() { return 0; }\n",
-        (dir / "main.cmm").string());
+        (dir / "main.cdd").string());
     ASSERT_NE(ast, nullptr);
     std::set<std::string> loaded;
     std::vector<std::string> errors;
-    cmm::processImports(*ast, dir.string(), {}, loaded, errors);
+    cdd::processImports(*ast, dir.string(), {}, loaded, errors);
     ASSERT_FALSE(errors.empty());
     EXPECT_NE(errors[0].find("legacy .smc source is not supported"), std::string::npos);
     fs::remove_all(dir);
 }
 
 TEST_F(ModuleLoaderTest, CollectImportSpecifiersSkipsColonColon) {
-    Lexer lexer("main.cmm", "import a::b;\nint32 main() { return 0; }\n");
+    Lexer lexer("main.cdd", "import a::b;\nint32 main() { return 0; }\n");
     auto tokens = lexer.tokenize();
     ASSERT_TRUE(lexer.getDiagnostics().empty());
-    EXPECT_TRUE(cmm::collectImportSpecifiers(tokens).empty());
+    EXPECT_TRUE(cdd::collectImportSpecifiers(tokens).empty());
 }

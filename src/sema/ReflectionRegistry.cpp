@@ -2,7 +2,7 @@
 
 #include <unordered_map>
 
-namespace cmm {
+namespace cdd {
 
 struct ReflectionRegistry::Impl {
     std::unordered_map<std::string, std::string> names;
@@ -43,4 +43,4 @@ const std::vector<AttributeData>* ReflectionRegistry::getAttributes(const std::s
     return it != d->attributes.end() ? &it->second : nullptr;
 }
 
-} // namespace cmm
+} // namespace cdd

@@ -80,7 +80,7 @@ int32 main() {
     compile_time int32 f5 = factorial(5);
     return f5 - 120;
 }
-)", "test_constexpr_factorial.cmm"), 0);
+)", "test_constexpr_factorial.cdd"), 0);
 }
 
 TEST_F(ConstexprFunctionE2E, ConstexprSquare) {
@@ -93,7 +93,7 @@ int32 main() {
     compile_time int32 s5 = square(5);
     return s5 - 25;
 }
-)", "test_constexpr_square.cmm"), 0);
+)", "test_constexpr_square.cdd"), 0);
 }
 
 TEST_F(ConstexprFunctionE2E, ConstexprForLoop) {
@@ -104,7 +104,7 @@ compile_time int32 sumTo(int32 n) {
     return total;
 }
 int32 main() { compile_time int32 x = sumTo(10); return x - 45; }
-)", "test_constexpr_for.cmm"), 0);
+)", "test_constexpr_for.cdd"), 0);
 }
 
 TEST_F(ConstexprFunctionE2E, ConstexprNestedCall) {
@@ -112,7 +112,7 @@ TEST_F(ConstexprFunctionE2E, ConstexprNestedCall) {
 compile_time int32 inc(int32 x) { return x + 1; }
 compile_time int32 twice(int32 x) { return inc(x) * 2; }
 int32 main() { compile_time int32 x = twice(20); return x - 42; }
-)", "test_constexpr_nested.cmm"), 0);
+)", "test_constexpr_nested.cdd"), 0);
 }
 
 TEST_F(ConstexprFunctionE2E, ConstexprWhileLoop) {
@@ -126,7 +126,7 @@ compile_time int32 countBits(uint32 v) {
     return n;
 }
 int32 main() { compile_time int32 x = countBits(0xF0u); return x - 4; }
-)", "test_constexpr_while.cmm"), 0);
+)", "test_constexpr_while.cdd"), 0);
 }
 
 TEST_F(ConstexprFunctionE2E, ConstexprDoWhileAndBreakContinue) {
@@ -143,7 +143,7 @@ compile_time int32 sumOdd(int32 n) {
     return total;
 }
 int32 main() { compile_time int32 x = sumOdd(9); return x - 25; }
-)", "test_constexpr_do_while.cmm"), 0);
+)", "test_constexpr_do_while.cdd"), 0);
 }
 
 TEST_F(ConstexprFunctionE2E, ConstexprCallbackCall) {
@@ -151,7 +151,7 @@ TEST_F(ConstexprFunctionE2E, ConstexprCallbackCall) {
 uint64 mix(uint64 x) { return (x ^ (x >> 30)) * 3; }
 compile_time uint64 apply(uint64 x) { return mix(x); }
 int32 main() { compile_time uint64 v = apply(7); return v == mix(7) ? 0 : 1; }
-)", "test_constexpr_callback.cmm"), 0);
+)", "test_constexpr_callback.cdd"), 0);
 }
 
 TEST_F(ConstexprFunctionE2E, ConstexprCompoundAssignAndInc) {
@@ -166,7 +166,7 @@ compile_time int32 calc() {
     return x;
 }
 int32 main() { compile_time int32 x = calc(); return x - 15; }
-)", "test_constexpr_assign.cmm"), 0);
+)", "test_constexpr_assign.cdd"), 0);
 }
 
 
@@ -178,7 +178,7 @@ int32 main() {
     int8 b = narrow();
     return (a == 44 && b == 44) ? 0 : 1;
 }
-)", "test_constexpr_narrow.cmm"), 0);
+)", "test_constexpr_narrow.cdd"), 0);
 }
 
 TEST_F(ConstexprFunctionE2E, ConstexprResolvesOverloads) {
@@ -190,7 +190,7 @@ int32 main() {
     compile_time int64 b = pick(7ul);
     return (a == 107 && b == 207) ? 0 : (int32)(a + b);
 }
-)", "test_constexpr_overload.cmm"), 0);
+)", "test_constexpr_overload.cdd"), 0);
 }
 
 TEST_F(ConstexprFunctionE2E, Int64MinDivMinusOneDoesNotCrash) {
@@ -200,7 +200,7 @@ int32 main() {
     compile_time int64 q = m / -1;
     return q == m ? 0 : 1;
 }
-)", "test_constexpr_int64min.cmm"), 0);
+)", "test_constexpr_int64min.cdd"), 0);
 }
 
 TEST_F(ConstexprFunctionE2E, OutParameterThroughHelper) {
@@ -208,5 +208,5 @@ TEST_F(ConstexprFunctionE2E, OutParameterThroughHelper) {
 compile_time int32 setOut(int32* out) { *out = 7; return 0; }
 compile_time int32 callIt() { int32 v = 0; setOut(&v); return v; }
 int32 main() { compile_time int32 x = callIt(); return x - 7; }
-)", "test_constexpr_out_helper.cmm"), 0);
+)", "test_constexpr_out_helper.cdd"), 0);
 }

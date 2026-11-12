@@ -103,7 +103,7 @@ TEST_F(OptionalResultE2E, OptionalBranchExec) {
             if (o.valid) { return o.value; }
             return -1;
         }
-    )", "optres1.cmm"), 42);
+    )", "optres1.cdd"), 42);
 }
 
 TEST_F(OptionalResultE2E, OptionalRvalueMember) {
@@ -111,7 +111,7 @@ TEST_F(OptionalResultE2E, OptionalRvalueMember) {
     EXPECT_EQ(runSource(R"(
         int32? make(int32 flag) { int32? t = {flag != 0, 7}; return t; }
         int32 main() { return make(1).value; }
-    )", "optres2.cmm"), 7);
+    )", "optres2.cdd"), 7);
 }
 
 TEST_F(OptionalResultE2E, ResultErrorPath) {
@@ -126,7 +126,7 @@ TEST_F(OptionalResultE2E, ResultErrorPath) {
             if (r.ok) { return r.value; }
             return r.error;
         }
-    )", "optres3.cmm"), 5);
+    )", "optres3.cdd"), 5);
 }
 
 TEST_F(OptionalResultE2E, ResultErrorValue) {
@@ -141,7 +141,7 @@ TEST_F(OptionalResultE2E, ResultErrorValue) {
             if (r.ok) { return r.value; }
             return r.error;
         }
-    )", "optres4.cmm"), -1);
+    )", "optres4.cdd"), -1);
 }
 
 TEST_F(OptionalResultE2E, OptionalParamAndCopy) {
@@ -153,7 +153,7 @@ TEST_F(OptionalResultE2E, OptionalParamAndCopy) {
             b.value = 13;
             return pick(a) * 100 + pick(b);
         }
-    )", "optres5.cmm"), 1113);
+    )", "optres5.cdd"), 1113);
 }
 
 TEST_F(OptionalResultE2E, GlobalZeroInit) {
@@ -165,7 +165,7 @@ TEST_F(OptionalResultE2E, GlobalZeroInit) {
             if (g.valid || gr.ok) { return -1; }
             return 1;
         }
-    )", "optres6.cmm"), 1);
+    )", "optres6.cdd"), 1);
 }
 
 TEST_F(OptionalResultE2E, NestedOptional) {
@@ -175,7 +175,7 @@ TEST_F(OptionalResultE2E, NestedOptional) {
             if (o.valid) { if (o.value.valid) { return o.value.value; } return 2; }
             return 3;
         }
-    )", "optres7.cmm"), 2);
+    )", "optres7.cdd"), 2);
 }
 
 TEST_F(OptionalResultE2E, EnumUnderlyingCoexist) {
@@ -191,7 +191,7 @@ TEST_F(OptionalResultE2E, EnumUnderlyingCoexist) {
             }
             return 0;
         }
-    )", "optres8.cmm"), 1);
+    )", "optres8.cdd"), 1);
 }
 
 TEST_F(OptionalResultE2E, EnumOverloadDistinct) {
@@ -206,7 +206,7 @@ TEST_F(OptionalResultE2E, EnumOverloadDistinct) {
             if (f(o) == 7 && f(c) == 200) { return 1; }
             return 0;
         }
-    )", "optres9.cmm"), 1);
+    )", "optres9.cdd"), 1);
 }
 
 TEST_F(OptionalResultE2E, UsingRvalueMember) {
@@ -215,5 +215,5 @@ TEST_F(OptionalResultE2E, UsingRvalueMember) {
         using Opt = int32?;
         Opt make(int32 v) { Opt t = {v != 0, 7}; return t; }
         int32 main() { return make(1).value; }
-    )", "optres10.cmm"), 7);
+    )", "optres10.cdd"), 7);
 }

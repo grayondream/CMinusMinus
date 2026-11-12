@@ -114,7 +114,7 @@ TEST_F(SliceLiteralE2E, InitListBacksSlice) {
             s[1] = 9;
             return s[0] + s[1] + s[2] - 13;
         }
-    )", "sl_init.cmm"), 0);
+    )", "sl_init.cdd"), 0);
 }
 
 TEST_F(SliceLiteralE2E, SliceLengthFromList) {
@@ -124,7 +124,7 @@ TEST_F(SliceLiteralE2E, SliceLengthFromList) {
             if (s.len != 3) { return 1; }
             return 0;
         }
-    )", "sl_len.cmm"), 0);
+    )", "sl_len.cdd"), 0);
 }
 
 TEST_F(SliceLiteralE2E, ReturnSliceLiteralRejected) {
@@ -134,7 +134,7 @@ TEST_F(SliceLiteralE2E, ReturnSliceLiteralRejected) {
             return s;
         }
         int32 main() { return 0; }
-    )", "sl_return.cmm"));
+    )", "sl_return.cdd"));
 }
 
 TEST_F(SliceLiteralE2E, ElementTypeMismatchRejected) {
@@ -144,7 +144,7 @@ TEST_F(SliceLiteralE2E, ElementTypeMismatchRejected) {
             struct P[] s = {1, 2};
             return 0;
         }
-    )", "sl_mismatch.cmm"));
+    )", "sl_mismatch.cdd"));
 }
 
 TEST_F(SliceLiteralE2E, EmptySliceLiteralIsNullView) {
@@ -154,7 +154,7 @@ TEST_F(SliceLiteralE2E, EmptySliceLiteralIsNullView) {
             if (s.len != 0) { return 1; }
             return 0;
         }
-    )", "sl_empty.cmm"), 0);
+    )", "sl_empty.cdd"), 0);
 }
 
 TEST_F(SliceLiteralE2E, SliceLiteralNameInAnotherFunctionDoesNotCollide) {
@@ -172,7 +172,7 @@ TEST_F(SliceLiteralE2E, SliceLiteralNameInAnotherFunctionDoesNotCollide) {
             if (leftover() != 1) { return 2; }
             return 0;
         }
-    )", "sl_no_collision.cmm"), 0);
+    )", "sl_no_collision.cdd"), 0);
 }
 
 TEST_F(SliceLiteralE2E, StoreSliceLiteralIntoGlobalSubobjectRejected) {
@@ -183,7 +183,7 @@ TEST_F(SliceLiteralE2E, StoreSliceLiteralIntoGlobalSubobjectRejected) {
             g.s = (int32[]){1,2};
             return 0;
         }
-    )", "sl_global_field.cmm"));
+    )", "sl_global_field.cdd"));
 }
 
 TEST_F(SliceLiteralE2E, StoreSliceLiteralIntoGlobalArrayElementRejected) {
@@ -193,7 +193,7 @@ TEST_F(SliceLiteralE2E, StoreSliceLiteralIntoGlobalArrayElementRejected) {
             g[0] = (int32[]){1,2};
             return 0;
         }
-    )", "sl_global_elem.cmm"));
+    )", "sl_global_elem.cdd"));
 }
 
 TEST_F(SliceLiteralE2E, StoreSliceLiteralToGlobalRejected) {
@@ -203,7 +203,7 @@ TEST_F(SliceLiteralE2E, StoreSliceLiteralToGlobalRejected) {
             gs = (int32[]){1,2};
             return 0;
         }
-    )", "sl_global_store.cmm"));
+    )", "sl_global_store.cdd"));
 }
 
 TEST_F(SliceLiteralE2E, StringElementDeepCopyWithString) {
@@ -215,5 +215,5 @@ TEST_F(SliceLiteralE2E, StringElementDeepCopyWithString) {
             if (s[0].len() != 2) { return 2; }
             return 0;
         }
-    )", "sl_string_elem.cmm"), 0);
+    )", "sl_string_elem.cdd"), 0);
 }

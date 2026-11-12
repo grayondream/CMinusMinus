@@ -1,4 +1,4 @@
-# Cmm 1.0 — 模块 / 命名空间 / 名称解析规范
+# CDD 1.0 — 模块 / 命名空间 / 名称解析规范
 
 > 对应 TODO：**MOD-01 ~ MOD-15**（重点 MOD-12~15）、**DEC-02/14/17**
 > 状态：`[impl]` 以 `src/frontend/Parser.cpp`、`src/sema/SemanticAnalyzer.cpp`、`src/ast/Symbol.cpp` 为准；`[plan]` 为目标。
@@ -9,11 +9,11 @@
 | 语法 | 解析结果 | 状态 |
 |---|---|---|
 | `module a.b;` | `TranslationUnitAST::moduleName`（+ `ModuleDeclAST`） | `[impl]` 点分名（`::` 拒绝）；驱动校验文件↔模块名（MOD-04/13） |
-| `import a.b;` / `import "dir/f.cmm";` | 记入 `TranslationUnitAST::imports` | 驱动 `ModuleLoader` 解析并**前插**声明（MOD-04/14） |
+| `import a.b;` / `import "dir/f.cdd";` | 记入 `TranslationUnitAST::imports` | 驱动 `ModuleLoader` 解析并**前插**声明（MOD-04/14） |
 | `export decl` / `export namespace A { … }` | 置 `DeclAST::isExported` | `[impl]` 参与模块的默认私有，导出者进全局（MOD-05/06） |
 | `namespace A { ... }` | `NamespaceDeclAST` | 名称修饰 + 限定/非限定查找（PAR-22/MOD-12） |
 
-导入解析（`src/driver/ModuleLoader.*`）：搜索顺序为**导入者目录 → `-M/--module-path` → `STD_DIR`**；点分名映射为目录（`a.b` → `a/b.cmm`）；`loaded` 规范化路径去重、`active` DFS 栈检测**导入环并报错**（MOD-07）。被导入的声明**前插**到导入单元之前，因此对其全部可见（单遍语义分析需要）。`std.c` 绑定层即 `libs/std/c.cmm`（内嵌兜底）。
+导入解析（`src/driver/ModuleLoader.*`）：搜索顺序为**导入者目录 → `-M/--module-path` → `STD_DIR`**；点分名映射为目录（`a.b` → `a/b.cdd`）；`loaded` 规范化路径去重、`active` DFS 栈检测**导入环并报错**（MOD-07）。被导入的声明**前插**到导入单元之前，因此对其全部可见（单遍语义分析需要）。`std.c` 绑定层即 `libs/std/c.cdd`（内嵌兜底）。
 
 可见性（`src/sema/SemanticAnalyzer.cpp`）：符号表仍为 `Scope` 重载集链。声明 `module NAME;` 的单元为**参与模块**，其声明注册在**每模块私有作用域**（`moduleScopes`）中；只有 `export`/`public` 的声明才同时注册到全局作用域。因此导入者只能看到导出接口，而模块内部仍可使用私有成员。未声明 `module` 的**遗留/匿名单元**（如预置 `std.c` 与既有测试）保持全部全局可见，向后兼容。`main` 始终视为导出（程序入口）。
 
@@ -21,7 +21,7 @@
 
 ### 2.1 语法（对齐 PAR-22 / grammar.ebnf）
 
-```cmm
+```cdd
 namespace geometry {        // 声明
     struct Point { int32 x; int32 y; }
 }
@@ -52,8 +52,8 @@ namespace geometry {        // 开放命名空间：可再次进入
 
 ## 3. 模块与文件（MOD-04/13）`[impl]`
 
-- **一文件一模块**：每个 `.cmm` 源文件最多一条 `module` 声明；模块名只使用点分路径（如 `module std.vec;`），记入 `TranslationUnitAST::moduleName`。`module a::b;` 会被拒绝，并提示 `::` 保留给 namespace。
-- 文件↔模块映射：`module a.b.c;` ↔ 路径 `a/b/c.cmm`；缺省模块名为文件名（去扩展名）。`import a.b;` 解析到该文件后，若文件声明了模块名，则**必须与导入说明符一致**，否则报错（`ModuleLoader`，MOD-13）。
+- **一文件一模块**：每个 `.cdd` 源文件最多一条 `module` 声明；模块名只使用点分路径（如 `module std.vec;`），记入 `TranslationUnitAST::moduleName`。`module a::b;` 会被拒绝，并提示 `::` 保留给 namespace。
+- 文件↔模块映射：`module a.b.c;` ↔ 路径 `a/b/c.cdd`；缺省模块名为文件名（去扩展名）。`import a.b;` 解析到该文件后，若文件声明了模块名，则**必须与导入说明符一致**，否则报错（`ModuleLoader`，MOD-13）。
 - 编译单元 = 一个模块文件（或显式引入的一组）。
 - 导入搜索路径由驱动提供（`-M`/`--module-path`，见 TOOL-04/TOOL-08），默认搜索当前目录与标准库根。
 
@@ -64,7 +64,7 @@ namespace geometry {        // 开放命名空间：可再次进入
 
 ### 4.1 导入 `[impl]`
 
-```cmm
+```cdd
 import math;            // 形式 1：引入模块的导出符号
 // 形式 2/3（选择性导入、别名）仍为提案，未实现；模块说明符不要写 `::`。
 ```
@@ -100,7 +100,7 @@ import math;            // 形式 1：引入模块的导出符号
 ## 6. 循环依赖（MOD-07）`[impl]`
 
 - `ModuleLoader` 用 DFS 的 `active` 栈检出导入环，报错并列出环路径，例如
-  `circular import detected: …/a.cmm -> …/b.cmm -> …/a.cmm`；加载随后终止。
+  `circular import detected: …/a.cdd -> …/b.cdd -> …/a.cdd`；加载随后终止。
 - 菱形依赖（多条无环路径到同一模块）由 `loaded` 集合去重，不报错。
 - 类型级前向引用通过占位类型允许，但**导入环**禁止（与 Rust 类似）。
 - 纯类型循环（`struct A { B* b; }` / `struct B { A* a; }`）允许，参照 C。

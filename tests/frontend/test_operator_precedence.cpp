@@ -1,5 +1,5 @@
 // INF-10: binds the normative operator-precedence table (docs/spec/grammar.ebnf
-// §9, implemented by cmm::getOperatorInfo) to the parser, both table-driven and
+// §9, implemented by cdd::getOperatorInfo) to the parser, both table-driven and
 // behaviourally (by inspecting the AST shape the parser builds).
 #include <gtest/gtest.h>
 
@@ -91,7 +91,7 @@ protected:
 
 TEST_F(OperatorPrecedenceTest, TableMatchesNormativeSpec) {
     for (const auto& c : normativeTable()) {
-        auto info = cmm::getOperatorInfo(c.token);
+        auto info = cdd::getOperatorInfo(c.token);
         EXPECT_EQ(info.precedence, c.precedence) << "precedence of " << c.name;
         EXPECT_EQ(info.rightAssociative, c.rightAssociative)
             << "associativity of " << c.name;
@@ -99,9 +99,9 @@ TEST_F(OperatorPrecedenceTest, TableMatchesNormativeSpec) {
 }
 
 TEST_F(OperatorPrecedenceTest, NonInfixTokensHaveZeroPrecedence) {
-    EXPECT_EQ(cmm::getOperatorInfo(TokenType::TOKEN_PLUS_PLUS).precedence, 0);
-    EXPECT_EQ(cmm::getOperatorInfo(TokenType::TOKEN_LPAREN).precedence, 0);
-    EXPECT_EQ(cmm::getOperatorInfo(TokenType::TOKEN_IDENTIFIER).precedence, 0);
+    EXPECT_EQ(cdd::getOperatorInfo(TokenType::TOKEN_PLUS_PLUS).precedence, 0);
+    EXPECT_EQ(cdd::getOperatorInfo(TokenType::TOKEN_LPAREN).precedence, 0);
+    EXPECT_EQ(cdd::getOperatorInfo(TokenType::TOKEN_IDENTIFIER).precedence, 0);
 }
 
 TEST_F(OperatorPrecedenceTest, CommaIsLowestPrecedenceAndLeftAssociative) {

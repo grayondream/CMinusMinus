@@ -100,7 +100,7 @@ TEST_F(ExprLiteralsE2E, AlignofMatchesCompileTime) {
             if (alignof(float64) != 8) return 2;
             return 0;
         }
-    )", "alignof.cmm"), 0);
+    )", "alignof.cdd"), 0);
 }
 
 TEST_F(ExprLiteralsE2E, OffsetofSecondField) {
@@ -111,7 +111,7 @@ TEST_F(ExprLiteralsE2E, OffsetofSecondField) {
             if (offsetof(S, a) != 0) return 2;
             return 0;
         }
-    )", "offsetof.cmm"), 0);
+    )", "offsetof.cdd"), 0);
 }
 
 TEST_F(ExprLiteralsE2E, OffsetofValueUsedInComputation) {
@@ -125,7 +125,7 @@ TEST_F(ExprLiteralsE2E, OffsetofValueUsedInComputation) {
             usize total = offsetof(S, a) + offsetof(S, b) + offsetof(S, c);
             return total == 12 ? 0 : 1;
         }
-    )", "offsetof_use.cmm"), 0);
+    )", "offsetof_use.cdd"), 0);
 }
 
 TEST_F(ExprLiteralsE2E, NullPointerIsNullPointerConstant) {
@@ -136,7 +136,7 @@ TEST_F(ExprLiteralsE2E, NullPointerIsNullPointerConstant) {
             if (p != 0) return 2;
             return 0;
         }
-    )", "nullptr.cmm"), 0);
+    )", "nullptr.cdd"), 0);
 }
 
 TEST_F(ExprLiteralsE2E, NullPointerInBoolContext) {
@@ -146,7 +146,7 @@ TEST_F(ExprLiteralsE2E, NullPointerInBoolContext) {
             if (!p) return 0;
             return 1;
         }
-    )", "nullptr_bool.cmm"), 0);
+    )", "nullptr_bool.cdd"), 0);
 }
 
 TEST_F(ExprLiteralsE2E, ShortFloatTypeKeywords) {
@@ -158,5 +158,5 @@ TEST_F(ExprLiteralsE2E, ShortFloatTypeKeywords) {
         int32 main() {
             return (int32)a + (int32)b + (int32)c + (int32)d - 7;
         }
-    )", "f16_keywords.cmm"), 0);
+    )", "f16_keywords.cdd"), 0);
 }

@@ -8,19 +8,19 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-09-module-namespace-record-design.md`
 
-**Tech Stack:** C++20、LLVM 21、CMake、GoogleTest/CTest、Cmm 自举测试。
+**Tech Stack:** C++20、LLVM 21、CMake、GoogleTest/CTest、CDD 自举测试。
 
 ## Global Constraints
 
 - 语言类型使用定宽拼写：`int32`、`usize`；入口写 `int32 main()`。
-- 语言无 `int/float/double`、无预处理器；测试源文件后缀 `.cmm`。
+- 语言无 `int/float/double`、无预处理器；测试源文件后缀 `.cdd`。
 - module 路径只用 `.`；namespace 名只用 `::`；类型/值限定访问仍用 `::`。
 - `struct` 默认 public，`class` 默认 private；`union` 不获得方法/静态/访问段/继承。
 - `string`/`string_view` 仍是编译器 prelude 类型，本计划不迁移。
 - 每任务 TDD：先写失败测试，确认 RED，再实现，再跑目标测试与全量回归，最后提交。
 - 构建：`cmake --build build -j8`。
 - 全量：`ctest --test-dir build -j8 --output-on-failure`。
-- 完成前必须跑 `examples/all_features.cmm`，输出仍为 `ALL FEATURES OK`。
+- 完成前必须跑 `examples/all_features.cdd`，输出仍为 `ALL FEATURES OK`。
 
 ## Review Focus
 
@@ -39,7 +39,7 @@
 - Modify: `src/frontend/Parser.cpp`（`parse()` 的 module/import 分支；`parseNamespaceDeclImpl`）
 - Modify: `docs/spec/grammar.ebnf`（module/import/namespace 产生式）
 - Modify: `docs/spec/modules.md`（§2、§3、§4）
-- Modify: `examples/all_features.cmm:509`
+- Modify: `examples/all_features.cdd:509`
 - Modify: `tests/e2e/test_namespace.cpp:108,147`
 - Test: `tests/frontend/test_parser.cpp`
 - Test: `tests/driver/test_module_visibility.cpp`
@@ -81,7 +81,7 @@ TEST_F(ParserTest, NamespaceDeclRejectsDotName) {
 
 ```cpp
 TEST_F(ModuleVisibilityTest, RootExportIsUnqualified) {
-    write(dir / "util.cmm", "module util;\nexport int32 helper() { return 5; }\n");
+    write(dir / "util.cdd", "module util;\nexport int32 helper() { return 5; }\n");
     std::vector<std::string> errors;
     auto ast = loadMain("import util;\nint32 main() { return helper() - 5; }\n", errors);
     ASSERT_TRUE(errors.empty()) << (errors.empty() ? "" : errors[0]);
@@ -92,7 +92,7 @@ TEST_F(ModuleVisibilityTest, RootExportIsUnqualified) {
 }
 
 TEST_F(ModuleVisibilityTest, NamespaceMemberRequiresQualification) {
-    write(dir / "geom.cmm",
+    write(dir / "geom.cdd",
           "module geom;\n"
           "export namespace g { int32 add(int32 a, int32 b) { return a + b; } }\n");
     std::vector<std::string> errors;
@@ -104,7 +104,7 @@ TEST_F(ModuleVisibilityTest, NamespaceMemberRequiresQualification) {
 }
 
 TEST_F(ModuleVisibilityTest, ModuleNameDoesNotCreateQualifier) {
-    write(dir / "std" / "vec.cmm",
+    write(dir / "std" / "vec.cdd",
           "module std.vec;\n"
           "export namespace std { struct Vec { int32 x; }; }\n");
     std::vector<std::string> errors;
@@ -142,12 +142,12 @@ identifier { '.' identifier }
 
 - [ ] **Step 6: 迁移仓库内 dot namespace**
 
-```cmm
+```cdd
 namespace A.B { ... }   // 改为
 namespace A::B { ... }
 ```
 
-涉及 `examples/all_features.cmm:509`、`tests/e2e/test_namespace.cpp:108,147`。
+涉及 `examples/all_features.cdd:509`、`tests/e2e/test_namespace.cpp:108,147`。
 
 - [ ] **Step 7: 更新规范**
 
@@ -180,7 +180,7 @@ Expected: 全部 PASS。
 - [ ] **Step 9: Commit**
 
 ```bash
-git add src/frontend/Parser.cpp docs/spec/grammar.ebnf docs/spec/modules.md examples/all_features.cmm tests/e2e/test_namespace.cpp tests/frontend/test_parser.cpp tests/driver/test_module_visibility.cpp
+git add src/frontend/Parser.cpp docs/spec/grammar.ebnf docs/spec/modules.md examples/all_features.cdd tests/e2e/test_namespace.cpp tests/frontend/test_parser.cpp tests/driver/test_module_visibility.cpp
 git commit -m "feat(parser): separate module paths from namespace names"
 ```
 
@@ -395,7 +395,7 @@ TEST_F(RecordGrammarE2E, StructWithAccessAndMethods) {
             void set(int32 v) { this->x = v; }
         };
         int32 main() { S s; s.set(7); return s.get() - 7; }
-    )", "record_access.cmm"), 0);
+    )", "record_access.cdd"), 0);
 }
 
 TEST_F(RecordGrammarE2E, StructAttachedVariableKeepsMethods) {
@@ -405,7 +405,7 @@ TEST_F(RecordGrammarE2E, StructAttachedVariableKeepsMethods) {
             int32 get() { return this->x; }
         } s;
         int32 main() { s.x = 9; return s.get() - 9; }
-    )", "record_attached.cmm"), 0);
+    )", "record_attached.cdd"), 0);
 }
 
 TEST_F(RecordGrammarE2E, StructAndClassLayoutSame) {
@@ -415,7 +415,7 @@ TEST_F(RecordGrammarE2E, StructAndClassLayoutSame) {
         int32 main() {
             return compile_time.size_of(S) == compile_time.size_of(C) ? 0 : 1;
         }
-    )", "record_layout.cmm"), 0);
+    )", "record_layout.cdd"), 0);
 }
 ```
 
@@ -516,7 +516,7 @@ Expected: 全量 PASS，0 失败。
 - [ ] **Step 3: 示例验收**
 
 ```bash
-build/bin/cmm examples/all_features.cmm -o /tmp/opencode/all_features
+build/bin/cdd examples/all_features.cdd -o /tmp/opencode/all_features
 /tmp/opencode/all_features
 ```
 

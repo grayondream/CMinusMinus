@@ -6,7 +6,7 @@
 
 **Architecture:** Extend sema so a free runtime function declared with `auto` return type is analyzed body-first, infers its return type from the first value `return`, then registers its final signature. Closure capture metadata on `StructType` lets return checking reject by-reference/`this` captures. Existing struct-return codegen and closure-call codegen carry the by-value closure across frames.
 
-**Tech Stack:** C++ compiler implementation, GoogleTest e2e tests, LLVM JIT harness, Cmm examples/spec.
+**Tech Stack:** C++ compiler implementation, GoogleTest e2e tests, LLVM JIT harness, CDD examples/spec.
 
 **Spec:** `docs/superpowers/specs/2026-11-11-closure-escape-design.md`
 
@@ -19,7 +19,7 @@
 - Keep existing lambda behavior, no-capture function-pointer behavior, `auto` local variables, and module type visibility unchanged.
 - Every task ends with a focused build/test run and a commit.
 - Full-suite baseline before this plan: **1865/1865**. Final full suite must be green.
-- Do not use `constexpr` in new Cmm code; use `compile_time` where applicable.
+- Do not use `constexpr` in new CDD code; use `compile_time` where applicable.
 
 ## Review Focus
 
@@ -73,14 +73,14 @@ TEST_F(LambdaE2E, AutoReturnScalar) {
     EXPECT_EQ(runSource(R"(
         auto twice(int32 x) { return x * 2; }
         int32 main() { auto y = twice(21); return y - 42; }
-    )", "auto_ret_scalar.cmm"), 0);
+    )", "auto_ret_scalar.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, AutoReturnVoid) {
     EXPECT_EQ(runSource(R"(
         auto noop() { return; }
         int32 main() { noop(); return 0; }
-    )", "auto_ret_void.cmm"), 0);
+    )", "auto_ret_void.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, AutoReturnInconsistentTypesRejected) {
@@ -90,7 +90,7 @@ TEST_F(LambdaE2E, AutoReturnInconsistentTypesRejected) {
             return "no";
         }
         int32 main() { return 0; }
-    )", "auto_ret_mismatch.cmm");
+    )", "auto_ret_mismatch.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "inconsistent return types"));
 }
 
@@ -101,7 +101,7 @@ TEST_F(LambdaE2E, AutoReturnBareAfterValueRejected) {
             return;
         }
         int32 main() { return 0; }
-    )", "auto_ret_bare.cmm");
+    )", "auto_ret_bare.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "must return a value"));
 }
 
@@ -109,7 +109,7 @@ TEST_F(LambdaE2E, AutoReturnPrototypeRejected) {
     auto errs = compileErrors(R"(
         auto f(int32 x);
         int32 main() { return 0; }
-    )", "auto_ret_proto.cmm");
+    )", "auto_ret_proto.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "must have a body"));
 }
 
@@ -117,7 +117,7 @@ TEST_F(LambdaE2E, AutoReturnMethodRejected) {
     auto errs = compileErrors(R"(
         class C { public: auto f() { return 1; } };
         int32 main() { return 0; }
-    )", "auto_ret_method.cmm");
+    )", "auto_ret_method.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "not supported on methods"));
 }
 
@@ -125,7 +125,7 @@ TEST_F(LambdaE2E, AutoReturnCompileTimeRejected) {
     auto errs = compileErrors(R"(
         compile_time auto f() { return 1; }
         int32 main() { return 0; }
-    )", "auto_ret_ct.cmm");
+    )", "auto_ret_ct.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "compile_time"));
 }
 ```
@@ -271,7 +271,7 @@ TEST_F(LambdaE2E, ByReferenceClosureReturnRejected) {
             return [&x]() -> int32 { return x; };
         }
         int32 main() { return 0; }
-    )", "auto_ret_ref.cmm");
+    )", "auto_ret_ref.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "by-reference captures cannot escape by return"));
 }
 
@@ -283,7 +283,7 @@ TEST_F(LambdaE2E, IndirectByReferenceClosureReturnRejected) {
             return f;
         }
         int32 main() { return 0; }
-    )", "auto_ret_ref_indirect.cmm");
+    )", "auto_ret_ref_indirect.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "by-reference captures cannot escape by return"));
 }
 
@@ -294,7 +294,7 @@ TEST_F(LambdaE2E, ByReferenceClosureLocalCallStillAllowed) {
             auto f = [&x]() -> int32 { return x; };
             return f() - 7;
         }
-    )", "lambda_ref_local_ok.cmm"), 0);
+    )", "lambda_ref_local_ok.cdd"), 0);
 }
 ```
 
@@ -406,7 +406,7 @@ TEST_F(LambdaE2E, ByValueClosureReturn) {
             auto f = make_adder(40);
             return f(2) - 42;
         }
-    )", "auto_ret_closure.cmm"), 0);
+    )", "auto_ret_closure.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, ReturnedClosureIsIndependentCopy) {
@@ -419,7 +419,7 @@ TEST_F(LambdaE2E, ReturnedClosureIsIndependentCopy) {
             auto add2 = make_adder(2);
             return add40(2) + add2(2) - 46;
         }
-    )", "auto_ret_closure_copy.cmm"), 0);
+    )", "auto_ret_closure_copy.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, ReturnedClosureCalledRepeatedly) {
@@ -433,7 +433,7 @@ TEST_F(LambdaE2E, ReturnedClosureCalledRepeatedly) {
             if (f() != 11) return 2;
             return 0;
         }
-    )", "auto_ret_closure_repeat.cmm"), 0);
+    )", "auto_ret_closure_repeat.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, ReturnedClosureFromBranch) {
@@ -448,7 +448,7 @@ TEST_F(LambdaE2E, ReturnedClosureFromBranch) {
             auto minus = make(-10);
             return plus(3) + minus(3) - 6;
         }
-    )", "auto_ret_closure_branch.cmm"), 0);
+    )", "auto_ret_closure_branch.cdd"), 0);
 }
 ```
 
@@ -504,11 +504,11 @@ Add after `ModuleLoaderTest.ExportedTypesVisibleBeforeParsingImporter`:
 
 ```cpp
 TEST_F(ModuleLoaderTest, ExportedNamespaceTypesWithMethodsTemplatesAndInheritance) {
-    const fs::path dir = fs::temp_directory_path() / "cmm_module_namespace_types_test";
+    const fs::path dir = fs::temp_directory_path() / "cdd_module_namespace_types_test";
     fs::remove_all(dir);
     fs::create_directories(dir);
     {
-        std::ofstream out(dir / "api_types.cmm");
+        std::ofstream out(dir / "api_types.cdd");
         out << "module api_types;\n"
                "export namespace api {\n"
                "    struct Point {\n"
@@ -546,7 +546,7 @@ TEST_F(ModuleLoaderTest, ExportedNamespaceTypesWithMethodsTemplatesAndInheritanc
             return r - 31;
         }
     )";
-    const std::string mainPath = (dir / "main.cmm").string();
+    const std::string mainPath = (dir / "main.cdd").string();
     Lexer lexer(mainPath, mainSource);
     auto tokens = lexer.tokenize();
     ASSERT_TRUE(lexer.getDiagnostics().empty());
@@ -554,9 +554,9 @@ TEST_F(ModuleLoaderTest, ExportedNamespaceTypesWithMethodsTemplatesAndInheritanc
     std::set<std::string> loaded;
     std::vector<std::unique_ptr<DeclAST>> imported;
     std::vector<std::string> errors;
-    const auto specs = cmm::collectImportSpecifiers(tokens);
+    const auto specs = cdd::collectImportSpecifiers(tokens);
     ASSERT_EQ(specs.size(), 1u);
-    cmm::preloadImports(specs, dir.string(), cmm::ModuleSearchPaths{{dir.string()}},
+    cdd::preloadImports(specs, dir.string(), cdd::ModuleSearchPaths{{dir.string()}},
                         loaded, imported, errors);
     for (const auto& e : errors) ADD_FAILURE() << e;
     ASSERT_TRUE(errors.empty());
@@ -606,7 +606,7 @@ git commit -m "test(modules): lock namespace type export with methods and templa
 - Modify: `docs/superpowers/specs/2026-11-11-closure-escape-design.md` (only if implementation differs)
 - Modify: `TODO.md`
 - Modify: `Progress.md`
-- Optionally modify: `examples/all_features.cmm`
+- Optionally modify: `examples/all_features.cdd`
 
 **Interfaces:**
 - Consumes: Tasks 1–4.
@@ -648,7 +648,7 @@ Append a matching chronological entry to `Progress.md` with the design/plan path
 
 - [ ] **Step 4: Optionally extend the feature tour**
 
-If the change fits without disrupting the existing output, add a small closure-return section to `examples/all_features.cmm` that prints a known value and keeps the final line `ALL FEATURES OK`. If it risks the tour, skip this step and note why in `Progress.md`.
+If the change fits without disrupting the existing output, add a small closure-return section to `examples/all_features.cdd` that prints a known value and keeps the final line `ALL FEATURES OK`. If it risks the tour, skip this step and note why in `Progress.md`.
 
 - [ ] **Step 5: Build and run the focused suite**
 
@@ -671,7 +671,7 @@ Expected: **1865 + new tests** all pass, 0 failures.
 - [ ] **Step 7: Run the feature tour**
 
 ```bash
-build/bin/cmm examples/all_features.cmm -o /tmp/all_features
+build/bin/cdd examples/all_features.cdd -o /tmp/all_features
 /tmp/all_features
 ```
 
@@ -681,7 +681,7 @@ Expected last line: `ALL FEATURES OK`.
 
 ```bash
 git add README.md docs/spec/semantics.md docs/spec/keywords.md TODO.md Progress.md
-git add examples/all_features.cmm 2>/dev/null || true
+git add examples/all_features.cdd 2>/dev/null || true
 git add docs/superpowers/specs/2026-11-11-closure-escape-design.md
 git commit -m "docs: document capturing-closure escape and auto return deduction"
 ```

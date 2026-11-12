@@ -77,7 +77,7 @@ TEST_F(TopLevelUserTypeE2E, StructVariableAfterDefinition) {
         struct S { int32 x; };
         S g;
         int32 main() { g.x = 5; return g.x - 5; }
-    )", "tl_struct_var.cmm"), 0);
+    )", "tl_struct_var.cdd"), 0);
 }
 
 TEST_F(TopLevelUserTypeE2E, StructPointerAfterDefinition) {
@@ -85,7 +85,7 @@ TEST_F(TopLevelUserTypeE2E, StructPointerAfterDefinition) {
         struct S { int32 x; };
         S* p;
         int32 main() { S s; s.x = 3; p = &s; return p->x - 3; }
-    )", "tl_struct_ptr.cmm"), 0);
+    )", "tl_struct_ptr.cdd"), 0);
 }
 
 TEST_F(TopLevelUserTypeE2E, BareTagReturningFunction) {
@@ -93,7 +93,7 @@ TEST_F(TopLevelUserTypeE2E, BareTagReturningFunction) {
         struct V { int32 x; };
         V make(int32 v) { V r; r.x = v; return r; }
         int32 main() { V a = make(7); return a.x - 7; }
-    )", "tl_struct_ret.cmm"), 0);
+    )", "tl_struct_ret.cdd"), 0);
 }
 
 TEST_F(TopLevelUserTypeE2E, ElaboratedTagReturningFunction) {
@@ -101,7 +101,7 @@ TEST_F(TopLevelUserTypeE2E, ElaboratedTagReturningFunction) {
         struct V { int32 x; };
         struct V make(int32 v) { struct V r; r.x = v; return r; }
         int32 main() { V a = make(8); return a.x - 8; }
-    )", "tl_struct_ret_elab.cmm"), 0);
+    )", "tl_struct_ret_elab.cdd"), 0);
 }
 
 TEST_F(TopLevelUserTypeE2E, BareClassReturningFunction) {
@@ -109,7 +109,7 @@ TEST_F(TopLevelUserTypeE2E, BareClassReturningFunction) {
         class C { public: int32 x; };
         C make(int32 v) { C c; c.x = v; return c; }
         int32 main() { C a = make(4); return a.x - 4; }
-    )", "tl_class_ret.cmm"), 0);
+    )", "tl_class_ret.cdd"), 0);
 }
 
 TEST_F(TopLevelUserTypeE2E, UnionVariableAfterDefinition) {
@@ -117,7 +117,7 @@ TEST_F(TopLevelUserTypeE2E, UnionVariableAfterDefinition) {
         union U { int32 i; float32 f; };
         U u;
         int32 main() { u.i = 9; return u.i - 9; }
-    )", "tl_union_var.cmm"), 0);
+    )", "tl_union_var.cdd"), 0);
 }
 
 TEST_F(TopLevelUserTypeE2E, TemplateInstanceVariableAndReturn) {
@@ -126,7 +126,7 @@ TEST_F(TopLevelUserTypeE2E, TemplateInstanceVariableAndReturn) {
         B<int32> g;
         B<int32> make() { B<int32> b; b.x = 1; return b; }
         int32 main() { g.x = 2; B<int32> m = make(); return g.x + m.x - 3; }
-    )", "tl_template_inst.cmm"), 0);
+    )", "tl_template_inst.cdd"), 0);
 }
 
 TEST_F(TopLevelUserTypeE2E, UsingAliasAfterStructDefinition) {
@@ -135,14 +135,14 @@ TEST_F(TopLevelUserTypeE2E, UsingAliasAfterStructDefinition) {
         using W = S;
         W g;
         int32 main() { g.x = 6; return g.x - 6; }
-    )", "tl_using_alias.cmm"), 0);
+    )", "tl_using_alias.cdd"), 0);
 }
 
 TEST_F(TopLevelUserTypeE2E, AttachedVariableStillWorks) {
     EXPECT_EQ(runSource(R"(
         struct S { int32 x; } g;
         int32 main() { g.x = 1; return g.x - 1; }
-    )", "tl_attached_var.cmm"), 0);
+    )", "tl_attached_var.cdd"), 0);
 }
 
 TEST_F(TopLevelUserTypeE2E, BareTagOperatorReturn) {
@@ -150,7 +150,7 @@ TEST_F(TopLevelUserTypeE2E, BareTagOperatorReturn) {
         struct V { int32 x; };
         V operator+(V a, V b) { V r; r.x = a.x + b.x; return r; }
         int32 main() { V a; V b; a.x = 1; b.x = 2; V c = a + b; return c.x - 3; }
-    )", "tl_operator_bare.cmm"), 0);
+    )", "tl_operator_bare.cdd"), 0);
 }
 
 TEST_F(TopLevelUserTypeE2E, PointerAliasAfterDefinition) {
@@ -159,7 +159,7 @@ TEST_F(TopLevelUserTypeE2E, PointerAliasAfterDefinition) {
         using P = S*;
         P p;
         int32 main() { S s; s.x = 2; p = &s; return p->x - 2; }
-    )", "tl_using_ptr.cmm"), 0);
+    )", "tl_using_ptr.cdd"), 0);
 }
 
 TEST_F(TopLevelUserTypeE2E, UsingAliasBeforeStructDefinition) {
@@ -167,7 +167,7 @@ TEST_F(TopLevelUserTypeE2E, UsingAliasBeforeStructDefinition) {
         using N = struct Node;
         struct Node { int32 x; };
         int32 main() { N n; n.x = 5; return n.x - 5; }
-    )", "fwd_alias_struct.cmm"), 0);
+    )", "fwd_alias_struct.cdd"), 0);
 }
 
 TEST_F(TopLevelUserTypeE2E, ForwardDeclThenAliasBeforeDefinition) {
@@ -176,7 +176,7 @@ TEST_F(TopLevelUserTypeE2E, ForwardDeclThenAliasBeforeDefinition) {
         using N = Node;
         struct Node { int32 x; };
         int32 main() { N n; n.x = 6; return n.x - 6; }
-    )", "fwd_decl_alias.cmm"), 0);
+    )", "fwd_decl_alias.cdd"), 0);
 }
 
 TEST_F(TopLevelUserTypeE2E, UsingAliasBeforeUnionDefinition) {
@@ -184,7 +184,7 @@ TEST_F(TopLevelUserTypeE2E, UsingAliasBeforeUnionDefinition) {
         using U = union Value;
         union Value { int32 i; float32 f; };
         int32 main() { U u; u.i = 7; return u.i - 7; }
-    )", "fwd_alias_union.cmm"), 0);
+    )", "fwd_alias_union.cdd"), 0);
 }
 
 TEST_F(TopLevelUserTypeE2E, ForwardPointerMemberAfterDefinition) {
@@ -192,7 +192,7 @@ TEST_F(TopLevelUserTypeE2E, ForwardPointerMemberAfterDefinition) {
         struct S; S* p;
         struct S { int32 x; };
         int32 main() { S s; s.x = 4; p = &s; return p->x - 4; }
-    )", "fwd_ptr_member.cmm"), 0);
+    )", "fwd_ptr_member.cdd"), 0);
 }
 
 TEST_F(TopLevelUserTypeE2E, PointerAliasToForwardStruct) {
@@ -200,5 +200,5 @@ TEST_F(TopLevelUserTypeE2E, PointerAliasToForwardStruct) {
         using P = struct S*;
         struct S { int32 x; };
         int32 main() { S s; s.x = 8; P p = &s; return p->x - 8; }
-    )", "fwd_ptr_alias.cmm"), 0);
+    )", "fwd_ptr_alias.cdd"), 0);
 }

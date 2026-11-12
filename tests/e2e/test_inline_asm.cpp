@@ -31,7 +31,7 @@ protected:
     }
 };
 
-static int runSource(const std::string& source, const std::string& file = "inline_asm.cmm") {
+static int runSource(const std::string& source, const std::string& file = "inline_asm.cdd") {
     Lexer lexer(file, source);
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
@@ -137,7 +137,7 @@ TEST_F(InlineAsmE2E, MultiDigitOperand) {
 // InlineAsm 的 sideeffect 标志。
 TEST_F(InlineAsmE2E, ZeroOutputAsmIsImplicitlyVolatile) {
     const std::string source = "int32 main() { asm(\"nop\"); return 0; }";
-    Lexer lexer("inline_asm.cmm", source);
+    Lexer lexer("inline_asm.cdd", source);
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
     auto ast = parser.parse();
@@ -147,7 +147,7 @@ TEST_F(InlineAsmE2E, ZeroOutputAsmIsImplicitlyVolatile) {
     ASSERT_TRUE(analyzer.getErrors().empty());
 
     CodegenContext ctx;
-    ctx.setSourceFile("inline_asm.cmm");
+    ctx.setSourceFile("inline_asm.cdd");
     ast->codegen(ctx);
     ctx.finalizeDebugInfo();
 

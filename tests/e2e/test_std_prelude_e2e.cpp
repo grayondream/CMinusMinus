@@ -34,17 +34,17 @@ protected:
 };
 
 static int runWithPrelude(const std::string& source, const std::string& filename) {
-    auto ast = cmm::parseStdCPrelude(source, filename);
+    auto ast = cdd::parseStdCPrelude(source, filename);
     if (!ast) {
         ADD_FAILURE() << "user parse failed";
         return -1;
     }
-    auto prelude = cmm::parseStdCPrelude(cmm::loadStdCPrelude({STD_DIR}), "<std.c>");
+    auto prelude = cdd::parseStdCPrelude(cdd::loadStdCPrelude({STD_DIR}), "<std.c>");
     if (!prelude) {
         ADD_FAILURE() << "prelude parse failed";
         return -1;
     }
-    cmm::prependDeclarations(*ast, *prelude);
+    cdd::prependDeclarations(*ast, *prelude);
 
     SemanticAnalyzer analyzer;
     analyzer.analyze(*ast);
@@ -97,7 +97,7 @@ static int runWithPrelude(const std::string& source, const std::string& filename
 
 TEST_F(StdPreludeE2E, CallsLibcAbsThroughBindingLayer) {
     EXPECT_EQ(runWithPrelude(
-        "int32 main() { return abs(-42) - 42; }", "std_prelude_abs.cmm"), 0);
+        "int32 main() { return abs(-42) - 42; }", "std_prelude_abs.cdd"), 0);
 }
 
 TEST_F(StdPreludeE2E, CallsLibcMallocFree) {
@@ -108,5 +108,5 @@ TEST_F(StdPreludeE2E, CallsLibcMallocFree) {
             free(p);
             return 0;
         }
-    )", "std_prelude_malloc.cmm"), 0);
+    )", "std_prelude_malloc.cdd"), 0);
 }

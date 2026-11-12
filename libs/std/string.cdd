@@ -1,7 +1,7 @@
 // ===== std.string — 组合字符串操作库 (P1-09 / STD-10) =====
 // Import with `import std.string;` and use as `std::contains(...)` etc.
 // 原语 find/rfind/sub/split/split_destroy 是 codegen 内建（无需 import）；
-// 本库在其上组合出高层 API。libc 声明自包含（io.cmm 先例），模块私有。
+// 本库在其上组合出高层 API。libc 声明自包含（io.cdd 先例），模块私有。
 // 所有权：join/concat/repeat 返回新 string（调用方 destroy）；trim*/utf8_sub
 // 返回源数据零拷贝视图。字符串构建：string 自身即 builder（append/push/len，
 // P1-06）；独立 StrBuilder 类因「class 无法跨模块导出（类型名在 parse 期

@@ -183,7 +183,7 @@ git commit -m "feat(TYP-12): slice 下标读写（sema + codegen）"
 **Files:**
 - Modify: `src/sema/SemanticAnalyzer.cpp`（`visit(MemberAccessExprAST)`，struct/class/union 分支旁）
 - Modify: `src/ast/Expr.cpp:868`（`MemberAccessExprAST::codegen`）
-- Test: `tests/sema/test_semantic_analyzer.cpp`、`tests/diagnostics/snapshots/slice_member_error.txt`（新建，由 `CMM_UPDATE_SNAPSHOTS=1` 生成）
+- Test: `tests/sema/test_semantic_analyzer.cpp`、`tests/diagnostics/snapshots/slice_member_error.txt`（新建，由 `CDD_UPDATE_SNAPSHOTS=1` 生成）
 
 **Interfaces:**
 - Consumes: Task 1 规范类型（extractvalue 索引 1 = i64 长度）。
@@ -268,7 +268,7 @@ int32 main() {
 }
 ```
 
-Run: `cd build && cmake --build . -j$(nproc) && CMM_UPDATE_SNAPSHOTS=1 ./bin/compiler_tests --gtest_filter='*Snapshot*SliceMemberError*'`
+Run: `cd build && cmake --build . -j$(nproc) && CDD_UPDATE_SNAPSHOTS=1 ./bin/compiler_tests --gtest_filter='*Snapshot*SliceMemberError*'`
 Expected: 生成 `tests/diagnostics/snapshots/slice_member_error.txt`，内容含 `error[E2xxx]` 通道行（码以实际 emit 通道为准）；再跑一次不带环境变量确认 PASS。
 
 - [ ] **Step 6: 确认 GREEN + 全量**

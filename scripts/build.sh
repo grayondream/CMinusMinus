@@ -50,4 +50,4 @@ echo "Building project with ${JOBS} jobs..."
 cmake --build . --config "${BUILD_TYPE}" -j"${JOBS}"
 
 echo "Build completed successfully!"
-echo "Executable: ${BUILD_DIR}/bin/cmm"
+echo "Executable: ${BUILD_DIR}/bin/cdd"

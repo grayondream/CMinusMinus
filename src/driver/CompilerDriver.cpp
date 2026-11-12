@@ -40,19 +40,19 @@ static void appendStdLibDirs(std::vector<std::string>& dirs) {
         }
         dirs.push_back(std::move(s));
     };
-    if (const char* env = std::getenv("CMM_STD_DIR")) add(env);
+    if (const char* env = std::getenv("CDD_STD_DIR")) add(env);
 #ifdef STD_DIR
     add(STD_DIR);
 #endif
-#ifdef CMM_INSTALL_STD_DIR
-    add(CMM_INSTALL_STD_DIR);
+#ifdef CDD_INSTALL_STD_DIR
+    add(CDD_INSTALL_STD_DIR);
 #endif
     std::error_code ec;
     auto exe = std::filesystem::read_symlink("/proc/self/exe", ec);
     if (!ec) {
         auto base = exe.parent_path();
-        add(base / ".." / "share" / "cmm" / "libs");
-        add(base / ".." / "lib" / "cmm" / "libs");
+        add(base / ".." / "share" / "cdd" / "libs");
+        add(base / ".." / "lib" / "cdd" / "libs");
     }
 }
 
@@ -158,14 +158,14 @@ bool CompilerDriver::parseArguments(int argc, const char* argv[]) {
     }
 
     std::vector<const char*> cArgs;
-    cArgs.push_back("cmm");
+    cArgs.push_back("cdd");
     for (const auto& a : args) {
         cArgs.push_back(a.c_str());
     }
     int newArgc = static_cast<int>(cArgs.size());
     const char** newArgv = cArgs.data();
 
-    cxxopts::Options options("cmm", "The Cmm compiler (C minus minus)");
+    cxxopts::Options options("cdd", "The CDD compiler (C dot dot)");
     
     options.add_options()
         ("c", "Compile only, do not link")
@@ -246,7 +246,7 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
         std::filesystem::path(inputFile).filename().string();
     if (inputName.size() >= 4 &&
         inputName.compare(inputName.size() - 4, 4, ".smc") == 0) {
-        std::cerr << "legacy .smc source is not supported; rename it to .cmm\n";
+        std::cerr << "legacy .smc source is not supported; rename it to .cdd\n";
         return 1;
     }
 
@@ -293,7 +293,7 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
     // types are registered in TypeContext when `S s;` is parsed. Functions and
     // variables already worked through sema; types need this parse-time pass.
     std::set<std::string> loadedModules;
-    cmm::ModuleSearchPaths paths;
+    cdd::ModuleSearchPaths paths;
     std::vector<std::unique_ptr<DeclAST>> importedDecls;
     std::vector<std::string> importErrors;
     std::string importerDir =
@@ -313,8 +313,8 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
             paths.dirs.push_back(dir);
         }
         appendStdLibDirs(paths.dirs);
-        auto specs = cmm::collectImportSpecifiers(tokens);
-        cmm::preloadImports(specs, importerDir, paths, loadedModules, importedDecls, importErrors);
+        auto specs = cdd::collectImportSpecifiers(tokens);
+        cdd::preloadImports(specs, importerDir, paths, loadedModules, importedDecls, importErrors);
         if (!importErrors.empty()) {
             for (const auto& err : importErrors) {
                 std::cerr << err << "\n";
@@ -372,7 +372,7 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
     }
     // Keep the existing post-parse path as a safety net; `loadedModules`
     // deduplicates anything preloaded above.
-    cmm::processImports(*ast, importerDir, paths, loadedModules, importErrors);
+    cdd::processImports(*ast, importerDir, paths, loadedModules, importErrors);
     if (!importErrors.empty()) {
         for (const auto& err : importErrors) {
             std::cerr << err << "\n";
@@ -386,21 +386,21 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
 
     // Inject std.c (MOD-09 / STD-23) before semantic analysis so its
     // declarations precede user code. The binding layer is a standard-library
-    // file (libs/std/c.cmm), never compiler-embedded source.
+    // file (libs/std/c.cdd), never compiler-embedded source.
     if (usePrelude) {
         std::vector<std::string> stdDirs;
         for (const auto& dir : modulePaths) {
             stdDirs.push_back(dir);
         }
         appendStdLibDirs(stdDirs);
-        std::string preludeSource = cmm::loadStdCPrelude(stdDirs);
+        std::string preludeSource = cdd::loadStdCPrelude(stdDirs);
         if (preludeSource.empty()) {
-            std::cerr << "error: standard library not found (expected <std>/c.cmm); "
+            std::cerr << "error: standard library not found (expected <std>/c.cdd); "
                          "install the stdlib or pass -M, or use --no-prelude\n";
             return 1;
         }
-        if (auto prelude = cmm::parseStdCPrelude(preludeSource, "<std.c>")) {
-            cmm::prependDeclarations(*ast, *prelude);
+        if (auto prelude = cdd::parseStdCPrelude(preludeSource, "<std.c>")) {
+            cdd::prependDeclarations(*ast, *prelude);
         }
     }
 
@@ -490,8 +490,8 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
 #ifdef MIMALLOC_LIB_DIR
     haveMimalloc = addMimalloc(MIMALLOC_LIB_DIR);
 #endif
-#ifdef CMM_INSTALL_MIMALLOC_DIR
-    if (!haveMimalloc) haveMimalloc = addMimalloc(CMM_INSTALL_MIMALLOC_DIR);
+#ifdef CDD_INSTALL_MIMALLOC_DIR
+    if (!haveMimalloc) haveMimalloc = addMimalloc(CDD_INSTALL_MIMALLOC_DIR);
 #endif
     if (!haveMimalloc) {
         std::error_code ec;
@@ -522,7 +522,7 @@ int CompilerDriver::compileFile(const std::string& inputFile) {
 }
 
 void CompilerDriver::printHelp() const {
-    std::cout << "Usage: cmm [options] <input files>\n"
+    std::cout << "Usage: cdd [options] <input files>\n"
               << "\n"
               << "Options:\n"
               << "  -c              Compile only, do not link\n"

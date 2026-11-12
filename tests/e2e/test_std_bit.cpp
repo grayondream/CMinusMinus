@@ -44,13 +44,13 @@ protected:
 };
 
 static int runWithImports(const std::string& source, const std::string& filename) {
-    auto ast = cmm::parseStdCPrelude(source, filename);
+    auto ast = cdd::parseStdCPrelude(source, filename);
     if (!ast) return -1;
 
-    cmm::ModuleSearchPaths paths{{STD_DIR}};
+    cdd::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::string> errors;
-    cmm::processImports(*ast, ".", paths, loaded, errors);
+    cdd::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) return -1;
 
     SemanticAnalyzer analyzer;
@@ -89,7 +89,7 @@ TEST_F(StdBitTest, PopCount32) {
             if (std::popcount32(0xFFFFFFFFu) != 32) return 4;
             return 0;
         }
-    )", "bit_pop32.cmm"), 0);
+    )", "bit_pop32.cdd"), 0);
 }
 
 TEST_F(StdBitTest, PopCount64) {
@@ -102,7 +102,7 @@ TEST_F(StdBitTest, PopCount64) {
             if (std::popcount64(0xFFFFFFFFFFFFFFFFul) != 64) return 4;
             return 0;
         }
-    )", "bit_pop64.cmm"), 0);
+    )", "bit_pop64.cdd"), 0);
 }
 
 TEST_F(StdBitTest, ClzCtz32) {
@@ -117,7 +117,7 @@ TEST_F(StdBitTest, ClzCtz32) {
             if (std::ctz32(1u) != 0) return 6;
             return 0;
         }
-    )", "bit_clz32.cmm"), 0);
+    )", "bit_clz32.cdd"), 0);
 }
 
 TEST_F(StdBitTest, ClzCtz64) {
@@ -132,7 +132,7 @@ TEST_F(StdBitTest, ClzCtz64) {
             if (std::ctz64(0) != 64) return 6;
             return 0;
         }
-    )", "bit_clz64.cmm"), 0);
+    )", "bit_clz64.cdd"), 0);
 }
 
 TEST_F(StdBitTest, RotlRotr32) {
@@ -145,7 +145,7 @@ TEST_F(StdBitTest, RotlRotr32) {
             if (std::rotr32(1u, 1) != 0x80000000u) return 4;
             return 0;
         }
-    )", "bit_rot32.cmm"), 0);
+    )", "bit_rot32.cdd"), 0);
 }
 
 TEST_F(StdBitTest, RotlRotr64) {
@@ -158,7 +158,7 @@ TEST_F(StdBitTest, RotlRotr64) {
             if (std::rotr64(2, 1) != 1) return 4;
             return 0;
         }
-    )", "bit_rot64.cmm"), 0);
+    )", "bit_rot64.cdd"), 0);
 }
 
 TEST_F(StdBitTest, BitcastWrappers) {
@@ -175,7 +175,7 @@ TEST_F(StdBitTest, BitcastWrappers) {
             if (xr != 12345) return 2;
             return 0;
         }
-    )", "bit_bitcast.cmm"), 0);
+    )", "bit_bitcast.cdd"), 0);
 }
 
 }  // namespace

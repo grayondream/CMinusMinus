@@ -1,4 +1,4 @@
-# Cmm 1.0 — 编译期与反射规范（`compile_time`）
+# CDD 1.0 — 编译期与反射规范（`compile_time`）
 
 > 对应 TODO：**CT-01 ~ CT-14**、**PAR-15**、**SEM-06/07**、**DEC-05**
 > 状态：`[impl]` 以 `src/sema/SemanticAnalyzer.cpp`、`src/frontend/Parser.cpp` 为准；`[plan]` 为目标。
@@ -14,7 +14,7 @@
 
 ## 2. 静态断言（CT-02）
 
-```cmm
+```cdd
 compile_time.static_assert(size_of(Point) == 8, "Point must be 8 bytes");
 ```
 
@@ -23,7 +23,7 @@ compile_time.static_assert(size_of(Point) == 8, "Point must be 8 bytes");
 
 ## 3. 条件编译（CT-03 / SEM-07）
 
-```cmm
+```cdd
 compile_time.if (compile_time.target.os == "linux") {
     // 仅该目标参与语义分析与 codegen
 } else {
@@ -58,7 +58,7 @@ compile_time.if (compile_time.target.os == "linux") {
 | `compile_time.build.debug` | `bool` | Debug 构建 |
 | `compile_time.build.optimize` | `string_view` | `"O0".."O3"/"Os"/"Oz"` |
 | `compile_time.build.mode` | `string_view` | `"debug"` / `"release"` |
-| `compile_time.build.compiler` | `string_view` | `"cmm"` |
+| `compile_time.build.compiler` | `string_view` | `"cdd"` |
 | `compile_time.build.host_os` | `string_view` | host OS |
 | `compile_time.build.host_arch` | `string_view` | host 架构 |
 | `compile_time.build.version` | `string_view` | 编译器版本（无 edition，见 NG-06） |
@@ -150,7 +150,7 @@ compile_time.if (compile_time.target.os == "linux") {
 
 ### 7.4 编译期重复展开
 
-```cmm
+```cdd
 compile_time.repeat(3) {
     total += 1;
 }
@@ -215,7 +215,7 @@ compile_time.repeat(3) {
 
 ### 10.1 语法
 
-```cmm
+```cdd
 compile_time int32 factorial(int32 n) { ... }       // CT + runtime
 compile_time int32 N = factorial(5);                 // implicit read-only
 compile_only DfaTable build_dfa(string_view p) { ... } // CT-only, no symbol
@@ -240,7 +240,7 @@ compile_only DfaTable build_dfa(string_view p) { ... } // CT-only, no symbol
 
 ### 10.2 `if compile_time`
 
-```cmm
+```cdd
 compile_time int32 table_at(int32 s, int32 c) {
     if compile_time {
         return EMAIL_DFA.next[s][c];   // CT path

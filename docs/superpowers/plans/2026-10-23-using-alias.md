@@ -261,7 +261,7 @@ git commit -m "feat(PAR-24): using aliases expose inline enum values and annotat
 - Modify: `tests/sema/test_compile_time.cpp:369-376`
 - Modify: `tests/ast/test_decl_nodes.cpp:71-77`
 - Modify: `tests/codegen/test_codegen_context.cpp:469-474`
-- Modify: `examples/all_features.cmm:68-98`
+- Modify: `examples/all_features.cdd:68-98`
 
 **Interfaces:**
 - Consumes: Task 1 的数组别名、Task 2 的函数指针别名、Task 3 的内联 enum/注解。
@@ -309,11 +309,11 @@ Expected: 全绿。
 
 - [ ] **Step 3: 迁移示例**
 
-`examples/all_features.cmm` 第 2 节：5 个 typedef 改 using（`Integer`、`Point = struct {...}`、`IntPtr`、`IntArr = int32[10]`、`Opt`），`type Speed = float64;` → `using Speed = float64;`；标题/注释/`check` 文案里的 `typedef`/`type` 改为 `using`。
+`examples/all_features.cdd` 第 2 节：5 个 typedef 改 using（`Integer`、`Point = struct {...}`、`IntPtr`、`IntArr = int32[10]`、`Opt`），`type Speed = float64;` → `using Speed = float64;`；标题/注释/`check` 文案里的 `typedef`/`type` 改为 `using`。
 
 Run:
 ```bash
-./build/bin/cmm examples/all_features.cmm -o /tmp/all_features && /tmp/all_features | tail -1
+./build/bin/cdd examples/all_features.cdd -o /tmp/all_features && /tmp/all_features | tail -1
 ```
 Expected: 退出 0，最后一行 `ALL FEATURES OK`。
 
@@ -325,7 +325,7 @@ Expected: 全绿（计数为 Task 3 的基线 + 0，仅改名）。
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tests examples/all_features.cmm
+git add tests examples/all_features.cdd
 git commit -m "test: migrate typedef/type usages to using"
 ```
 
@@ -434,7 +434,7 @@ Expected: FAIL —— typedef/type 仍解析成功；成员体静默忽略；块
 Run:
 ```bash
 cd build && cmake --build . -j$(nproc) && ctest -j8
-cd .. && grep -rnE "typedef|[[:space:]]type[[:space:]]+[A-Za-z_].*=" tests examples libs --include=*.c --include=*.cmm
+cd .. && grep -rnE "typedef|[[:space:]]type[[:space:]]+[A-Za-z_].*=" tests examples libs --include=*.c --include=*.cdd
 grep -rn "TypedefDeclAST\|TypeDeclAST" src tests
 ```
 Expected: 全绿（1513）；两条 grep 均无输出（`resources/main.c` 不在检查范围：未被构建消费）。

@@ -31,17 +31,17 @@ protected:
 };
 
 static int runSource(const std::string& source, const std::string& filename) {
-    auto ast = cmm::parseStdCPrelude(source, filename);
+    auto ast = cdd::parseStdCPrelude(source, filename);
     if (!ast) {
         ADD_FAILURE() << "Parse failed";
         return -1;
     }
-    auto prelude = cmm::parseStdCPrelude(cmm::loadStdCPrelude({STD_DIR}), "<std.c>");
+    auto prelude = cdd::parseStdCPrelude(cdd::loadStdCPrelude({STD_DIR}), "<std.c>");
     if (!prelude) {
         ADD_FAILURE() << "prelude parse failed";
         return -1;
     }
-    cmm::prependDeclarations(*ast, *prelude);
+    cdd::prependDeclarations(*ast, *prelude);
 
     SemanticAnalyzer analyzer;
     analyzer.analyze(*ast);
@@ -101,7 +101,7 @@ TEST_F(FlexArrayE2E, SizeofAndOffsetMatchGcc) {
             if (compile_time.offset_of(struct S32, "d") != 4) { return 3; }
             return 0;
         }
-    )", "fam_sizeof.cmm"), 0);
+    )", "fam_sizeof.cdd"), 0);
 }
 
 TEST_F(FlexArrayE2E, MallocIdiomReadWrite) {
@@ -115,7 +115,7 @@ TEST_F(FlexArrayE2E, MallocIdiomReadWrite) {
             free(s);
             return 0;
         }
-    )", "fam_malloc.cmm"), 0);
+    )", "fam_malloc.cdd"), 0);
 }
 
 TEST_F(FlexArrayE2E, ValueCopyCopiesFixedPartOnly) {
@@ -129,7 +129,7 @@ TEST_F(FlexArrayE2E, ValueCopyCopiesFixedPartOnly) {
             free(a);
             return 0;
         }
-    )", "fam_copy.cmm"), 0);
+    )", "fam_copy.cdd"), 0);
 }
 
 TEST_F(FlexArrayE2E, MaterializedLayoutsMatchGcc) {
@@ -150,5 +150,5 @@ TEST_F(FlexArrayE2E, MaterializedLayoutsMatchGcc) {
             free(sp);
             return 0;
         }
-    )", "fam_materialized.cmm"), 0);
+    )", "fam_materialized.cdd"), 0);
 }

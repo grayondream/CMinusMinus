@@ -147,7 +147,7 @@ TEST_F(AtomicE2E, AtomicLoadStoreWorks) {
             a = a + 1;
             return a == 2 ? 0 : 1;
         }
-    )", "atomic_ls.cmm"), 0);
+    )", "atomic_ls.cdd"), 0);
 }
 
 TEST_F(AtomicE2E, AtomicIncrement) {
@@ -158,7 +158,7 @@ TEST_F(AtomicE2E, AtomicIncrement) {
             ++c;
             return c == 2 ? 0 : 1;
         }
-    )", "atomic_inc.cmm"), 0);
+    )", "atomic_inc.cdd"), 0);
 }
 
 TEST_F(AtomicE2E, AtomicCompoundAssign) {
@@ -172,12 +172,12 @@ TEST_F(AtomicE2E, AtomicCompoundAssign) {
             v ^= 1;
             return v == (7+3-2)&15|32^1 ? 0 : 1;
         }
-    )", "atomic_ca.cmm"), 0);
+    )", "atomic_ca.cdd"), 0);
 }
 
 TEST_F(AtomicE2E, AtomicPointerRejected) {
     auto ast = [&]() {
-        Lexer lexer("at_ptr.cmm", R"(
+        Lexer lexer("at_ptr.cdd", R"(
             atomic int32* p;
             int32 main() { return 0; }
         )");
@@ -198,7 +198,7 @@ TEST_F(AtomicE2E, AtomicPointerRejected) {
 
 TEST_F(AtomicE2E, AtomicMultiplyRejected) {
     auto ast = [&]() {
-        Lexer lexer("at_mul.cmm", R"(
+        Lexer lexer("at_mul.cdd", R"(
             atomic int32 a = 2;
             int32 main() { a *= 3; return 0; }
         )");
@@ -227,7 +227,7 @@ TEST_F(AtomicE2E, AtomicAliasBaseWorks) {
             x = x + 1;
             return x == 6 ? 0 : 1;
         }
-    )", "at_using.cmm"), 0);
+    )", "at_using.cdd"), 0);
 }
 
 // I2 (review): `atomic` works in a function-local declaration too (was
@@ -239,14 +239,14 @@ TEST_F(AtomicE2E, AtomicLocalDeclarationWorks) {
             a = a + 1;
             return a == 2 ? 0 : 1;
         }
-    )", "at_local.cmm"), 0);
+    )", "at_local.cdd"), 0);
 }
 
 // C2 (review): `atomic` on an aggregate is rejected cleanly (parse-time), not
 // a crash.
 TEST_F(AtomicE2E, AtomicAggregateRejectedCleanly) {
     auto tokens = [&]() {
-        Lexer lexer("at_agg.cmm", R"(
+        Lexer lexer("at_agg.cdd", R"(
             struct S { int32 a; };
             atomic struct S f;
             int32 main() { return 0; }
@@ -272,14 +272,14 @@ TEST_F(AtomicE2E, AtomicTemplateFieldWorks) {
             b.v += 2;
             return b.v == 7 ? 0 : 1;
         }
-    )", "at_tmpl.cmm"), 0);
+    )", "at_tmpl.cdd"), 0);
 }
 
 TEST_F(AtomicE2E, AtomicBoolUsesByteAtomic) {
     std::string ir = compileToIR(R"(
         atomic bool flag = false;
         int32 main() { flag = true; return flag ? 0 : 1; }
-    )", "at_bool_ir.cmm");
+    )", "at_bool_ir.cdd");
     EXPECT_NE(ir.find("atomic i8"), std::string::npos);
     EXPECT_EQ(ir.find("atomic i1"), std::string::npos);
 }
@@ -288,7 +288,7 @@ TEST_F(AtomicE2E, AtomicInt64FieldUsesNaturalAlignment) {
     std::string ir = compileToIR(R"(
         struct Cell { atomic int64 v; };
         int64 main() { Cell c; c.v = 11; return c.v - 11; }
-    )", "at_align_ir.cmm");
+    )", "at_align_ir.cdd");
     std::istringstream lines(ir);
     std::string line;
     int atomicLines = 0;
@@ -306,10 +306,10 @@ TEST_F(AtomicE2E, AtomicBuiltinLoadStore) {
     EXPECT_EQ(runSource(R"(
         int32 main() {
             int32 x = 0;
-            __cmm_atomic_store(&x, 7, 5);
-            return __cmm_atomic_load(&x, 5) == 7 ? 0 : 1;
+            __cdd_atomic_store(&x, 7, 5);
+            return __cdd_atomic_load(&x, 5) == 7 ? 0 : 1;
         }
-    )", "at_builtin_ls.cmm"), 0);
+    )", "at_builtin_ls.cdd"), 0);
 }
 
 TEST_F(AtomicE2E, AtomicBuiltinCASAndFetch) {
@@ -317,11 +317,11 @@ TEST_F(AtomicE2E, AtomicBuiltinCASAndFetch) {
         int32 main() {
             int32 x = 3;
             int32 expected = 3;
-            if (!__cmm_atomic_compare_exchange_strong(&x, &expected, 9, 5, 5)) return 1;
-            if (__cmm_atomic_fetch_add(&x, 2, 5) != 9) return 2;
-            return __cmm_atomic_load(&x, 5) == 11 ? 0 : 3;
+            if (!__cdd_atomic_compare_exchange_strong(&x, &expected, 9, 5, 5)) return 1;
+            if (__cdd_atomic_fetch_add(&x, 2, 5) != 9) return 2;
+            return __cdd_atomic_load(&x, 5) == 11 ? 0 : 3;
         }
-    )", "at_builtin_cas.cmm"), 0);
+    )", "at_builtin_cas.cdd"), 0);
 }
 
 TEST_F(AtomicE2E, AtomicBuiltinPointerAndFloat) {
@@ -331,13 +331,13 @@ TEST_F(AtomicE2E, AtomicBuiltinPointerAndFloat) {
             int32 y = 2;
             int32* p = &x;
             int32* expected = &x;
-            if (!__cmm_atomic_compare_exchange_strong(&p, &expected, &y, 5, 5)) return 1;
+            if (!__cdd_atomic_compare_exchange_strong(&p, &expected, &y, 5, 5)) return 1;
             float32 f = 1.5f;
-            float32 old = __cmm_atomic_exchange(&f, 2.5f, 5);
+            float32 old = __cdd_atomic_exchange(&f, 2.5f, 5);
             if (old != 1.5f || f != 2.5f) return 2;
             return p == &y ? 0 : 3;
         }
-    )", "at_builtin_ptr_float.cmm"), 0);
+    )", "at_builtin_ptr_float.cdd"), 0);
 }
 
 TEST_F(AtomicE2E, AtomicBuiltinAllOpsAndFences) {
@@ -345,32 +345,32 @@ TEST_F(AtomicE2E, AtomicBuiltinAllOpsAndFences) {
         enum Color : int32 { Red = 1, Blue = 2 };
         int32 main() {
             int32 x = 10;
-            if (__cmm_atomic_fetch_sub(&x, 3, 5) != 10) return 1;
-            if (__cmm_atomic_fetch_and(&x, 6, 5) != 7) return 2;
-            if (__cmm_atomic_fetch_or(&x, 8, 5) != 6) return 3;
-            if (__cmm_atomic_fetch_xor(&x, 1, 5) != 14) return 4;
-            if (__cmm_atomic_exchange(&x, 1, 5) != 15) return 5;
+            if (__cdd_atomic_fetch_sub(&x, 3, 5) != 10) return 1;
+            if (__cdd_atomic_fetch_and(&x, 6, 5) != 7) return 2;
+            if (__cdd_atomic_fetch_or(&x, 8, 5) != 6) return 3;
+            if (__cdd_atomic_fetch_xor(&x, 1, 5) != 14) return 4;
+            if (__cdd_atomic_exchange(&x, 1, 5) != 15) return 5;
 
             bool b = false;
             bool be = false;
-            if (!__cmm_atomic_compare_exchange_strong(&b, &be, true, 5, 5)) return 6;
+            if (!__cdd_atomic_compare_exchange_strong(&b, &be, true, 5, 5)) return 6;
             if (!b) return 7;
 
             Color c = Red;
             Color ce = Red;
-            if (!__cmm_atomic_compare_exchange_strong(&c, &ce, Blue, 5, 5)) return 8;
+            if (!__cdd_atomic_compare_exchange_strong(&c, &ce, Blue, 5, 5)) return 8;
             if (c != Blue) return 9;
 
-            __cmm_atomic_thread_fence(5);
-            __cmm_atomic_signal_fence(5);
+            __cdd_atomic_thread_fence(5);
+            __cdd_atomic_signal_fence(5);
             return 0;
         }
-    )", "at_builtin_all.cmm"), 0);
+    )", "at_builtin_all.cdd"), 0);
 }
 
 TEST_F(AtomicE2E, AtomicBuiltinRejectsBadTypesAndOrders) {
     auto expectSemaError = [](const std::string& src) {
-        Lexer lexer("at_bad.cmm", src);
+        Lexer lexer("at_bad.cdd", src);
         auto tokens = lexer.tokenize();
         Parser parser(tokens);
         auto ast = parser.parse();
@@ -388,21 +388,21 @@ TEST_F(AtomicE2E, AtomicBuiltinRejectsBadTypesAndOrders) {
     };
     expectSemaError(R"(
         float32 f = 1.0f;
-        int32 main() { return (int32)__cmm_atomic_fetch_and(&f, 1.0f, 5); }
+        int32 main() { return (int32)__cdd_atomic_fetch_and(&f, 1.0f, 5); }
     )");
     expectSemaError(R"(
         int32 x = 0;
-        int32 main() { return __cmm_atomic_load(&x, 3); }
+        int32 main() { return __cdd_atomic_load(&x, 3); }
     )");
     expectSemaError(R"(
         int32 x = 0;
-        int32 main() { __cmm_atomic_store(&x, 1, 2); return 0; }
+        int32 main() { __cdd_atomic_store(&x, 1, 2); return 0; }
     )");
     expectSemaError(R"(
         int32 x = 0;
         int32 expected = 0;
         int32 main() {
-            return __cmm_atomic_compare_exchange_strong(&x, &expected, 1, 5, 3);
+            return __cdd_atomic_compare_exchange_strong(&x, &expected, 1, 5, 3);
         }
     )");
 }
@@ -411,7 +411,7 @@ TEST_F(AtomicE2E, AtomicInt128Rejected) {
     auto errors = semanticErrors(R"(
         atomic int128 x;
         int32 main() { return 0; }
-    )", "at_int128.cmm");
+    )", "at_int128.cdd");
     ASSERT_FALSE(errors.empty());
     bool mentionsLimit = false;
     for (const auto& e : errors) {
@@ -422,7 +422,7 @@ TEST_F(AtomicE2E, AtomicInt128Rejected) {
 
 TEST_F(AtomicE2E, AtomicTemplateUnsupportedRejected) {
     auto expectError = [](const std::string& src) {
-        auto errors = semanticErrors(src, "at_tmpl_bad.cmm");
+        auto errors = semanticErrors(src, "at_tmpl_bad.cdd");
         ASSERT_FALSE(errors.empty()) << src;
         bool mentionsLimit = false;
         for (const auto& e : errors) {
@@ -456,7 +456,7 @@ TEST_F(AtomicE2E, AtomicTemplateUnsupportedRejected) {
 
 TEST_F(AtomicE2E, AtomicUnionAndTypedefFieldsRejected) {
     auto expectError = [](const std::string& src) {
-        auto errors = semanticErrors(src, "at_union_alias.cmm");
+        auto errors = semanticErrors(src, "at_union_alias.cdd");
         ASSERT_FALSE(errors.empty()) << src;
         bool mentionsLimit = false;
         for (const auto& e : errors) {

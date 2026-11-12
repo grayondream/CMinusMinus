@@ -1,6 +1,6 @@
 #include "support/Utf8.h"
 
-namespace cmm_utf8 {
+namespace cdd_utf8 {
 
 size_t seqLen(std::string_view s, size_t i) {
     const unsigned char lead = static_cast<unsigned char>(s[i]);
@@ -46,4 +46,4 @@ bool valid(std::string_view s) {
     return true;
 }
 
-} // namespace cmm_utf8
+} // namespace cdd_utf8

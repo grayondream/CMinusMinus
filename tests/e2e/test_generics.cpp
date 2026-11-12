@@ -104,7 +104,7 @@ TEST_F(GenericE2E, BoxRoundTrip) {
             b.value = 42;
             return b.value;
         }
-    )", "gen1.cmm"), 42);
+    )", "gen1.cdd"), 42);
 }
 
 TEST_F(GenericE2E, BoxNested) {
@@ -115,7 +115,7 @@ TEST_F(GenericE2E, BoxNested) {
             b.value.value = 7;
             return b.value.value;
         }
-    )", "gen2.cmm"), 7);
+    )", "gen2.cdd"), 7);
 }
 
 TEST_F(GenericE2E, GenericFuncRoundTrip) {
@@ -124,7 +124,7 @@ TEST_F(GenericE2E, GenericFuncRoundTrip) {
         int32 main() {
             return tmax(3, 4);
         }
-    )", "gen3.cmm"), 3);
+    )", "gen3.cdd"), 3);
 }
 
 TEST_F(GenericE2E, GenericFuncExplicit) {
@@ -133,7 +133,7 @@ TEST_F(GenericE2E, GenericFuncExplicit) {
         int32 main() {
             return tmax<float64>(2.5, 1.5) == 2.5 ? 7 : 0;
         }
-    )", "gen4.cmm"), 7);
+    )", "gen4.cdd"), 7);
 }
 
 TEST_F(GenericE2E, NonTemplateExactMatchWins) {
@@ -145,7 +145,7 @@ TEST_F(GenericE2E, NonTemplateExactMatchWins) {
             if (tmax(3, 4) == 99) return 1;
             return 0;
         }
-    )", "gen5.cmm"), 1);
+    )", "gen5.cdd"), 1);
 }
 
 TEST_F(GenericE2E, FixedArrayTemplate) {
@@ -156,7 +156,7 @@ TEST_F(GenericE2E, FixedArrayTemplate) {
             a.data[0] = 1; a.data[1] = 2; a.data[2] = 3; a.data[3] = 4;
             return a.data[0] + a.data[1] + a.data[2] + a.data[3];
         }
-    )", "gen6.cmm"), 10);
+    )", "gen6.cdd"), 10);
 }
 
 TEST_F(GenericE2E, AliasTemplateE2E) {
@@ -168,7 +168,7 @@ TEST_F(GenericE2E, AliasTemplateE2E) {
             v.data[0] = 5; v.data[1] = 6;
             return v.data[0] * 10 + v.data[1];
         }
-    )", "gen7.cmm"), 56);
+    )", "gen7.cdd"), 56);
 }
 
 TEST_F(GenericE2E, ThisFieldAccess) {
@@ -183,7 +183,7 @@ TEST_F(GenericE2E, ThisFieldAccess) {
             a.v = 9;
             return a.get();
         }
-    )", "gen8.cmm"), 9);
+    )", "gen8.cdd"), 9);
 }
 
 TEST_F(GenericE2E, ThisPassthrough) {
@@ -199,7 +199,7 @@ TEST_F(GenericE2E, ThisPassthrough) {
             a.self()->v = 6;
             return a.v;
         }
-    )", "gen9.cmm"), 6);
+    )", "gen9.cdd"), 6);
 }
 
 // ========== P1-03 / INH-05 / GEN-09: CRTP 全链路 ==========
@@ -222,7 +222,7 @@ TEST_F(GenericE2E, CrtpStaticDispatch) {
             float64 t = c.twice_area();
             return t > 6.0 && t < 6.3 ? 1 : 0;
         }
-    )", "gen10.cmm"), 1);
+    )", "gen10.cdd"), 1);
 }
 
 TEST_F(GenericE2E, CrtpSameShape) {
@@ -247,14 +247,14 @@ TEST_F(GenericE2E, CrtpSameShape) {
             c2.r = 1.0;
             return c1.same_shape(&c2) ? 1 : 0;
         }
-    )", "gen11.cmm"), 1);
+    )", "gen11.cdd"), 1);
 }
 
 // ========== P1-03 / T8 硬化 ==========
 
 TEST_F(GenericE2E, UnusedTemplateNoSymbol) {
     // 惰性实例化：只声明不使用 → 零符号。
-    Lexer lexer("gen12.cmm",
+    Lexer lexer("gen12.cdd",
         "template<typename T> T unused_fn(T x) { return x; }\n"
         "int32 main() { return 0; }");
     auto tokens = lexer.tokenize();
@@ -265,7 +265,7 @@ TEST_F(GenericE2E, UnusedTemplateNoSymbol) {
     analyzer.analyze(*ast);
     ASSERT_TRUE(analyzer.getErrors().empty());
     CodegenContext ctx;
-    ctx.setSourceFile("gen12.cmm");
+    ctx.setSourceFile("gen12.cdd");
     ast->codegen(ctx);
     EXPECT_EQ(ctx.getModule().getFunction("unused_fn"), nullptr);
     EXPECT_EQ(ctx.getModule().getFunction("unused_fn_int32"), nullptr);
@@ -279,7 +279,7 @@ TEST_F(GenericE2E, DeepNestingBox) {
             b.value.value.value = 5;
             return b.value.value.value * 2;
         }
-    )", "gen13.cmm"), 10);
+    )", "gen13.cdd"), 10);
 }
 
 TEST_F(GenericE2E, CallerScopeTypeParamName) {
@@ -292,7 +292,7 @@ TEST_F(GenericE2E, CallerScopeTypeParamName) {
             int32 r = id2(7);
             return r == 7 && T == 5 ? 1 : 0;
         }
-    )", "gen14.cmm"), 1);
+    )", "gen14.cdd"), 1);
 }
 
 // ========== P1-03 评审修复轮（fix-first） ==========
@@ -304,7 +304,7 @@ TEST_F(GenericE2E, InstanceSharedAcrossFunctions) {
         template<typename T> T tmax(T a, T b) { return a; }
         int32 f() { return tmax(3, 4); }
         int32 main() { return f() + tmax(1, 2); }
-    )", "gen15.cmm"), 4);
+    )", "gen15.cdd"), 4);
 }
 
 TEST_F(GenericE2E, SpeculativeRollbackRestoresRshift) {
@@ -317,7 +317,7 @@ TEST_F(GenericE2E, SpeculativeRollbackRestoresRshift) {
             int32 y = x < b >> 2;
             return y ? 1 : 2;
         }
-    )", "gen16.cmm"), 1);
+    )", "gen16.cdd"), 1);
 }
 
 TEST_F(GenericE2E, TemplateClassInheritsPlainBase) {
@@ -337,7 +337,7 @@ TEST_F(GenericE2E, TemplateClassInheritsPlainBase) {
             w.v = 4;
             return w.b * 10 + w.v;
         }
-    )", "gen17.cmm"), 34);
+    )", "gen17.cdd"), 34);
 }
 
 TEST_F(GenericE2E, NestedEnumInTemplateClass) {
@@ -354,7 +354,7 @@ TEST_F(GenericE2E, NestedEnumInTemplateClass) {
             e.tag = 1;
             return e.first();
         }
-    )", "gen18.cmm"), 7);
+    )", "gen18.cdd"), 7);
 }
 
 TEST_F(GenericE2E, NamespaceQualifiedTemplateLookup) {
@@ -371,7 +371,7 @@ TEST_F(GenericE2E, NamespaceQualifiedTemplateLookup) {
             if (NsTpl::id<int32>(b.value) != 9) return 1;
             return 0;
         }
-    )", "gen21.cmm"), 0);
+    )", "gen21.cdd"), 0);
 }
 
 TEST_F(GenericE2E, BoolLiteralInTemplateMethodBody) {
@@ -398,12 +398,12 @@ TEST_F(GenericE2E, BoolLiteralInTemplateMethodBody) {
             if (b.positive()) return 4;
             return 0;
         }
-    )", "gen20.cmm"), 0);
+    )", "gen20.cdd"), 0);
 }
 
 TEST_F(GenericE2E, SelfValueFieldDiagnosed) {
     // I3：非模板类值语义自引用（A x）须诊断而非编译器崩溃。
-    Lexer lexer("gen19.cmm", "class BadA { BadA x; };\nint32 main() { return 0; }");
+    Lexer lexer("gen19.cdd", "class BadA { BadA x; };\nint32 main() { return 0; }");
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
     auto ast = parser.parse();

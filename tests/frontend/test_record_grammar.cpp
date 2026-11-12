@@ -12,7 +12,7 @@
 namespace {
 
 std::vector<Token> lex(const std::string& source) {
-    Lexer lexer("record_grammar.cmm", source);
+    Lexer lexer("record_grammar.cdd", source);
     return lexer.tokenize();
 }
 

@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the existing shared `CompileTimeEvaluator`/`CtValue` pipeline, extend it with an `AGGREGATE` value kind and lvalue paths, and split CT-vs-runtime reachability at sema. `compile_time` functions keep normal LLVM emission; `compile_only` functions are skipped by codegen and are only interpreted. `if compile_time` selects the then branch in CT and emits only the else branch at runtime.
 
-**Tech Stack:** C++17, LLVM 21, CMake, GoogleTest, LLJIT, existing `cmm_lib` parser/sema/codegen/test harness.
+**Tech Stack:** C++17, LLVM 21, CMake, GoogleTest, LLJIT, existing `cdd_lib` parser/sema/codegen/test harness.
 
 **Spec:** `docs/superpowers/specs/2026-11-10-compile-time-compile-only-design.md`
 
@@ -23,7 +23,7 @@
 - `if compile_time` is allowed only inside `compile_time`/`compile_only` functions.
 - Parser-level array dimensions and template arguments accept named `compile_time` constants, not direct `compile_only` calls.
 - Preserve the current baseline: **1829/1829** tests pass before this plan.
-- Build: `cmake --build build -j$(nproc)`. Test: `ctest --test-dir build -j8`. Example: `build/bin/cmm examples/all_features.cmm -o /tmp/opencode/all_features`.
+- Build: `cmake --build build -j$(nproc)`. Test: `ctest --test-dir build -j8`. Example: `build/bin/cdd examples/all_features.cdd -o /tmp/opencode/all_features`.
 - The new design/plan files are under `docs/*`, which is git-ignored; force-add them when committing with `git add -f docs/superpowers/...`.
 - Do not use subagents for per-task implementation; the user requested native execution.
 
@@ -46,10 +46,10 @@
 - Modify: `src/sema/SemanticAnalyzer.h`, `src/sema/SemanticAnalyzer.cpp`
 - Modify: `src/sema/CompileTimeEvaluator.h`, `src/sema/CompileTimeEvaluator.cpp`
 - Modify: `src/ast/Symbol.h`
-- Modify: `libs/std/core.cmm`, `libs/std/math.cmm`, `libs/std/thread.cmm`, `libs/std/time.cmm`
+- Modify: `libs/std/core.cdd`, `libs/std/math.cdd`, `libs/std/thread.cdd`, `libs/std/time.cdd`
 - Modify: `tests/frontend/test_parser.cpp`, `tests/sema/test_semantic_analyzer.cpp`
 - Modify: `tests/e2e/test_const_constexpr.cpp`, `tests/e2e/test_constexpr_function.cpp`, `tests/e2e/test_constexpr_containers.cpp`, `tests/e2e/test_compile_time.cpp`
-- Modify: `tests/e2e/resources/test_const.cmm`
+- Modify: `tests/e2e/resources/test_const.cdd`
 - Test: `tests/frontend/test_parser.cpp` (new `CompileTimeDeclaration` and `ConstexprRemoved` tests)
 
 **Interfaces:**
@@ -99,7 +99,7 @@ Expected: FAIL — `isCompileTime` does not exist, and `constexpr` is still acce
 - In block-statement parsing, replace `check(TOKEN_CONSTEXPR)` with the same `compile_time` contextual check; keep the `constexpr` diagnostic path.
 - Rename SemAnalyzer maps and methods: `constexprValues` → `compileTimeValues`, `constexprFunctions` → `compileTimeFunctions`, `getConstexprValues()` → `getCompileTimeValues()`, `isConstexprContainerExpr` can keep its internal name for now (container-specific), but update the `isCompileTime` field reads.
 - Add `bool isCompileTime = false;` to `Symbol`; set it in `visit(VarDeclAST)` when the declaration is `compile_time`.
-- Replace every language-level `constexpr` in `libs/std/*.cmm`, `tests/e2e/*.cpp` string sources, and `tests/e2e/resources/test_const.cmm` with `compile_time`. Do not change C++ `static constexpr` internals.
+- Replace every language-level `constexpr` in `libs/std/*.cdd`, `tests/e2e/*.cpp` string sources, and `tests/e2e/resources/test_const.cdd` with `compile_time`. Do not change C++ `static constexpr` internals.
 - Keep `TOKEN_CONSTEXPR` in `Token.h`/`Lexer.cpp`/`Utils.cpp` only for the migration diagnostic.
 
 - [ ] **Step 4: Run the focused tests**
@@ -143,7 +143,7 @@ TEST_F(ConstConstexprE2E, CompileTimeVariableMutationRejected) {
     auto errs = compileErrors(R"(
 compile_time int32 N = 1;
 int32 main() { N = 2; return N; }
-)", "ct_mutate.cmm");
+)", "ct_mutate.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "read-only"));
 }
 ```
@@ -221,14 +221,14 @@ TEST_F(CompileOnlyE2E, ScalarBuildsCompileTimeVariable) {
 compile_only int32 twice(int32 x) { return x * 2; }
 compile_time int32 X = twice(21);
 int32 main() { return X - 42; }
-)", "compile_only_scalar.cmm"), 0);
+)", "compile_only_scalar.cdd"), 0);
 }
 
 TEST_F(CompileOnlyE2E, NoRuntimeSymbolOrDeclaration) {
     auto ctx = codegenSource(R"(
 compile_only int32 helper(int32 x) { return x + 1; }
 int32 main() { return 0; }
-)", "compile_only_no_symbol.cmm");
+)", "compile_only_no_symbol.cdd");
     ASSERT_NE(ctx, nullptr);
     EXPECT_EQ(ctx->getModule().getFunction("helper"), nullptr);
     EXPECT_EQ(ctx->getModule().getFunction("helper_int32"), nullptr);
@@ -310,7 +310,7 @@ compile_time int32 CT = f(5);
 int32 main() {
     return f(5) * 10 + CT - 46;
 }
-)", "if_compile_time.cmm"), 0);
+)", "if_compile_time.cdd"), 0);
 }
 
 TEST_F(CompileOnlyE2E, IfCompileTimeRejectedInRuntimeFunction) {
@@ -318,7 +318,7 @@ TEST_F(CompileOnlyE2E, IfCompileTimeRejectedInRuntimeFunction) {
 int32 main() {
     if compile_time { return 1; } else { return 0; }
 }
-)", "if_compile_time_bad.cmm");
+)", "if_compile_time_bad.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "if compile_time"));
 }
 ```
@@ -409,7 +409,7 @@ TEST_F(CompileOnlyE2E, DirectCallInCompileTimeFunctionRejected) {
 compile_only int32 build(int32 x) { return x * 2; }
 compile_time int32 make(int32 x) { return build(x); }
 int32 main() { return make(1); }
-)", "compile_only_direct.cmm");
+)", "compile_only_direct.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "outside 'if compile_time'"));
 }
 
@@ -418,7 +418,7 @@ TEST_F(CompileOnlyE2E, RuntimeCallChainReportsPath) {
 compile_only int32 build(int32 x) { return x * 2; }
 int32 make(int32 x) { return build(x); }
 int32 main() { return make(1); }
-)", "compile_only_runtime.cmm");
+)", "compile_only_runtime.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "main"));
     EXPECT_TRUE(hasErrorContaining(errs, "make"));
     EXPECT_TRUE(hasErrorContaining(errs, "build"));
@@ -429,7 +429,7 @@ TEST_F(CompileOnlyE2E, CompileOnlyBodyCannotCallRuntimeFunction) {
 int32 runtime_helper(int32 x) { return x; }
 compile_only int32 build(int32 x) { return runtime_helper(x); }
 int32 main() { return 0; }
-)", "compile_only_runtime_body.cmm");
+)", "compile_only_runtime_body.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "cannot call runtime function"));
 }
 
@@ -437,7 +437,7 @@ TEST_F(CompileOnlyE2E, AddressOfCompileOnlyRejected) {
     auto errs = compileErrors(R"(
 compile_only int32 build(int32 x) { return x; }
 int32 main() { int32 (*p)(int32) = &build; return p(1); }
-)", "compile_only_addr.cmm");
+)", "compile_only_addr.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "address"));
 }
 ```
@@ -516,7 +516,7 @@ TEST_F(CompileOnlyE2E, CompileTimeAggregateInitializerMaterializes) {
 struct Pair { int32 a; int32 b; };
 compile_time Pair P = { 20, 21 };
 int32 main() { return P.a + P.b - 41; }
-)", "ct_pair.cmm"), 0);
+)", "ct_pair.cdd"), 0);
 }
 
 TEST_F(CompileOnlyE2E, CompileTimeAggregateDoesNotPoisonType) {
@@ -528,7 +528,7 @@ int32 main() {
     b.x = 2;
     return A.x + b.x - 3;
 }
-)", "ct_no_type_poison.cmm"), 0);
+)", "ct_no_type_poison.cdd"), 0);
 }
 ```
 
@@ -618,7 +618,7 @@ compile_only Pair makePair(int32 x) {
 }
 compile_time Pair P = makePair(20);
 int32 main() { return P.a + P.b - 41; }
-)", "ct_pair_return.cmm"), 0);
+)", "ct_pair_return.cdd"), 0);
 }
 
 TEST_F(CompileOnlyE2E, AggregateParameterIsDeepCopied) {
@@ -637,7 +637,7 @@ compile_only int32 mutate(Pair p) {
 compile_time Pair P = makePair(20);
 compile_time int32 X = mutate(P);
 int32 main() { return P.a + X - 119; }
-)", "ct_pair_copy.cmm"), 0);
+)", "ct_pair_copy.cdd"), 0);
 }
 
 TEST_F(CompileOnlyE2E, DfaTableBuildsAtCompileTimeWithoutSymbol) {
@@ -661,7 +661,7 @@ compile_only DfaTable build_dfa(string_view pattern) {
 }
 compile_time DfaTable EMAIL_DFA = build_dfa("abc");
 int32 main() { return EMAIL_DFA.next[0][1] - 'b'; }
-)", "ct_dfa.cmm");
+)", "ct_dfa.cdd");
     ASSERT_NE(ctx, nullptr);
     EXPECT_EQ(ctx->getModule().getFunction("build_dfa"), nullptr);
     EXPECT_NE(ctx->getModule().getGlobalVariable("EMAIL_DFA"), nullptr);
@@ -675,7 +675,7 @@ compile_only int32 spin(int32 x) {
 }
 compile_time int32 N = spin(1);
 int32 main() { return 0; }
-)", "ct_step_limit.cmm");
+)", "ct_step_limit.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "limit"));
 }
 ```
@@ -734,7 +734,7 @@ git commit -m "feat(ct): support compile-time aggregate construction and DfaTabl
 - Modify: `docs/spec/keywords.md`
 - Modify: `docs/spec/semantics.md`
 - Modify: `docs/spec/stdlib.md`
-- Modify: `examples/all_features.cmm`
+- Modify: `examples/all_features.cdd`
 - Modify: `TODO.md`, `Progress.md`
 - Test: full suite + example + IR checks
 
@@ -754,9 +754,9 @@ git commit -m "feat(ct): support compile-time aggregate construction and DfaTabl
 
 - [ ] **Step 2: Add the all-features example section**
 
-Add a small section to `examples/all_features.cmm`:
+Add a small section to `examples/all_features.cdd`:
 
-```cmm
+```cdd
 struct DfaTable {
     int32 next[4][8];
     int32 initial;
@@ -796,7 +796,7 @@ Run:
 ```bash
 cmake --build build -j$(nproc)
 ctest --test-dir build -R 'CompileOnlyE2E|CompileTime|ParserTest|SemanticAnalyzerTest' -j8
-build/bin/cmm examples/all_features.cmm -o /tmp/opencode/all_features
+build/bin/cdd examples/all_features.cdd -o /tmp/opencode/all_features
 /tmp/opencode/all_features
 ```
 
@@ -812,7 +812,7 @@ Expected: PASS; record the exact count.
 Run:
 
 ```bash
-grep -R "constexpr" src libs tests examples --include='*.cpp' --include='*.h' --include='*.cmm' | grep -v 'static constexpr' || true
+grep -R "constexpr" src libs tests examples --include='*.cpp' --include='*.h' --include='*.cdd' | grep -v 'static constexpr' || true
 ```
 
 Expected: only C++ `static constexpr` internals and the migration-diagnostic strings; no language-level source uses.

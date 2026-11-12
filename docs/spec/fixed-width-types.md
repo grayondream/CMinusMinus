@@ -1,4 +1,4 @@
-# Cmm 1.0 — 定宽类型统一 + LEX-15 字面量类型消费端
+# CDD 1.0 — 定宽类型统一 + LEX-15 字面量类型消费端
 
 - 状态：待评审
 - 日期：2026-09-28
@@ -76,7 +76,7 @@
 
 只改写语言源码的拼写，不动关键字/类型系统，因此过渡期两种写法并存，全量测试必须保持通过。
 
-- 产品源：`libs/std/core.cmm`、`libs/std/c.cmm`、`libs/std/io.cmm`、`resources/main.c`、`resources/main_min.cmm`
+- 产品源：`libs/std/core.cdd`、`libs/std/c.cdd`、`libs/std/io.cdd`、`resources/main.c`、`resources/main_min.cdd`
 - 测试内语言源码字符串：约 242 行、228 处 `int main`
 - 文档示例：`docs/spec/*`、`README`
 

@@ -85,7 +85,7 @@ TEST_F(OperatorExtendedE2E, OperatorPercent) {
             struct V r = a % b;
             return r.x - 3;
         }
-    )", "op_percent.cmm"), 0);
+    )", "op_percent.cdd"), 0);
 }
 
 TEST_F(OperatorExtendedE2E, OperatorShiftLeft) {
@@ -101,7 +101,7 @@ TEST_F(OperatorExtendedE2E, OperatorShiftLeft) {
             struct V r = a << 3;
             return r.x - 8;
         }
-    )", "op_shl.cmm"), 0);
+    )", "op_shl.cdd"), 0);
 }
 
 TEST_F(OperatorExtendedE2E, OperatorShiftRight) {
@@ -117,7 +117,7 @@ TEST_F(OperatorExtendedE2E, OperatorShiftRight) {
             struct V r = a >> 2;
             return r.x - 4;
         }
-    )", "op_shr.cmm"), 0);
+    )", "op_shr.cdd"), 0);
 }
 
 TEST_F(OperatorExtendedE2E, OperatorBitwiseAndOrXor) {
@@ -140,7 +140,7 @@ TEST_F(OperatorExtendedE2E, OperatorBitwiseAndOrXor) {
             struct V xorv = a ^ b;
             return (andv.x - 2) + (orv.x - 7) + (xorv.x - 5);
         }
-    )", "op_bitwise.cmm"), 0);
+    )", "op_bitwise.cdd"), 0);
 }
 
 TEST_F(OperatorExtendedE2E, OperatorLogicalAndEvaluatesBothOperands) {
@@ -155,7 +155,7 @@ TEST_F(OperatorExtendedE2E, OperatorLogicalAndEvaluatesBothOperands) {
             if (!r) { return 1; }
             return g - 1;
         }
-    )", "op_logical_and.cmm"), 0);
+    )", "op_logical_and.cdd"), 0);
 }
 
 TEST_F(OperatorExtendedE2E, OperatorLogicalOrEvaluatesBothOperands) {
@@ -170,7 +170,7 @@ TEST_F(OperatorExtendedE2E, OperatorLogicalOrEvaluatesBothOperands) {
             if (r) { return 1; }
             return g - 1;
         }
-    )", "op_logical_or.cmm"), 0);
+    )", "op_logical_or.cdd"), 0);
 }
 
 TEST_F(OperatorExtendedE2E, BuiltinBinaryStillWorks) {
@@ -188,7 +188,7 @@ TEST_F(OperatorExtendedE2E, BuiltinBinaryStillWorks) {
             if (t) { return 7; }
             return 0;
         }
-    )", "op_builtin_binary.cmm"), 0);
+    )", "op_builtin_binary.cdd"), 0);
 }
 
 TEST_F(OperatorExtendedE2E, OperatorSubscript) {
@@ -200,7 +200,7 @@ TEST_F(OperatorExtendedE2E, OperatorSubscript) {
             v.data[2] = 42;
             return v[2] - 42;
         }
-    )", "op_subscript.cmm"), 0);
+    )", "op_subscript.cdd"), 0);
 }
 
 TEST_F(OperatorExtendedE2E, OperatorCall) {
@@ -212,7 +212,7 @@ TEST_F(OperatorExtendedE2E, OperatorCall) {
             v.x = 1;
             return v(2, 3) - 6;
         }
-    )", "op_call.cmm"), 0);
+    )", "op_call.cdd"), 0);
 }
 
 TEST_F(OperatorExtendedE2E, BuiltinArraySubscriptStillWorks) {
@@ -223,5 +223,5 @@ TEST_F(OperatorExtendedE2E, BuiltinArraySubscriptStillWorks) {
             a[2] = 5;
             return a[0] + a[2] - 6;
         }
-    )", "op_builtin_subscript.cmm"), 0);
+    )", "op_builtin_subscript.cdd"), 0);
 }

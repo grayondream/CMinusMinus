@@ -12,7 +12,7 @@
 
 namespace fs = std::filesystem;
 
-namespace cmm {
+namespace cdd {
 
 namespace {
 
@@ -41,7 +41,7 @@ bool endsWith(const std::string& s, const std::string& suffix) {
            s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
-const std::string kCmmExtension = ".cmm";
+const std::string kCddExtension = ".cdd";
 const std::string kLegacySmcExtension = ".smc";
 
 std::string canonicalPath(const std::string& path) {
@@ -59,31 +59,31 @@ bool readFile(const std::string& path, std::string& out) {
     return true;
 }
 
-// Candidate relative paths for a specifier (`std.c` -> `std/c.cmm`).
+// Candidate relative paths for a specifier (`std.c` -> `std/c.cdd`).
 std::vector<std::string> importCandidates(const std::string& specifier) {
     std::vector<std::string> candidates;
     // Explicit path (has a separator or the module extension): use as-is.
-    if (specifier.find('/') != std::string::npos || endsWith(specifier, kCmmExtension)) {
+    if (specifier.find('/') != std::string::npos || endsWith(specifier, kCddExtension)) {
         candidates.push_back(specifier);
         return candidates;
     }
-    // Dotted module path: `std.c` -> `std/c.cmm`.
+    // Dotted module path: `std.c` -> `std/c.cdd`.
     std::string dotted = specifier;
     for (char& c : dotted) {
         if (c == '.') c = '/';
     }
-    candidates.push_back(dotted + kCmmExtension);
+    candidates.push_back(dotted + kCddExtension);
     candidates.push_back(dotted);
-    candidates.push_back(specifier + kCmmExtension);
+    candidates.push_back(specifier + kCddExtension);
     candidates.push_back(specifier);
     return candidates;
 }
 
-// `std.c` / `std/c.cmm` / `std/c` -> `std.c` (MOD-13 file <-> module mapping).
+// `std.c` / `std/c.cdd` / `std/c` -> `std.c` (MOD-13 file <-> module mapping).
 std::string specifierToModuleName(const std::string& specifier) {
     std::string name = specifier;
-    if (endsWith(name, kCmmExtension)) {
-        name.resize(name.size() - kCmmExtension.size());
+    if (endsWith(name, kCddExtension)) {
+        name.resize(name.size() - kCddExtension.size());
     }
     for (char& c : name) {
         if (c == '/' || c == '\\') c = '.';
@@ -92,11 +92,11 @@ std::string specifierToModuleName(const std::string& specifier) {
 }
 
 // Only dotted module specifiers carry an implicit module name; explicit file
-// paths (`import "dir/f.cmm";`) are not name-checked.
+// paths (`import "dir/f.cdd";`) are not name-checked.
 bool isDottedSpecifier(const std::string& specifier) {
     return specifier.find('/') == std::string::npos &&
            specifier.find('\\') == std::string::npos &&
-           !endsWith(specifier, kCmmExtension);
+           !endsWith(specifier, kCddExtension);
 }
 
 void tagModuleDecls(std::vector<std::unique_ptr<DeclAST>>& decls,
@@ -108,7 +108,7 @@ void tagModuleDecls(std::vector<std::unique_ptr<DeclAST>>& decls,
 
 const std::string kLegacySmcMessage =
     "legacy " + kLegacySmcExtension +
-    " source is not supported; rename it to " + kCmmExtension;
+    " source is not supported; rename it to " + kCddExtension;
 
 std::string legacyImportError(const std::string& specifier,
                               const std::string& importer = "") {
@@ -338,4 +338,4 @@ void processImports(TranslationUnitAST& tu,
     }
 }
 
-} // namespace cmm
+} // namespace cdd

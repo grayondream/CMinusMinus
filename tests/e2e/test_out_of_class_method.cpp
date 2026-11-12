@@ -120,7 +120,7 @@ TEST_F(OutOfClassMethodE2E, DefinitionOutsideClassBody) {
             s.v = 5;
             return s.get() - 5;
         }
-    )", "ooc_basic.cmm"), 0);
+    )", "ooc_basic.cdd"), 0);
 }
 
 TEST_F(OutOfClassMethodE2E, DefinitionWithParameters) {
@@ -136,7 +136,7 @@ TEST_F(OutOfClassMethodE2E, DefinitionWithParameters) {
             s.v = 1;
             return s.add(2, 3) - 6;
         }
-    )", "ooc_params.cmm"), 0);
+    )", "ooc_params.cdd"), 0);
 }
 
 TEST_F(OutOfClassMethodE2E, DefinitionCanAccessPrivateMember) {
@@ -153,7 +153,7 @@ TEST_F(OutOfClassMethodE2E, DefinitionCanAccessPrivateMember) {
             c.set(7);
             return c.get() - 7;
         }
-    )", "ooc_private.cmm"), 0);
+    )", "ooc_private.cdd"), 0);
 }
 
 TEST_F(OutOfClassMethodE2E, SignatureMismatchRejected) {
@@ -165,7 +165,7 @@ TEST_F(OutOfClassMethodE2E, SignatureMismatchRejected) {
         };
         int32 S::get(int32 x) { return x; }
         int32 main() { return 0; }
-    )", "ooc_mismatch.cmm"));
+    )", "ooc_mismatch.cdd"));
 }
 
 TEST_F(OutOfClassMethodE2E, UndeclaredMethodRejected) {
@@ -173,12 +173,12 @@ TEST_F(OutOfClassMethodE2E, UndeclaredMethodRejected) {
         class S { public: int32 v; };
         int32 S::nope() { return 0; }
         int32 main() { return 0; }
-    )", "ooc_undeclared.cmm"));
+    )", "ooc_undeclared.cdd"));
 }
 
 TEST_F(OutOfClassMethodE2E, UnknownClassRejected) {
     EXPECT_TRUE(semaRejects(R"(
         int32 X::f() { return 0; }
         int32 main() { return 0; }
-    )", "ooc_unknown.cmm"));
+    )", "ooc_unknown.cdd"));
 }

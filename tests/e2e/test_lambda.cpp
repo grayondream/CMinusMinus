@@ -95,11 +95,11 @@ static bool hasErrorContaining(const std::vector<std::string>& errors,
 // 含 std prelude（qsort 等 libc 绑定经 std.c）。CLI 自动注入，JIT harness 需
 // 手动前置（test_function_pointer 先例）。
 static int runWithPrelude(const std::string& source, const std::string& filename) {
-    auto ast = cmm::parseStdCPrelude(source, filename);
+    auto ast = cdd::parseStdCPrelude(source, filename);
     if (!ast) return -1;
-    auto prelude = cmm::parseStdCPrelude(cmm::loadStdCPrelude({STD_DIR}), "<std.c>");
+    auto prelude = cdd::parseStdCPrelude(cdd::loadStdCPrelude({STD_DIR}), "<std.c>");
     if (!prelude) return -1;
-    cmm::prependDeclarations(*ast, *prelude);
+    cdd::prependDeclarations(*ast, *prelude);
 
     SemanticAnalyzer analyzer;
     analyzer.analyze(*ast);
@@ -134,7 +134,7 @@ TEST_F(LambdaE2E, NoCaptureAsFunctionPointer) {
             if (fp(21) != 42) return 1;
             return 0;
         }
-    )", "lam_nocap.cmm"), 0);
+    )", "lam_nocap.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, NoCaptureImmediateInvocation) {
@@ -144,7 +144,7 @@ TEST_F(LambdaE2E, NoCaptureImmediateInvocation) {
             if (r != 7) return 1;
             return 0;
         }
-    )", "lam_immediate.cmm"), 0);
+    )", "lam_immediate.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, ByValueCaptureImmediate) {
@@ -155,7 +155,7 @@ TEST_F(LambdaE2E, ByValueCaptureImmediate) {
             if (r != 7) return 1;
             return 0;
         }
-    )", "lam_byval.cmm"), 0);
+    )", "lam_byval.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, ByReferenceCaptureWrites) {
@@ -166,7 +166,7 @@ TEST_F(LambdaE2E, ByReferenceCaptureWrites) {
             if (a != 9) return 1;
             return 0;
         }
-    )", "lam_byref.cmm"), 0);
+    )", "lam_byref.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, CaptureAll) {
@@ -177,7 +177,7 @@ TEST_F(LambdaE2E, CaptureAll) {
             if (r != 7) return 1;
             return 0;
         }
-    )", "lam_captureall.cmm"), 0);
+    )", "lam_captureall.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, QsortComparator) {
@@ -196,7 +196,7 @@ TEST_F(LambdaE2E, QsortComparator) {
             if (arr[0] != 1 || arr[4] != 5) return 1;
             return 0;
         }
-    )", "lam_qsort.cmm"), 0);
+    )", "lam_qsort.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, ReturnTypeInference) {
@@ -206,7 +206,7 @@ TEST_F(LambdaE2E, ReturnTypeInference) {
             if (r != 3) return 1;
             return 0;
         }
-    )", "lam_infer.cmm"), 0);
+    )", "lam_infer.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, CaptureAllByReferenceWrites) {
@@ -217,7 +217,7 @@ TEST_F(LambdaE2E, CaptureAllByReferenceWrites) {
             f();
             return (a == 10 && b == 20) ? 0 : 1;
         }
-    )", "lam_refall.cmm"), 0);
+    )", "lam_refall.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, MixedCaptureDefaultValueAndRefOverride) {
@@ -228,7 +228,7 @@ TEST_F(LambdaE2E, MixedCaptureDefaultValueAndRefOverride) {
             int32 r = f();
             return (r == 21 && a == 1 && b == 20) ? 0 : 1;
         }
-    )", "lam_mixed1.cmm"), 0);
+    )", "lam_mixed1.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, MixedCaptureDefaultRefAndValueOverride) {
@@ -239,7 +239,7 @@ TEST_F(LambdaE2E, MixedCaptureDefaultRefAndValueOverride) {
             int32 r = f();
             return (r == 21 && a == 1 && b == 20) ? 0 : 1;
         }
-    )", "lam_mixed2.cmm"), 0);
+    )", "lam_mixed2.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, CaptureInitializerEvaluatedOnce) {
@@ -250,7 +250,7 @@ TEST_F(LambdaE2E, CaptureInitializerEvaluatedOnce) {
             int32 r = [x = next()]() -> int32 { return x; }();
             return (r == 1 && calls == 1) ? 0 : 1;
         }
-    )", "lam_init_once.cmm"), 0);
+    )", "lam_init_once.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, CaptureInitializerByReference) {
@@ -261,7 +261,7 @@ TEST_F(LambdaE2E, CaptureInitializerByReference) {
             int32 r = f();
             return (r == 2 && n == 2) ? 0 : 1;
         }
-    )", "lam_init_ref.cmm"), 0);
+    )", "lam_init_ref.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, ThisImplicitMember) {
@@ -279,7 +279,7 @@ TEST_F(LambdaE2E, ThisImplicitMember) {
             }
         };
         int32 main() { LambdaThisC c; c.v = 7; return (c.f() == 7 && c.h() == 8) ? 0 : 1; }
-    )", "lam_this.cmm"), 0);
+    )", "lam_this.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, NestedLambdaCapturesOuter) {
@@ -292,7 +292,7 @@ TEST_F(LambdaE2E, NestedLambdaCapturesOuter) {
             };
             return outer() == 2 ? 0 : 1;
         }
-    )", "lam_nested.cmm"), 0);
+    )", "lam_nested.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, ReturnInferenceSeesBodyLocal) {
@@ -304,7 +304,7 @@ TEST_F(LambdaE2E, ReturnInferenceSeesBodyLocal) {
             };
             return f() == 1 ? 0 : 1;
         }
-    )", "lam_retlocal.cmm"), 0);
+    )", "lam_retlocal.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, CaptureInitializerArrayByValue) {
@@ -315,7 +315,7 @@ TEST_F(LambdaE2E, CaptureInitializerArrayByValue) {
             arr[0] = 99;
             return f() == 4 ? 0 : 1;
         }
-    )", "lam_init_array.cmm"), 0);
+    )", "lam_init_array.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, CaptureInitializerArrayImmediate) {
@@ -325,7 +325,7 @@ TEST_F(LambdaE2E, CaptureInitializerArrayImmediate) {
             int32 r = [t = arr]() -> int32 { return t[0] + t[2]; }();
             return r == 4 ? 0 : 1;
         }
-    )", "lam_init_array_imm.cmm"), 0);
+    )", "lam_init_array_imm.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, CaptureInitializerMemberArrayByValue) {
@@ -341,7 +341,7 @@ TEST_F(LambdaE2E, CaptureInitializerMemberArrayByValue) {
             p.a[0] = 99;
             return f() == 4 ? 0 : 1;
         }
-    )", "lam_init_member_array.cmm"), 0);
+    )", "lam_init_member_array.cdd"), 0);
 }
 
 // PAR-11 final review regressions.
@@ -356,7 +356,7 @@ TEST_F(LambdaE2E, InferredArrayReturnDecaysToPointer) {
             };
             return f(1)[0] - 10;
         }
-    )", "lam_ret_array.cmm"), 0);
+    )", "lam_ret_array.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, CaptureAllBodyLocalShadowsByRef) {
@@ -367,7 +367,7 @@ TEST_F(LambdaE2E, CaptureAllBodyLocalShadowsByRef) {
             f();
             return x - 1;
         }
-    )", "lam_shadow_ref.cmm"), 0);
+    )", "lam_shadow_ref.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, CaptureAllBodyLocalShadowsByValue) {
@@ -377,7 +377,7 @@ TEST_F(LambdaE2E, CaptureAllBodyLocalShadowsByValue) {
             auto f = [=]() -> int32 { int32 x = 5; return x; };
             return f() - 5;
         }
-    )", "lam_shadow_val.cmm"), 0);
+    )", "lam_shadow_val.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, NestedInitCaptureDoesNotCaptureOuterName) {
@@ -390,7 +390,7 @@ TEST_F(LambdaE2E, NestedInitCaptureDoesNotCaptureOuterName) {
             };
             return fp(1) + z - 9;
         }
-    )", "lam_nested_init.cmm"), 0);
+    )", "lam_nested_init.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, ImplicitThisInsideSwitch) {
@@ -413,7 +413,7 @@ TEST_F(LambdaE2E, ImplicitThisInsideSwitch) {
             c.v = 7;
             return c.f() == 70 ? 0 : 1;
         }
-    )", "lam_this_switch.cmm"), 0);
+    )", "lam_this_switch.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, StaticLocalBeatsSameNamedField) {
@@ -432,7 +432,7 @@ TEST_F(LambdaE2E, StaticLocalBeatsSameNamedField) {
             c.x = 99;
             return c.f() - 5;
         }
-    )", "lam_static_shadow.cmm"), 0);
+    )", "lam_static_shadow.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, EnumeratorLosesToSameNamedField) {
@@ -451,21 +451,21 @@ TEST_F(LambdaE2E, EnumeratorLosesToSameNamedField) {
             c.Red = 7;
             return c.f() - 7;
         }
-    )", "lam_enum_shadow.cmm"), 0);
+    )", "lam_enum_shadow.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, AutoReturnScalar) {
     EXPECT_EQ(runSource(R"(
         auto twice(int32 x) { return x * 2; }
         int32 main() { auto y = twice(21); return y - 42; }
-    )", "auto_ret_scalar.cmm"), 0);
+    )", "auto_ret_scalar.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, AutoReturnVoid) {
     EXPECT_EQ(runSource(R"(
         auto noop() { return; }
         int32 main() { noop(); return 0; }
-    )", "auto_ret_void.cmm"), 0);
+    )", "auto_ret_void.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, AutoReturnInconsistentTypesRejected) {
@@ -475,7 +475,7 @@ TEST_F(LambdaE2E, AutoReturnInconsistentTypesRejected) {
             return "no";
         }
         int32 main() { return 0; }
-    )", "auto_ret_mismatch.cmm");
+    )", "auto_ret_mismatch.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "inconsistent return types"));
 }
 
@@ -486,7 +486,7 @@ TEST_F(LambdaE2E, AutoReturnBareAfterValueRejected) {
             return;
         }
         int32 main() { return 0; }
-    )", "auto_ret_bare.cmm");
+    )", "auto_ret_bare.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "must return a value"));
 }
 
@@ -494,7 +494,7 @@ TEST_F(LambdaE2E, AutoReturnPrototypeRejected) {
     auto errs = compileErrors(R"(
         auto f(int32 x);
         int32 main() { return 0; }
-    )", "auto_ret_proto.cmm");
+    )", "auto_ret_proto.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "must have a body"));
 }
 
@@ -502,7 +502,7 @@ TEST_F(LambdaE2E, AutoReturnMethodRejected) {
     auto errs = compileErrors(R"(
         class C { public: auto f() { return 1; } };
         int32 main() { return 0; }
-    )", "auto_ret_method.cmm");
+    )", "auto_ret_method.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "not supported on methods"));
 }
 
@@ -510,7 +510,7 @@ TEST_F(LambdaE2E, AutoReturnCompileTimeRejected) {
     auto errs = compileErrors(R"(
         compile_time auto f() { return 1; }
         int32 main() { return 0; }
-    )", "auto_ret_ct.cmm");
+    )", "auto_ret_ct.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "compile_time"));
 }
 
@@ -521,7 +521,7 @@ TEST_F(LambdaE2E, ByReferenceClosureReturnRejected) {
             return [&x]() -> int32 { return x; };
         }
         int32 main() { return 0; }
-    )", "auto_ret_ref.cmm");
+    )", "auto_ret_ref.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "by-reference captures cannot escape by return"));
 }
 
@@ -533,7 +533,7 @@ TEST_F(LambdaE2E, IndirectByReferenceClosureReturnRejected) {
             return f;
         }
         int32 main() { return 0; }
-    )", "auto_ret_ref_indirect.cmm");
+    )", "auto_ret_ref_indirect.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "by-reference captures cannot escape by return"));
 }
 
@@ -544,7 +544,7 @@ TEST_F(LambdaE2E, ByReferenceClosureLocalCallStillAllowed) {
             auto f = [&x]() -> int32 { return x; };
             return f() - 7;
         }
-    )", "lambda_ref_local_ok.cmm"), 0);
+    )", "lambda_ref_local_ok.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, ByValueClosureReturn) {
@@ -556,7 +556,7 @@ TEST_F(LambdaE2E, ByValueClosureReturn) {
             auto f = make_adder(40);
             return f(2) - 42;
         }
-    )", "auto_ret_closure.cmm"), 0);
+    )", "auto_ret_closure.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, ReturnedClosureIsIndependentCopy) {
@@ -569,7 +569,7 @@ TEST_F(LambdaE2E, ReturnedClosureIsIndependentCopy) {
             auto add2 = make_adder(2);
             return add40(2) + add2(2) - 46;
         }
-    )", "auto_ret_closure_copy.cmm"), 0);
+    )", "auto_ret_closure_copy.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, ReturnedClosureCalledRepeatedly) {
@@ -583,7 +583,7 @@ TEST_F(LambdaE2E, ReturnedClosureCalledRepeatedly) {
             if (f() != 11) return 2;
             return 0;
         }
-    )", "auto_ret_closure_repeat.cmm"), 0);
+    )", "auto_ret_closure_repeat.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, ReturnedClosureFromBranch) {
@@ -598,14 +598,14 @@ TEST_F(LambdaE2E, ReturnedClosureFromBranch) {
             auto minus = make(-10);
             return plus(3) + minus(3) - 6;
         }
-    )", "auto_ret_closure_branch.cmm"), 0);
+    )", "auto_ret_closure_branch.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, AutoReturnCompoundLiteralRejected) {
     auto errs = compileErrors(R"(
         auto make() { return (int32[2]){1, 2}; }
         int32 main() { return 0; }
-    )", "auto_ret_compound_literal.cmm");
+    )", "auto_ret_compound_literal.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "cannot return a compound literal"));
 }
 
@@ -616,7 +616,7 @@ TEST_F(LambdaE2E, AutoReturnSliceLiteralRejected) {
             return s;
         }
         int32 main() { return 0; }
-    )", "auto_ret_slice_literal.cmm");
+    )", "auto_ret_slice_literal.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "cannot return a slice backed by a stack literal"));
 }
 
@@ -629,7 +629,7 @@ TEST_F(LambdaE2E, NestedByReferenceClosureReturnRejected) {
             return outer;
         }
         int32 main() { return 0; }
-    )", "auto_ret_nested_ref.cmm");
+    )", "auto_ret_nested_ref.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "by-reference captures cannot escape by return"));
 }
 
@@ -638,7 +638,7 @@ TEST_F(LambdaE2E, AutoReturnOutOfClassStaticRejected) {
         class C { public: static int32 f(); };
         auto C::f() { return 1; }
         int32 main() { return 0; }
-    )", "auto_ret_ooc_static.cmm");
+    )", "auto_ret_ooc_static.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "not supported on methods"));
 }
 
@@ -647,7 +647,7 @@ TEST_F(LambdaE2E, AutoReturnCallBeforeDefinitionRejected) {
         auto early(int32 x) { return later(x); }
         auto later(int32 x) { return x; }
         int32 main() { return 0; }
-    )", "auto_ret_order.cmm");
+    )", "auto_ret_order.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "use of undeclared function 'later'"));
 }
 
@@ -658,7 +658,7 @@ TEST_F(LambdaE2E, AutoReturnRecursiveRejected) {
             return n * fac(n - 1);
         }
         int32 main() { return 0; }
-    )", "auto_ret_recursive.cmm");
+    )", "auto_ret_recursive.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "use of undeclared function 'fac'"));
     EXPECT_FALSE(hasErrorContaining(errs, "<unknown>"));
 }
@@ -670,7 +670,7 @@ TEST_F(LambdaE2E, AutoReturnBareBeforeValueRejected) {
             return x;
         }
         int32 main() { return 0; }
-    )", "auto_ret_bare_before_value.cmm");
+    )", "auto_ret_bare_before_value.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "must return a value"));
 }
 
@@ -678,6 +678,6 @@ TEST_F(LambdaE2E, AutoReturnMethodPrototypeDiagnostic) {
     auto errs = compileErrors(R"(
         class C { public: auto f(); };
         int32 main() { return 0; }
-    )", "auto_ret_method_proto.cmm");
+    )", "auto_ret_method_proto.cdd");
     EXPECT_TRUE(hasErrorContaining(errs, "not supported on methods"));
 }

@@ -83,7 +83,7 @@ TEST_F(ClassE2ETest, BasicClass) {
             f.setX(42);
             return f.getX();
         }
-    )", "test_class.cmm"), 42);
+    )", "test_class.cdd"), 42);
 }
 
 TEST_F(ClassE2ETest, ClassInheritance) {
@@ -106,7 +106,7 @@ TEST_F(ClassE2ETest, ClassInheritance) {
             d.setY(20);
             return d.x + d.y;
         }
-    )", "test_inherit.cmm"), 30);
+    )", "test_inherit.cdd"), 30);
 }
 
 TEST_F(ClassE2ETest, ClassAsFunctionParam) {
@@ -127,7 +127,7 @@ TEST_F(ClassE2ETest, ClassAsFunctionParam) {
             p.y = 10;
             return getSum(p);
         }
-    )", "test_class_param.cmm"), 15);
+    )", "test_class_param.cdd"), 15);
 }
 
 // PAR-04/SEM-04 + DEC-01: access sections must not truncate the class body,
@@ -146,7 +146,7 @@ TEST_F(ClassE2ETest, AccessSectionsAndPrivateViaThis) {
             c.set(5);
             return c.get() == 5 ? 0 : 1;
         }
-    )", "test_class_access.cmm"), 0);
+    )", "test_class_access.cdd"), 0);
 }
 
 // DEC-01: struct members default to public.
@@ -158,5 +158,5 @@ TEST_F(ClassE2ETest, StructFieldsDefaultPublic) {
             s.v = 4;
             return s.v == 4 ? 0 : 1;
         }
-    )", "test_struct_public.cmm"), 0);
+    )", "test_struct_public.cdd"), 0);
 }

@@ -1,4 +1,4 @@
-// 演示文件 examples/all_features.cmm 建设期间发现并修复的编译器 bug 回归测试：
+// 演示文件 examples/all_features.cdd 建设期间发现并修复的编译器 bug 回归测试：
 //  - Bug A: CompileTimeEvaluator::toLLVMType 对 Class 用 static_cast<StructType*>
 //    读 isPacked（跨类 UB，读垃圾值）→ 布局损坏，size_of(派生类) 非确定性
 //    "Invalid size request on a scalable vector" 崩溃。
@@ -82,7 +82,7 @@ TEST_F(DemoRegressionE2E, LargeUnSuffixedLiteralPromotes) {
             if (sum != 4000000001) { return 2; }
             return 0;
         }
-    )", "reg_lit.cmm"), 0);
+    )", "reg_lit.cdd"), 0);
 }
 
 // Bug C：兄弟 for 循环复用同名循环变量，第二个循环必须重新绑定（C 语义）。
@@ -100,7 +100,7 @@ TEST_F(DemoRegressionE2E, SiblingForLoopReusesVarName) {
             if (sum != 55 || cont != 3) { return 1; }
             return 0;
         }
-    )", "reg_for.cmm"), 0);
+    )", "reg_for.cdd"), 0);
 }
 
 // Bug A：类位域 + 派生类 size_of 组合不再损坏布局（编译 + 执行均通过）。
@@ -135,7 +135,7 @@ TEST_F(DemoRegressionE2E, ClassBitFieldWithSizeOfDerived) {
             if (compile_time.size_of(Dog) != 8) { return 3; }
             return 0;
         }
-    )", "reg_cls.cmm"), 0);
+    )", "reg_cls.cdd"), 0);
 }
 
 // Bug D：指针后缀 ++/-- 须按元素步进（GEP），不能字节 add——int32* ++ 只前进
@@ -158,7 +158,7 @@ TEST_F(DemoRegressionE2E, PointerPostfixIncDecStepsByElement) {
             if (*r != 20) { return 4; }
             return 0;
         }
-    )", "reg_postinc.cmm"), 0);
+    )", "reg_postinc.cdd"), 0);
 }
 
 // Bug E：浮点复合赋值走整数指令（CreateMul 等）→ 位模式乘法垃圾值；须 F 系。
@@ -179,7 +179,7 @@ TEST_F(DemoRegressionE2E, FloatCompoundAssignmentUsesFloatOps) {
             if (h != 2.5f) { return 5; }
             return 0;
         }
-    )", "reg_fcmpd.cmm"), 0);
+    )", "reg_fcmpd.cdd"), 0);
 }
 
 // Bug F：无符号复合赋值走有符号指令——`>>=` 算术移、`/=`/`%=` 高位错值。
@@ -197,7 +197,7 @@ TEST_F(DemoRegressionE2E, UnsignedCompoundAssignmentUsesUnsignedOps) {
             if (m != 2) { return 3; }
             return 0;
         }
-    )", "reg_ucomp.cmm"), 0);
+    )", "reg_ucomp.cdd"), 0);
 }
 
 // Bug G：运算符重载解析后表达式类型被设为左操作数类型而非 operator 函数
@@ -219,7 +219,7 @@ TEST_F(DemoRegressionE2E, OperatorOverloadExpressionTypeIsReturnType) {
             if (!(p == r)) { return 4; }
             return 0;
         }
-    )", "reg_opov.cmm"), 0);
+    )", "reg_opov.cdd"), 0);
 }
 
 // Bug H：void 函数裸 `return;`（早退）此前解析器硬性要求表达式被拒；
@@ -237,7 +237,7 @@ TEST_F(DemoRegressionE2E, BareReturnInVoidFunction) {
             if (trace != 12) { return 1; }
             return 0;
         }
-    )", "reg_ret.cmm"), 0);
+    )", "reg_ret.cdd"), 0);
 }
 
 // Gap 1：`&fn` 取函数地址（函数设计符 &fn == fn，C 语义）。
@@ -251,7 +251,7 @@ TEST_F(DemoRegressionE2E, AddressOfFunctionDesignator) {
             if (fp2(4, 5) != 9) { return 2; }
             return 0;
         }
-    )", "reg_andfn.cmm"), 0);
+    )", "reg_andfn.cdd"), 0);
 }
 
 // Gap 2：string_view 下标 s[i] 取字节（等价 char_at）。
@@ -265,7 +265,7 @@ TEST_F(DemoRegressionE2E, StringViewSubscript) {
             if (sum2 != 'h' + 'e' + 'l') { return 3; }
             return 0;
         }
-    )", "reg_stridx.cmm"), 0);
+    )", "reg_stridx.cdd"), 0);
 }
 
 // Gap 3：指针相减 p - q → 元素个数（ptrdiff）。
@@ -281,7 +281,7 @@ TEST_F(DemoRegressionE2E, PointerDifference) {
             if (b - m != 2) { return 3; }
             return 0;
         }
-    )", "reg_ptrdiff.cmm"), 0);
+    )", "reg_ptrdiff.cdd"), 0);
 }
 
 // Gap 4：数组别名（下标 / slice / sizeof / 多维）。
@@ -304,7 +304,7 @@ TEST_F(DemoRegressionE2E, ArrayAliasWorks) {
             if (m[1][2] != 6 || sizeof(m) != 24) { return 4; }
             return 0;
         }
-    )", "reg_arrtyp.cmm"), 0);
+    )", "reg_arrtyp.cdd"), 0);
 }
 
 // Gap 5：函数指针别名 + 函数返回函数指针（经 using 惯用法）。
@@ -323,7 +323,7 @@ TEST_F(DemoRegressionE2E, FunctionPointerAliasAndReturn) {
             if (g(3, 4) != 12) { return 3; }
             return 0;
         }
-    )", "reg_fnptrtyp.cmm"), 0);
+    )", "reg_fnptrtyp.cdd"), 0);
 }
 
 // Gap 6：int128/uint128 字面量（>64 位）。
@@ -340,7 +340,7 @@ TEST_F(DemoRegressionE2E, Int128Literal) {
             if (!(ub > 170141183460469231731687303715884105727)) { return 4; }
             return 0;
         }
-    )", "reg_i128.cmm"), 0);
+    )", "reg_i128.cdd"), 0);
 }
 
 // CG-05：rvalue 聚合的成员访问必须按值读取（`make().x`），
@@ -355,7 +355,7 @@ TEST_F(DemoRegressionE2E, RvalueAggregateMemberReadsValue) {
             if (make().x + make().y != 16) { return 3; }
             return 0;
         }
-    )", "reg_rvalue_member.cmm"), 0);
+    )", "reg_rvalue_member.cdd"), 0);
 }
 
 TEST_F(DemoRegressionE2E, RvalueAggregateMemberNotAssignable) {
@@ -363,7 +363,7 @@ TEST_F(DemoRegressionE2E, RvalueAggregateMemberNotAssignable) {
         struct P { int32 x; };
         struct P make() { struct P p; p.x = 7; return p; }
         int32 main() { make().x = 5; return 0; }
-    )", "reg_rvalue_member_assign.cmm"), -1);
+    )", "reg_rvalue_member_assign.cdd"), -1);
 }
 
 // MOD-03：前向类型按值使用必须报 incomplete；指针/引用形态仍允许。
@@ -373,13 +373,13 @@ TEST_F(DemoRegressionE2E, IncompleteTypeByValueRejected) {
         struct S s;
         struct S { int32 x; };
         int32 main() { return 0; }
-    )", "reg_incomplete_value.cmm"), -1);
+    )", "reg_incomplete_value.cdd"), -1);
     EXPECT_EQ(runSource(R"(
         struct S;
         struct S arr[2];
         struct S { int32 x; };
         int32 main() { return 0; }
-    )", "reg_incomplete_array.cmm"), -1);
+    )", "reg_incomplete_array.cdd"), -1);
 }
 
 TEST_F(DemoRegressionE2E, IncompleteTypePointerAllowed) {
@@ -388,7 +388,7 @@ TEST_F(DemoRegressionE2E, IncompleteTypePointerAllowed) {
         struct S* p;
         struct S { int32 x; };
         int32 main() { struct S s; s.x = 1; p = &s; return p->x - 1; }
-    )", "reg_incomplete_ptr.cmm"), 0);
+    )", "reg_incomplete_ptr.cdd"), 0);
 }
 
 TEST_F(DemoRegressionE2E, StaticLocalPersistsAcrossCalls) {
@@ -400,14 +400,14 @@ TEST_F(DemoRegressionE2E, StaticLocalPersistsAcrossCalls) {
             if (next() != 3) return 3;
             return 0;
         }
-    )", "reg_static_local.cmm"), 0);
+    )", "reg_static_local.cdd"), 0);
 }
 
 TEST_F(DemoRegressionE2E, StaticLocalWithoutInitializerIsZero) {
     EXPECT_EQ(runSource(R"(
         int32 next() { static int32 x; x = x + 1; return x; }
         int32 main() { return next() == 1 ? 0 : 1; }
-    )", "reg_static_local_zero.cmm"), 0);
+    )", "reg_static_local_zero.cdd"), 0);
 }
 
 TEST_F(DemoRegressionE2E, StaticLocalNonConstantInitRejected) {
@@ -415,7 +415,7 @@ TEST_F(DemoRegressionE2E, StaticLocalNonConstantInitRejected) {
         int32 seed() { return 5; }
         int32 f() { static int32 x = seed(); return x; }
         int32 main() { return f(); }
-    )", "reg_static_local_nonconst.cmm"), -1);
+    )", "reg_static_local_nonconst.cdd"), -1);
 }
 
 TEST_F(DemoRegressionE2E, ThreadLocalStaticLocalCompiles) {
@@ -426,7 +426,7 @@ TEST_F(DemoRegressionE2E, ThreadLocalStaticLocalCompiles) {
             if (next() != 5) return 2;
             return 0;
         }
-    )", "reg_tls_local.cmm"), 0);
+    )", "reg_tls_local.cdd"), 0);
 }
 
 TEST_F(DemoRegressionE2E, LocalRecordDefinitions) {
@@ -437,7 +437,7 @@ TEST_F(DemoRegressionE2E, LocalRecordDefinitions) {
             enum E { A = 3 }; int32 e = (int32)A;
             return s.x + u.i + e - 6;
         }
-    )", "reg_local_records.cmm"), 0);
+    )", "reg_local_records.cdd"), 0);
 }
 
 // 自引用类（`Node* next`）曾因 getLLVMType(Pointer) 递归解析 pointee 爆栈。
@@ -449,7 +449,7 @@ TEST_F(DemoRegressionE2E, SelfReferentialClassPointerField) {
             a.next = &b; a.v = 1; b.next = null; b.v = 2;
             return a.next->v + a.v - 3;
         }
-    )", "reg_class_self.cmm"), 0);
+    )", "reg_class_self.cdd"), 0);
 }
 
 TEST_F(DemoRegressionE2E, ClassMemberBinaryAndUnaryOperators) {
@@ -466,7 +466,7 @@ TEST_F(DemoRegressionE2E, ClassMemberBinaryAndUnaryOperators) {
             if (-a != -3) return 2;
             return 0;
         }
-    )", "reg_class_ops.cmm"), 0);
+    )", "reg_class_ops.cdd"), 0);
 }
 
 TEST_F(DemoRegressionE2E, OutOfLineMemberOperatorDefinition) {
@@ -474,7 +474,7 @@ TEST_F(DemoRegressionE2E, OutOfLineMemberOperatorDefinition) {
         class V { public: int32 x; int32 operator+(V o); };
         int32 V::operator+(V o) { return this->x + o.x; }
         int32 main() { V a; a.x = 1; V b; b.x = 2; return a + b - 3; }
-    )", "reg_class_op_ooc.cmm"), 0);
+    )", "reg_class_op_ooc.cdd"), 0);
 }
 
 TEST_F(DemoRegressionE2E, CompileTimeIfInFunctionBody) {
@@ -488,7 +488,7 @@ TEST_F(DemoRegressionE2E, CompileTimeIfInFunctionBody) {
             return x;
         }
         int32 main() { return f() + g() - 8; }
-    )", "reg_ct_if_stmt.cmm"), 0);
+    )", "reg_ct_if_stmt.cdd"), 0);
 }
 
 TEST_F(DemoRegressionE2E, NestedOffsetof) {
@@ -500,5 +500,5 @@ TEST_F(DemoRegressionE2E, NestedOffsetof) {
             if (offsetof(Outer, arr[1]) != 16) return 2;
             return 0;
         }
-    )", "reg_offsetof_nested.cmm"), 0);
+    )", "reg_offsetof_nested.cdd"), 0);
 }

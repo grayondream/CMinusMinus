@@ -84,7 +84,7 @@ TEST_F(AnnotationLayoutE2E, PackedStructE2E) {
 int32 main() {
     return (compile_time.size_of(P) == 6 && compile_time.offset_of(P, "b") == 4) ? 1 : 0;
 }
-)", "ann_packed.cmm"), 1);
+)", "ann_packed.cdd"), 1);
 }
 
 TEST_F(AnnotationLayoutE2E, AlignStructE2E) {
@@ -93,7 +93,7 @@ TEST_F(AnnotationLayoutE2E, AlignStructE2E) {
 int32 main() {
     return (compile_time.size_of(A) == 64 && compile_time.align_of(A) == 64) ? 1 : 0;
 }
-)", "ann_align.cmm"), 1);
+)", "ann_align.cdd"), 1);
 }
 
 TEST_F(AnnotationLayoutE2E, FieldAlignE2E) {
@@ -102,7 +102,7 @@ struct F { int8 a; [[align(16)]] int32 b; }
 int32 main() {
     return (compile_time.offset_of(F, "b") == 16 && compile_time.size_of(F) == 32) ? 1 : 0;
 }
-)", "ann_field_align.cmm"), 1);
+)", "ann_field_align.cdd"), 1);
 }
 
 TEST_F(AnnotationLayoutE2E, PackedAlignComboE2E) {
@@ -111,7 +111,7 @@ TEST_F(AnnotationLayoutE2E, PackedAlignComboE2E) {
 int32 main() {
     return (compile_time.size_of(PA) == 8 && compile_time.offset_of(PA, "b") == 4) ? 1 : 0;
 }
-)", "ann_packed_align.cmm"), 1);
+)", "ann_packed_align.cdd"), 1);
 }
 
 TEST_F(AnnotationLayoutE2E, ReprCPinE2E) {
@@ -120,7 +120,7 @@ TEST_F(AnnotationLayoutE2E, ReprCPinE2E) {
 int32 main() {
     return (compile_time.size_of(R) == 16 && compile_time.offset_of(R, "b") == 8) ? 1 : 0;
 }
-)", "ann_repr.cmm"), 1);
+)", "ann_repr.cdd"), 1);
 }
 
 TEST_F(AnnotationLayoutE2E, UnionAlignE2E) {
@@ -129,12 +129,12 @@ TEST_F(AnnotationLayoutE2E, UnionAlignE2E) {
 int32 main() {
     return (compile_time.size_of(U) == 16) ? 1 : 0;
 }
-)", "ann_union_align.cmm"), 1);
+)", "ann_union_align.cdd"), 1);
 }
 
 TEST_F(AnnotationLayoutE2E, GlobalVarAlignIR) {
     // 全局变量 align(64) → IR alignment 属性。
-    Lexer lexer("ann_gvar_align.cmm", "[[align(64)]] int32 g;");
+    Lexer lexer("ann_gvar_align.cdd", "[[align(64)]] int32 g;");
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
     auto ast = parser.parse();
@@ -143,7 +143,7 @@ TEST_F(AnnotationLayoutE2E, GlobalVarAlignIR) {
     analyzer.analyze(*ast);
     ASSERT_TRUE(analyzer.getErrors().empty());
     CodegenContext ctx;
-    ctx.setSourceFile("ann_gvar_align.cmm");
+    ctx.setSourceFile("ann_gvar_align.cdd");
     ast->codegen(ctx);
     bool found = false;
     for (auto& gv : ctx.getModule().globals()) {
@@ -157,7 +157,7 @@ TEST_F(AnnotationLayoutE2E, GlobalVarAlignIR) {
 // ---- P1-05 / ANN-04/05: LLVM 属性落盘 ----
 
 static bool moduleHasFnAttr(const std::string& source, llvm::Attribute::AttrKind kind) {
-    Lexer lexer("ann_attr.cmm", source);
+    Lexer lexer("ann_attr.cdd", source);
     auto tokens = lexer.tokenize();
     Parser parser(tokens);
     auto ast = parser.parse();
@@ -166,7 +166,7 @@ static bool moduleHasFnAttr(const std::string& source, llvm::Attribute::AttrKind
     analyzer.analyze(*ast);
     if (!analyzer.getErrors().empty()) return false;
     CodegenContext ctx;
-    ctx.setSourceFile("ann_attr.cmm");
+    ctx.setSourceFile("ann_attr.cdd");
     ast->codegen(ctx);
     for (auto& fn : ctx.getModule().getFunctionList()) {
         if (fn.isDeclaration()) continue;
@@ -189,7 +189,7 @@ TEST_F(AnnotationLayoutE2E, ColdAttrIR) {
 
 TEST_F(AnnotationLayoutE2E, NonNullParamAttrIR) {
     // 经 param attr 检查：遍历函数参数。
-    Lexer lexer("ann_nn_attr.cmm",
+    Lexer lexer("ann_nn_attr.cdd",
                 "int32 f([[nonnull]] int32* p) { return *p; }\n"
                 "int32 main() { return f(null); }");
     auto tokens = lexer.tokenize();
@@ -200,7 +200,7 @@ TEST_F(AnnotationLayoutE2E, NonNullParamAttrIR) {
     analyzer.analyze(*ast);
     ASSERT_TRUE(analyzer.getErrors().empty());
     CodegenContext ctx;
-    ctx.setSourceFile("ann_nn_attr.cmm");
+    ctx.setSourceFile("ann_nn_attr.cdd");
     ast->codegen(ctx);
     bool found = false;
     for (auto& fn : ctx.getModule().getFunctionList()) {
@@ -220,7 +220,7 @@ struct B { int32 b; }
 int32 main() {
     return (compile_time.size_of(D) == 6 && compile_time.offset_of(D, "v") == 4) ? 1 : 0;
 }
-)", "ann_packed_base.cmm"), 1);
+)", "ann_packed_base.cdd"), 1);
 }
 
 TEST_F(AnnotationLayoutE2E, StructWithMethodShapeNoCrash) {
@@ -228,12 +228,12 @@ TEST_F(AnnotationLayoutE2E, StructWithMethodShapeNoCrash) {
     EXPECT_EQ(runSource(R"(
 struct S { int32 x; void m() {} }
 int32 main() { return 0; }
-)", "ann_void_member.cmm"), 0);
+)", "ann_void_member.cdd"), 0);
 }
 
 TEST_F(AnnotationLayoutE2E, TypeLevelAlignPropagatesToVar) {
     // I2: 类型级 align(N) 传导到该类型变量的对齐（alloca）。
-    Lexer lexer("ann_align_prop.cmm",
+    Lexer lexer("ann_align_prop.cdd",
                 "[[align(64)]] struct A { int32 x; }\n"
                 "int32 main() { A l; return 0; }");
     auto tokens = lexer.tokenize();
@@ -244,7 +244,7 @@ TEST_F(AnnotationLayoutE2E, TypeLevelAlignPropagatesToVar) {
     analyzer.analyze(*ast);
     ASSERT_TRUE(analyzer.getErrors().empty());
     CodegenContext ctx;
-    ctx.setSourceFile("ann_align_prop.cmm");
+    ctx.setSourceFile("ann_align_prop.cdd");
     ast->codegen(ctx);
     bool found = false;
     for (auto& fn : ctx.getModule().getFunctionList()) {
@@ -268,5 +268,5 @@ TEST_F(AnnotationLayoutE2E, PackedOnMethodStructOk) {
 int32 main() {
     return (compile_time.size_of(S) == 6) ? 1 : 0;
 }
-)", "ann_packed_method.cmm"), 1);
+)", "ann_packed_method.cdd"), 1);
 }

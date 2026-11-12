@@ -6,7 +6,7 @@
 
 class TranslationUnitAST;
 
-namespace cmm {
+namespace cdd {
 
 // Built-in C binding layer (TODO MOD-09 / STD-23).
 //
@@ -16,7 +16,7 @@ namespace cmm {
 // (prepended, so its declarations are visible to user code) unless disabled
 // with `--no-prelude`.
 //
-// Source text of the std.c binding layer: the first readable `<dir>/std/c.cmm`
+// Source text of the std.c binding layer: the first readable `<dir>/std/c.cdd`
 // found in `dirs`. The standard library is data, not compiler code: there is
 // intentionally no embedded fallback. An empty result means the caller must
 // report a missing/incomplete standard-library installation.
@@ -32,4 +32,4 @@ std::unique_ptr<TranslationUnitAST> parseStdCPrelude(const std::string& source,
 // declared before any user declaration that may reference them.
 void prependDeclarations(TranslationUnitAST& target, TranslationUnitAST& prelude);
 
-} // namespace cmm
+} // namespace cdd

@@ -1,8 +1,8 @@
 {
     "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
-    "name": "cmm",
+    "name": "cdd",
     "version-semver": "0.1.0",
-    "description": "The Cmm compiler (C minus minus), built with LLVM",
+    "description": "The CDD compiler (C dot dot), built with LLVM",
     "dependencies": [
         "llvm",
         "spdlog",

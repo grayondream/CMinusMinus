@@ -47,11 +47,11 @@ static int runWithImports(const std::string& source, const std::string& filename
     auto tokens = lexer.tokenize();
     if (!lexer.getDiagnostics().empty()) return -1;
 
-    cmm::ModuleSearchPaths paths{{STD_DIR}};
+    cdd::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::unique_ptr<DeclAST>> importedDecls;
     std::vector<std::string> errors;
-    cmm::preloadImports(cmm::collectImportSpecifiers(tokens), ".", paths, loaded,
+    cdd::preloadImports(cdd::collectImportSpecifiers(tokens), ".", paths, loaded,
                         importedDecls, errors);
     if (!errors.empty()) return -1;
 
@@ -63,7 +63,7 @@ static int runWithImports(const std::string& source, const std::string& filename
                                  std::make_move_iterator(importedDecls.begin()),
                                  std::make_move_iterator(importedDecls.end()));
     }
-    cmm::processImports(*ast, ".", paths, loaded, errors);
+    cdd::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) return -1;
 
     SemanticAnalyzer analyzer;
@@ -116,7 +116,7 @@ TEST_F(StdTextTest, SortAndBinarySearch) {
             if (std::binary_search<int32>(a, 7, 9, cmp) != -1) return 4;
             return 0;
         }
-    )", "text_sort.cmm"), 0);
+    )", "text_sort.cdd"), 0);
 }
 
 TEST_F(StdTextTest, ParseAndRenderIntegers) {
@@ -142,7 +142,7 @@ TEST_F(StdTextTest, ParseAndRenderIntegers) {
             if (!std::parse_float64("1.5e2", &f) || f != 150.0) return 7;
             return 0;
         }
-    )", "text_parse.cmm"), 0);
+    )", "text_parse.cdd"), 0);
 }
 
 TEST_F(StdTextTest, AsciiAndPath) {
@@ -165,7 +165,7 @@ TEST_F(StdTextTest, AsciiAndPath) {
             j.destroy();
             return 0;
         }
-    )", "text_path.cmm"), 0);
+    )", "text_path.cdd"), 0);
 }
 
 TEST_F(StdTextTest, HashStability) {
@@ -182,5 +182,5 @@ TEST_F(StdTextTest, HashStability) {
             if (c == d) return 4;
             return 0;
         }
-    )", "text_hash.cmm"), 0);
+    )", "text_hash.cdd"), 0);
 }

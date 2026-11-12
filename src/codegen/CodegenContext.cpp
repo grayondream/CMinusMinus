@@ -28,7 +28,7 @@ static bool bitFieldIsUnsigned(Type* t) {
 CodegenContext::CodegenContext()
     : context(std::make_unique<llvm::LLVMContext>()),
       builder(*context),
-      module(std::make_unique<llvm::Module>("cmm", *context)),
+      module(std::make_unique<llvm::Module>("cdd", *context)),
       diBuilder(std::make_unique<llvm::DIBuilder>(*module)) {
     pushScope();
 }
@@ -37,7 +37,7 @@ void CodegenContext::setSourceFile(const std::string& file) {
     sourceFileName = file;
     diFile = diBuilder->createFile(file, ".");
     diCompileUnit = diBuilder->createCompileUnit(
-        llvm::dwarf::DW_LANG_C, diFile, "Cmm Compiler",
+        llvm::dwarf::DW_LANG_C, diFile, "CDD Compiler",
         false, "", 0);
     diCurrentScope = diFile;
 }
@@ -935,7 +935,7 @@ llvm::Function* CodegenContext::getUtf8CharLenAtFn() {
     auto* fnTy = llvm::FunctionType::get(llvm::Type::getInt64Ty(c),
         {llvm::PointerType::get(c, 0), llvm::Type::getInt64Ty(c)}, false);
     auto* fn = llvm::Function::Create(fnTy, llvm::Function::InternalLinkage,
-                                      "cmm.utf8.char_len_at", module.get());
+                                      "cdd.utf8.char_len_at", module.get());
     llvm::BasicBlock* entry = llvm::BasicBlock::Create(c, "entry", fn);
     builder.SetInsertPoint(entry);
 
@@ -974,7 +974,7 @@ llvm::Function* CodegenContext::getUtf8CharCountFn() {
     auto* fnTy = llvm::FunctionType::get(i64Ty,
         {llvm::PointerType::get(c, 0), i64Ty}, false);
     auto* fn = llvm::Function::Create(fnTy, llvm::Function::InternalLinkage,
-                                      "cmm.utf8.char_count", module.get());
+                                      "cdd.utf8.char_count", module.get());
     // Synthesize the callee FIRST — it re-points the shared builder.
     llvm::Function* lenFn = getUtf8CharLenAtFn();
 
@@ -1023,7 +1023,7 @@ llvm::Function* CodegenContext::getFormatDynFn() {
     auto* fnTy = llvm::FunctionType::get(
         retTy, {ptrTy, i64Ty, ptrTy, ptrTy, i64Ty}, false);
     auto* fn = llvm::Function::Create(fnTy, llvm::Function::InternalLinkage,
-                                      "cmm.format.dyn", module.get());
+                                      "cdd.format.dyn", module.get());
     auto mallocFn = module->getOrInsertFunction(
         "malloc", llvm::FunctionType::get(ptrTy, {i64Ty}, false));
 
@@ -1229,7 +1229,7 @@ llvm::Function* CodegenContext::getUtf8ValidateFn() {
     auto* fnTy = llvm::FunctionType::get(i1Ty,
         {llvm::PointerType::get(c, 0), i64Ty}, false);
     auto* fn = llvm::Function::Create(fnTy, llvm::Function::InternalLinkage,
-                                      "cmm.utf8.validate", module.get());
+                                      "cdd.utf8.validate", module.get());
     auto* p = fn->getArg(0);
     auto* len = fn->getArg(1);
 
@@ -1360,7 +1360,7 @@ llvm::Function* CodegenContext::getStrFindFn(bool reverse) {
         i64Ty, {ptrTy, i64Ty, ptrTy, i64Ty}, false);
     auto* fn = llvm::Function::Create(
         fnTy, llvm::Function::InternalLinkage,
-        reverse ? "cmm.str.rfind" : "cmm.str.find", module.get());
+        reverse ? "cdd.str.rfind" : "cdd.str.find", module.get());
     auto* hay = fn->getArg(0);
     auto* hayLen = fn->getArg(1);
     auto* needle = fn->getArg(2);
@@ -1455,7 +1455,7 @@ llvm::Function* CodegenContext::getStrMatchAtFn() {
     auto* fnTy = llvm::FunctionType::get(
         llvm::Type::getInt1Ty(c), {ptrTy, ptrTy, i64Ty, i64Ty}, false);
     auto* fn = llvm::Function::Create(fnTy, llvm::Function::InternalLinkage,
-                                      "cmm.str.matchat", module.get());
+                                      "cdd.str.matchat", module.get());
     auto* hay = fn->getArg(0);
     auto* needle = fn->getArg(1);
     auto* nlen = fn->getArg(2);
@@ -1502,7 +1502,7 @@ llvm::Function* CodegenContext::getSplitFn() {
         ptrTy, {ptrTy, i64Ty, ptrTy, i64Ty, llvm::PointerType::get(i64Ty, 0)},
         false);
     auto* fn = llvm::Function::Create(fnTy, llvm::Function::InternalLinkage,
-                                      "cmm.str.split", module.get());
+                                      "cdd.str.split", module.get());
     auto mallocFn = module->getOrInsertFunction(
         "malloc", llvm::FunctionType::get(ptrTy, {i64Ty}, false));
     // Synthesize the callee FIRST (it re-points the shared builder).
@@ -1641,7 +1641,7 @@ llvm::Function* CodegenContext::getStringCopyFn() {
     auto* voidTy = llvm::Type::getVoidTy(c);
     auto* fnTy = llvm::FunctionType::get(voidTy, {ptrTy, strTy}, false);
     auto* fn = llvm::Function::Create(fnTy, llvm::Function::InternalLinkage,
-                                      "cmm.string.copy", module.get());
+                                      "cdd.string.copy", module.get());
     auto* dst = fn->getArg(0);
     auto* src = fn->getArg(1);
 
@@ -1684,7 +1684,7 @@ llvm::Function* CodegenContext::getStringAssignFn() {
     auto* voidTy = llvm::Type::getVoidTy(c);
     auto* fnTy = llvm::FunctionType::get(voidTy, {ptrTy, strTy}, false);
     auto* fn = llvm::Function::Create(fnTy, llvm::Function::InternalLinkage,
-                                      "cmm.string.assign", module.get());
+                                      "cdd.string.assign", module.get());
     auto* dst = fn->getArg(0);
     auto* src = fn->getArg(1);
 

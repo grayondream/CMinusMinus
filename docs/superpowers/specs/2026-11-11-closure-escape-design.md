@@ -1,4 +1,4 @@
-# Cmm 1.0 — Capturing-Closure Escape（按值返回）设计
+# CDD 1.0 — Capturing-Closure Escape（按值返回）设计
 
 > 状态：**设计草案，待批准**
 > 日期：2026-11-11
@@ -9,14 +9,14 @@
 
 当前有捕获 lambda 只能可靠地用于局部变量或立即调用：
 
-```cmm
+```cdd
 auto f = [x](int32 y) -> int32 { return x + y; };  // 局部 OK
 int32 r = f(1);
 ```
 
 从函数返回时失败，因为 `auto` 只支持变量、不支持函数返回类型：
 
-```cmm
+```cdd
 auto make_adder(int32 x) {
     return [x](int32 y) -> int32 { return x + y; };  // return type mismatch: expected 'auto'
 }
@@ -47,7 +47,7 @@ auto make_adder(int32 x) {
 
 ### 4.1 `auto` 返回类型推导
 
-```cmm
+```cdd
 auto make_adder(int32 x) {
     return [x](int32 y) -> int32 { return x + y; };
 }
@@ -86,7 +86,7 @@ capturing closure with a 'this' capture cannot escape by return
 
 ### 4.3 调用
 
-```cmm
+```cdd
 int32 main() {
     auto f = make_adder(40);
     return f(2) - 42;
@@ -190,7 +190,7 @@ int32 main() {
 ## 9. 验收
 
 - 新增测试全绿；全量基线 1865 不回归。
-- `examples/all_features.cmm` 输出 `ALL FEATURES OK`（可增加闭包返回小节）。
+- `examples/all_features.cdd` 输出 `ALL FEATURES OK`（可增加闭包返回小节）。
 - README 的 “capturing-closure escape” 改为“按值逃逸已支持；引用/this 逃逸编译期拒绝”。
 - `docs/spec/semantics.md` 更新。
 - `TODO.md`/`Progress.md` 记录。

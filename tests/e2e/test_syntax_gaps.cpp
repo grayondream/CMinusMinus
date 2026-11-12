@@ -83,7 +83,7 @@ TEST_F(SyntaxGapsE2E, EmptyStatement) {
             for (int32 i = 0; i < 1; i++) ;
             return x - 1;
         }
-    )", "syntax_empty_stmt.cmm"), 0);
+    )", "syntax_empty_stmt.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, StructAndClassMultipleFields) {
@@ -95,7 +95,7 @@ TEST_F(SyntaxGapsE2E, StructAndClassMultipleFields) {
             CMulti c; c.a = 3; c.b = 4;
             return s.a + s.b + c.a + c.b - 10;
         }
-    )", "syntax_multi_fields.cmm"), 0);
+    )", "syntax_multi_fields.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, UnionMultipleFields) {
@@ -106,7 +106,7 @@ TEST_F(SyntaxGapsE2E, UnionMultipleFields) {
             if (sizeof(union UMulti) != 4) return 1;
             return u.a - 5;
         }
-    )", "syntax_union_fields.cmm"), 0);
+    )", "syntax_union_fields.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, AggregateDirectFunctionPointerField) {
@@ -120,7 +120,7 @@ TEST_F(SyntaxGapsE2E, AggregateDirectFunctionPointerField) {
             CFn c; c.h = incFn;
             return s.f(1) + s.g(2) + c.h(3) - 10;
         }
-    )", "syntax_fnptr_field.cmm"), 0);
+    )", "syntax_fnptr_field.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, AggregatePointerToArrayField) {
@@ -131,7 +131,7 @@ TEST_F(SyntaxGapsE2E, AggregatePointerToArrayField) {
             struct SArr s; s.p = &a;
             return (*s.p)[1] - 5;
         }
-    )", "syntax_ptr_array_field.cmm"), 0);
+    )", "syntax_ptr_array_field.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, SizeofAlignofFullTypeId) {
@@ -143,7 +143,7 @@ TEST_F(SyntaxGapsE2E, SizeofAlignofFullTypeId) {
             if (alignof(int32[3]) != 4) return 4;
             return 0;
         }
-    )", "syntax_sizeof_typeid.cmm"), 0);
+    )", "syntax_sizeof_typeid.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, PostfixQualifiers) {
@@ -155,7 +155,7 @@ TEST_F(SyntaxGapsE2E, PostfixQualifiers) {
             int32 const *p = &g;
             return x + v + *p - 10;
         }
-    )", "syntax_postfix_qual.cmm"), 0);
+    )", "syntax_postfix_qual.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, BlockScopeExternRefersToGlobal) {
@@ -165,7 +165,7 @@ TEST_F(SyntaxGapsE2E, BlockScopeExternRefersToGlobal) {
             extern int32 gExtern;
             return gExtern - 7;
         }
-    )", "syntax_block_extern.cmm"), 0);
+    )", "syntax_block_extern.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, RecordAttachedPointerAndFunction) {
@@ -176,7 +176,7 @@ TEST_F(SyntaxGapsE2E, RecordAttachedPointerAndFunction) {
             struct SAttach s; s.x = 4; pAttach = &s;
             return pAttach->x + makeAttach().x - 13;
         }
-    )", "syntax_record_attached.cmm"), 0);
+    )", "syntax_record_attached.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, RecordAttachedFunctionPointerVariable) {
@@ -189,7 +189,7 @@ TEST_F(SyntaxGapsE2E, RecordAttachedFunctionPointerVariable) {
             fpAttach = makeAttachFp;
             return fpAttach(3).x - 3;
         }
-    )", "syntax_record_attached_fp.cmm"), 0);
+    )", "syntax_record_attached_fp.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, RecordAttachedFunctionReturningPointer) {
@@ -200,7 +200,7 @@ TEST_F(SyntaxGapsE2E, RecordAttachedFunctionReturningPointer) {
             return &s;
         }
         int32 main() { return makeAttachPtr()->x - 7; }
-    )", "syntax_record_attached_ptrfn.cmm"), 0);
+    )", "syntax_record_attached_ptrfn.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, ClassAttachedPointerKeepsMethods) {
@@ -210,7 +210,7 @@ TEST_F(SyntaxGapsE2E, ClassAttachedPointerKeepsMethods) {
             CAttach c; c.x = 6; pCAttach = &c;
             return pCAttach->get() - 6;
         }
-    )", "syntax_class_attached.cmm"), 0);
+    )", "syntax_class_attached.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, MultiDeclaratorComplexSuccessors) {
@@ -224,7 +224,7 @@ TEST_F(SyntaxGapsE2E, MultiDeclaratorComplexSuccessors) {
             fMulti = incMulti; gMulti = dblMulti; pMulti = &a; qMulti = &a;
             return fMulti(1) + gMulti(2) + (*pMulti)[0] + (*qMulti)[1] - 9;
         }
-    )", "syntax_multi_complex.cmm"), 0);
+    )", "syntax_multi_complex.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, ArrayDimensionsAcceptConstExpressions) {
@@ -251,7 +251,7 @@ TEST_F(SyntaxGapsE2E, ArrayDimensionsAcceptConstExpressions) {
             if (firstArrayDim(x) != 7) return 7;
             return 0;
         }
-    )", "syntax_array_const_dim.cmm"), 0);
+    )", "syntax_array_const_dim.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, TypeIdArrayDimensionsAcceptConstExpressions) {
@@ -264,7 +264,7 @@ TEST_F(SyntaxGapsE2E, TypeIdArrayDimensionsAcceptConstExpressions) {
             if (sizeof(int32[KArr]) != 8) return 3;
             return 0;
         }
-    )", "syntax_typeid_array_const_dim.cmm"), 0);
+    )", "syntax_typeid_array_const_dim.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, MemberCallOperator) {
@@ -277,7 +277,7 @@ TEST_F(SyntaxGapsE2E, MemberCallOperator) {
             CMemberCall c;
             return c(1) - 2;
         }
-    )", "syntax_member_operator_call.cmm"), 0);
+    )", "syntax_member_operator_call.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, MemberSubscriptOperatorRead) {
@@ -292,7 +292,7 @@ TEST_F(SyntaxGapsE2E, MemberSubscriptOperatorRead) {
             c.data[0] = 5;
             return c[0] - 5;
         }
-    )", "syntax_member_operator_index.cmm"), 0);
+    )", "syntax_member_operator_index.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, CCharLiteralPrefixes) {
@@ -302,7 +302,7 @@ TEST_F(SyntaxGapsE2E, CCharLiteralPrefixes) {
         int32 c = U'A';
         int32 d = u8'A';
         int32 main() { return (a == 'A' && b == 'A' && c == 'A' && d == 'A') ? 0 : 1; }
-    )", "syntax_c_char_prefix.cmm"), 0);
+    )", "syntax_c_char_prefix.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, CStringLiteralPrefixesAndRaw) {
@@ -316,7 +316,7 @@ TEST_F(SyntaxGapsE2E, CStringLiteralPrefixesAndRaw) {
             return (a[0] == 'h' && b[0] == 'h' && c[0] == 'h' &&
                     d[0] == 'r' && e[0] == 'r') ? 0 : 1;
         }
-    )SRC", "syntax_c_string_prefix.cmm"), 0);
+    )SRC", "syntax_c_string_prefix.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, HexFloatLiteral) {
@@ -325,7 +325,7 @@ TEST_F(SyntaxGapsE2E, HexFloatLiteral) {
         float64 b = 0x1.8p1;
         float64 c = 0x.8p1;
         int32 main() { return (a == 8.0 && b == 3.0 && c == 1.0) ? 0 : 1; }
-    )", "syntax_c_hex_float.cmm"), 0);
+    )", "syntax_c_hex_float.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, LeadingDotFloatAndLongLongSuffix) {
@@ -334,7 +334,7 @@ TEST_F(SyntaxGapsE2E, LeadingDotFloatAndLongLongSuffix) {
         int64 b = 1LL;
         uint64 c = 2ULL;
         int32 main() { return (a == .5 && b == 1 && c == 2) ? 0 : 1; }
-    )", "syntax_c_literals.cmm"), 0);
+    )", "syntax_c_literals.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, NamedAsmOperand) {
@@ -344,7 +344,7 @@ TEST_F(SyntaxGapsE2E, NamedAsmOperand) {
             asm("movl $1, %[v]" : [v] "=r"(x));
             return x - 1;
         }
-    )", "syntax_asm_named_operand.cmm"), 0);
+    )", "syntax_asm_named_operand.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, AsmAdjacentEmptyOperandSections) {
@@ -354,7 +354,7 @@ TEST_F(SyntaxGapsE2E, AsmAdjacentEmptyOperandSections) {
             asm("nop" ::: "memory");
             return x - 1;
         }
-    )", "syntax_asm_adjacent_colons.cmm"), 0);
+    )", "syntax_asm_adjacent_colons.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, OutOfClassStaticDataDefinition) {
@@ -362,7 +362,7 @@ TEST_F(SyntaxGapsE2E, OutOfClassStaticDataDefinition) {
         struct SStaticData { static int32 x; };
         int32 SStaticData::x = 7;
         int32 main() { return SStaticData::x - 7; }
-    )", "syntax_static_data_ooc.cmm"), 0);
+    )", "syntax_static_data_ooc.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, MultipleFunctionDeclarators) {
@@ -371,7 +371,7 @@ TEST_F(SyntaxGapsE2E, MultipleFunctionDeclarators) {
         int32 fMultiDecl() { return 1; }
         int32 gMultiDecl() { return 2; }
         int32 main() { return fMultiDecl() + gMultiDecl() - 3; }
-    )", "syntax_multi_function_decl.cmm"), 0);
+    )", "syntax_multi_function_decl.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, OutOfClassStaticMethodDefinition) {
@@ -379,7 +379,7 @@ TEST_F(SyntaxGapsE2E, OutOfClassStaticMethodDefinition) {
         struct SStaticOoc { static int32 f(); };
         int32 SStaticOoc::f() { return 7; }
         int32 main() { return SStaticOoc::f() - 7; }
-    )", "syntax_static_method_ooc.cmm"), 0);
+    )", "syntax_static_method_ooc.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, FunctionTypeParameterDecaysToPointer) {
@@ -388,7 +388,7 @@ TEST_F(SyntaxGapsE2E, FunctionTypeParameterDecaysToPointer) {
         int32 applyFnType(int32 gFnType(int32), int32 x) { return gFnType(x); }
         int32 incFnType(int32 x) { return x + 1; }
         int32 main() { return applyFnType(incFnType, 1) - 2; }
-    )", "syntax_function_type_param.cmm"), 0);
+    )", "syntax_function_type_param.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, ParenthesizedDeclarators) {
@@ -400,7 +400,7 @@ TEST_F(SyntaxGapsE2E, ParenthesizedDeclarators) {
             aParen[0] = 1;
             return gParen + fParen() + aParen[0] - 8;
         }
-    )", "syntax_paren_declarator.cmm"), 0);
+    )", "syntax_paren_declarator.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, GlobalStringViewLiteralDoesNotCrash) {
@@ -411,7 +411,7 @@ TEST_F(SyntaxGapsE2E, GlobalStringViewLiteralDoesNotCrash) {
             if (gStringView[0] != 'a') return 2;
             return 0;
         }
-    )", "syntax_global_string_view.cmm"), 0);
+    )", "syntax_global_string_view.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, BitFieldWidthsAcceptEnumAndConst) {
@@ -425,7 +425,7 @@ TEST_F(SyntaxGapsE2E, BitFieldWidthsAcceptEnumAndConst) {
             if (s.a != 1 || s.b != 2 || s.c != 1) return 1;
             return 0;
         }
-    )", "syntax_bitfield_const_width.cmm"), 0);
+    )", "syntax_bitfield_const_width.cdd"), 0);
 }
 
 // ============================================================================
@@ -458,7 +458,7 @@ TEST_F(SyntaxGapsE2E, TemplateConstantArguments) {
             if (sg01Call2<2>() != 3) return 6;
             return 0;
         }
-    )", "sg01_template_const_args.cmm"), 0);
+    )", "sg01_template_const_args.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, BlockScopeExternFunctionDeclaration) {
@@ -467,7 +467,7 @@ TEST_F(SyntaxGapsE2E, BlockScopeExternFunctionDeclaration) {
             extern int32 abs(int32);
             return abs(-3) - 3;
         }
-    )", "sg02_block_extern_fn.cmm"), 0);
+    )", "sg02_block_extern_fn.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, OffsetofConstantExpressionSubscript) {
@@ -479,7 +479,7 @@ TEST_F(SyntaxGapsE2E, OffsetofConstantExpressionSubscript) {
             if (offsetof(struct SOf, a[SgOfIndex + 1]) != 8) return 2;
             return 0;
         }
-    )", "sg03_offsetof_const_index.cmm"), 0);
+    )", "sg03_offsetof_const_index.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, CStyleCastToFunctionPointerType) {
@@ -489,7 +489,7 @@ TEST_F(SyntaxGapsE2E, CStyleCastToFunctionPointerType) {
             void* p = (void*)plusOne;
             return ((int32 (*)(int32))p)(41) - 42;
         }
-    )", "sg04_cast_fnptr.cmm"), 0);
+    )", "sg04_cast_fnptr.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, DeepNestedFunctionPointerDeclarator) {
@@ -501,7 +501,7 @@ TEST_F(SyntaxGapsE2E, DeepNestedFunctionPointerDeclarator) {
             g = retInc;
             return g(41)(41) - 42;
         }
-    )", "sg05_deep_declarator.cmm"), 0);
+    )", "sg05_deep_declarator.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, C99ArrayParameterQualifiers) {
@@ -512,7 +512,7 @@ TEST_F(SyntaxGapsE2E, C99ArrayParameterQualifiers) {
             int32 x[3] = {40, 2, 0};
             return first(x) + second(x) - 42;
         }
-    )", "sg06_array_param_quals.cmm"), 0);
+    )", "sg06_array_param_quals.cdd"), 0);
 }
 
 TEST_F(SyntaxGapsE2E, AdjacentStringLiteralConcatenation) {
@@ -523,5 +523,5 @@ TEST_F(SyntaxGapsE2E, AdjacentStringLiteralConcatenation) {
             if (s[0] != 'a' || s[3] != 'd') return 2;
             return 0;
         }
-    )", "sg07_adjacent_strings.cmm"), 0);
+    )", "sg07_adjacent_strings.cdd"), 0);
 }

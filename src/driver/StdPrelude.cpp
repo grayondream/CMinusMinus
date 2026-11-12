@@ -10,12 +10,12 @@
 #include <iterator>
 #include <sstream>
 
-namespace cmm {
+namespace cdd {
 
 std::string loadStdCPrelude(const std::vector<std::string>& dirs) {
     for (const std::string& dir : dirs) {
         std::filesystem::path candidate =
-            std::filesystem::path(dir) / "std" / "c.cmm";
+            std::filesystem::path(dir) / "std" / "c.cdd";
         std::error_code ec;
         if (!std::filesystem::is_regular_file(candidate, ec)) {
             continue;
@@ -67,4 +67,4 @@ void prependDeclarations(TranslationUnitAST& target, TranslationUnitAST& prelude
     prelude.declarations.clear();
 }
 
-} // namespace cmm
+} // namespace cdd

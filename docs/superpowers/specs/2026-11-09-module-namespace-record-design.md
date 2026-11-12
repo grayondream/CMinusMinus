@@ -1,4 +1,4 @@
-# Cmm 1.0 — Module/Namespace 与 Record 面设计（部分裁定）
+# CDD 1.0 — Module/Namespace 与 Record 面设计（部分裁定）
 
 > 状态：**已实施（2026-11-09）**
 > 日期：2026-11-09
@@ -32,10 +32,10 @@
 
 - module 名与 import 说明符使用**点分路径**：
 
-  ```cmm
+  ```cdd
   module std.vec;
   import std.mem;
-  import "dir/file.cmm";
+  import "dir/file.cdd";
   ```
 
   `module`/`import` 中不允许 `::`；遇到时给出明确诊断：
@@ -45,7 +45,7 @@
 
 - namespace 名使用 **`::`**：
 
-  ```cmm
+  ```cdd
   namespace std { ... }
   namespace geometry::ops { ... }
   ```
@@ -69,7 +69,7 @@
 
 ### 2.4 迁移
 
-- 仓库内 `namespace A.B` 的 3 处（`examples/all_features.cmm`、`tests/e2e/test_namespace.cpp` 两处）迁移为 `namespace A::B`。
+- 仓库内 `namespace A.B` 的 3 处（`examples/all_features.cdd`、`tests/e2e/test_namespace.cpp` 两处）迁移为 `namespace A::B`。
 - 仓库内没有 `module a::b` / `import a::b` 的用法；新增负向测试钉住诊断。
 - 文档 `docs/spec/modules.md`、`docs/spec/grammar.ebnf` 同步。
 
@@ -151,4 +151,4 @@ access-section     = ( 'public' | 'private' | 'protected' ) , ':' ;
 2. `import std.vec; std::Vec<int32>` 可通过；`Vec<int32>` 仍不可见；`import util; helper()`（根部导出）可通过。
 3. `struct S { private: ... public: ... int32 get(); }` 可解析、可访问；private 成员类外访问报 E2009。
 4. `class C { ... }` 默认 private 行为不回归；`struct` 默认 public 行为不回归。
-5. 全量 `ctest` 通过；`examples/all_features.cmm` 仍输出 `ALL FEATURES OK`。
+5. 全量 `ctest` 通过；`examples/all_features.cdd` 仍输出 `ALL FEATURES OK`。

@@ -221,7 +221,7 @@ public:
     llvm::Value* codegen(CodegenContext& ctx) override;
 };
 
-// Internal LLVM-atomic lowering selected by sema for the `__cmm_atomic_*`
+// Internal LLVM-atomic lowering selected by sema for the `__cdd_atomic_*`
 // library intrinsics. These are not part of the user-facing surface.
 enum class AtomicBuiltin {
     None, Load, Store, Exchange,

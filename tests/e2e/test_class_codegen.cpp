@@ -107,7 +107,7 @@ TEST_F(ClassCodegenE2E, SimpleClass) {
             f.setX(42);
             return f.getX() - 42;
         }
-    )", "test_class_simple.cmm"), 0);
+    )", "test_class_simple.cdd"), 0);
 }
 
 TEST_F(ClassCodegenE2E, ClassWithMultipleMethods) {
@@ -128,7 +128,7 @@ TEST_F(ClassCodegenE2E, ClassWithMultipleMethods) {
             c.increment();
             return c.getCount() - 3;
         }
-    )", "test_class_multi_method.cmm"), 0);
+    )", "test_class_multi_method.cdd"), 0);
 }
 
 TEST_F(ClassCodegenE2E, ClassWithInheritance) {
@@ -153,7 +153,7 @@ TEST_F(ClassCodegenE2E, ClassWithInheritance) {
             d.setY(20);
             return d.getX() + d.getY() - 30;
         }
-    )", "test_class_inherit.cmm"), 0);
+    )", "test_class_inherit.cdd"), 0);
 }
 
 TEST_F(ClassCodegenE2E, ClassMethodCallFromMain) {
@@ -170,7 +170,7 @@ TEST_F(ClassCodegenE2E, ClassMethodCallFromMain) {
             m.setValue(21);
             return m.doubleIt() - 42;
         }
-    )", "test_class_method_call.cmm"), 0);
+    )", "test_class_method_call.cdd"), 0);
 }
 
 // AGG-10: static members — global storage, class-qualified access only.
@@ -184,7 +184,7 @@ TEST_F(ClassCodegenE2E, SMCounterPersist) {
             SMCtr2::next(); SMCtr2::next();
             return SMCtr2::next() == 3 ? 0 : 1;
         }
-    )", "test_sm_counter.cmm"), 0);
+    )", "test_sm_counter.cdd"), 0);
 }
 
 TEST_F(ClassCodegenE2E, SMStaticFactory) {
@@ -197,7 +197,7 @@ TEST_F(ClassCodegenE2E, SMStaticFactory) {
             SMPoint p = SMRegistry::origin();
             return (p.x == 0 && p.y == 0) ? 0 : 1;
         }
-    )", "test_sm_factory.cmm"), 0);
+    )", "test_sm_factory.cdd"), 0);
 }
 
 TEST_F(ClassCodegenE2E, SMPrivateInternalUse) {
@@ -211,7 +211,7 @@ TEST_F(ClassCodegenE2E, SMPrivateInternalUse) {
             SMAcc obj;
             return obj.reveal() == 11 ? 0 : 1;
         }
-    )", "test_sm_internal.cmm"), 0);
+    )", "test_sm_internal.cdd"), 0);
 }
 
 TEST_F(ClassCodegenE2E, SMStaticAfterForwardDecl) {
@@ -221,7 +221,7 @@ TEST_F(ClassCodegenE2E, SMStaticAfterForwardDecl) {
         class SMFwd;
         class SMFwd { public: static int32 v = 9; };
         int32 main() { return SMFwd::v == 9 ? 0 : 1; }
-    )", "test_sm_fwd.cmm"), 0);
+    )", "test_sm_fwd.cdd"), 0);
 }
 
 // Review C2: struct with only static members — global storage, no fallback.
@@ -229,7 +229,7 @@ TEST_F(ClassCodegenE2E, SMStructStaticE2E) {
     EXPECT_EQ(runSource(R"(
         struct SMS3 { static int32 v = 4; };
         int32 main() { return SMS3::v == 4 ? 0 : 1; }
-    )", "test_sm_struct.cmm"), 0);
+    )", "test_sm_struct.cdd"), 0);
 }
 
 // ========== AGG-11: nested types e2e ==========
@@ -241,14 +241,14 @@ TEST_F(ClassCodegenE2E, NTStructFieldE2E) {
             NTE1::Inner obj; obj.x = 3;
             return obj.x == 3 ? 0 : 1;
         }
-    )", "test_nt_struct.cmm"), 0);
+    )", "test_nt_struct.cdd"), 0);
 }
 
 TEST_F(ClassCodegenE2E, NTEnumConstantE2E) {
     EXPECT_EQ(runSource(R"(
         class NTE2 { public: enum Color { Red, Green }; };
         int32 main() { NTE2::Color c = NTE2::Green; return c == 1 ? 0 : 1; }
-    )", "test_nt_enum.cmm"), 0);
+    )", "test_nt_enum.cdd"), 0);
 }
 
 TEST_F(ClassCodegenE2E, NTStaticE2E) {
@@ -259,21 +259,21 @@ TEST_F(ClassCodegenE2E, NTStaticE2E) {
             public: static int32 next() { NTE3::S::count = NTE3::S::count + 1; return NTE3::S::count; }
         }; };
         int32 main() { NTE3::S::next(); return NTE3::S::next() == 2 ? 0 : 1; }
-    )", "test_nt_static.cmm"), 0);
+    )", "test_nt_static.cdd"), 0);
 }
 
 TEST_F(ClassCodegenE2E, NTMethodE2E) {
     EXPECT_EQ(runSource(R"(
         class NTE4 { public: class S { public: int32 f(int32 x) { return x; } }; };
         int32 main() { NTE4::S obj; return obj.f(7) == 7 ? 0 : 1; }
-    )", "test_nt_method.cmm"), 0);
+    )", "test_nt_method.cdd"), 0);
 }
 
 TEST_F(ClassCodegenE2E, NTDeepE2E) {
     EXPECT_EQ(runSource(R"(
         class NTE5 { public: struct A { struct B { int32 v; }; }; };
         int32 main() { NTE5::A::B obj; obj.v = 2; return obj.v == 2 ? 0 : 1; }
-    )", "test_nt_deep.cmm"), 0);
+    )", "test_nt_deep.cdd"), 0);
 }
 
 TEST_F(ClassCodegenE2E, NTFwdWithNestedE2E) {
@@ -283,7 +283,7 @@ TEST_F(ClassCodegenE2E, NTFwdWithNestedE2E) {
         class NTE6;
         class NTE6 { public: class S { public: int32 f(int32 x) { return x; } }; };
         int32 main() { NTE6::S obj; return obj.f(6) == 6 ? 0 : 1; }
-    )", "test_nt_fwd.cmm"), 0);
+    )", "test_nt_fwd.cdd"), 0);
 }
 
 TEST_F(ClassCodegenE2E, NTSelfRefPtrE2E) {
@@ -294,7 +294,7 @@ TEST_F(ClassCodegenE2E, NTSelfRefPtrE2E) {
             struct NFNode n; n.v = 1; n.next = 0;
             return n.v == 1 ? 0 : 1;
         }
-    )", "test_nt_selfref.cmm"), 0);
+    )", "test_nt_selfref.cdd"), 0);
 }
 
 // ========== INH: inheritance e2e ==========
@@ -304,7 +304,7 @@ TEST_F(ClassCodegenE2E, INHStructE2E) {
         struct B20 { int32 x; };
         struct D20 : public B20 { int32 y; };
         int32 main() { D20 d; d.x = 3; d.y = 4; return (d.x == 3 && d.y == 4) ? 0 : 1; }
-    )", "test_inh_struct.cmm"), 0);
+    )", "test_inh_struct.cdd"), 0);
 }
 
 TEST_F(ClassCodegenE2E, INHStructLayoutOffset0E2E) {
@@ -313,7 +313,7 @@ TEST_F(ClassCodegenE2E, INHStructLayoutOffset0E2E) {
         struct B21 { int32 x; };
         struct D21 : public B21 { int32 y; };
         int32 main() { D21 d; d.x = 8; B21* b = &d; return b->x == 8 ? 0 : 1; }
-    )", "test_inh_layout.cmm"), 0);
+    )", "test_inh_layout.cdd"), 0);
 }
 
 TEST_F(ClassCodegenE2E, INHDeepChainE2E) {
@@ -324,7 +324,7 @@ TEST_F(ClassCodegenE2E, INHDeepChainE2E) {
         class C22 : public B22 { public: int32 c; };
         int32 main() { C22 o; o.a = 1; o.b = 2; o.c = 3;
             return (o.a == 1 && o.b == 2 && o.c == 3) ? 0 : 1; }
-    )", "test_inh_deep.cmm"), 0);
+    )", "test_inh_deep.cdd"), 0);
 }
 
 TEST_F(ClassCodegenE2E, INHShadowE2E) {
@@ -335,7 +335,7 @@ TEST_F(ClassCodegenE2E, INHShadowE2E) {
         class D23 : public A23 { public: int32 v; };
         int32 main() { D23 d; d.v = 4;
             return d.v == 4 ? 0 : 1; }
-    )", "test_inh_shadow.cmm"), 0);
+    )", "test_inh_shadow.cdd"), 0);
 }
 
 TEST_F(ClassCodegenE2E, INHSliceE2E) {
@@ -345,7 +345,7 @@ TEST_F(ClassCodegenE2E, INHSliceE2E) {
         class D24 : public A24 { public: int32 t; };
         int32 main() { D24 d; d.x = 3; d.w = 5; d.t = 9; A24 a = d;
             a.x = 6; return (a.x == 6 && a.w == 5 && d.x == 3) ? 0 : 1; }
-    )", "test_inh_slice.cmm"), 0);
+    )", "test_inh_slice.cdd"), 0);
 }
 
 TEST_F(ClassCodegenE2E, INHDowncastE2E) {
@@ -356,13 +356,13 @@ TEST_F(ClassCodegenE2E, INHDowncastE2E) {
         class D25 : public A25 { public: int32 t; };
         int32 main() { D25 d; A25* a = &d; D25* d2 = static_cast<D25*>(a);
             d2->x = 5; d2->t = 2; return (d.t == 2 && a->x == 5) ? 0 : 1; }
-    )", "test_inh_downcast.cmm"), 0);
+    )", "test_inh_downcast.cdd"), 0);
 }
 
 TEST_F(ClassCodegenE2E, INHMultiInheritDiagE2E) {
     // INH-02 端到端：多继承 → parser 诊断（fixture runSource 不查 parser
     // 错误，实测裁决：改用显式管线断言，台账记录）。
-    Lexer lexer("test_inh_multi.cmm",
+    Lexer lexer("test_inh_multi.cdd",
         "class A26 { public: int32 x; }; class B26 { public: int32 y; }; "
         "class C26 : public A26, public B26 { public: int32 z; }; "
         "int32 main() { return 0; }");
@@ -382,7 +382,7 @@ TEST_F(ClassCodegenE2E, INHStructChainGEPE2E) {
         int32 main() { C27 o; B27* b = &o; A27* a = &o;
             o.c = 9; b->b = 8; a->a = 7;
             return (o.a == 7 && o.b == 8 && o.c == 9) ? 0 : 1; }
-    )", "test_inh_gep.cmm"), 0);
+    )", "test_inh_gep.cdd"), 0);
 }
 
 // ========== Redef: 类型重复定义诊断 e2e ==========
@@ -390,7 +390,7 @@ TEST_F(ClassCodegenE2E, INHStructChainGEPE2E) {
 TEST_F(ClassCodegenE2E, RedefStructE2E) {
     // 重定义 → 诊断。fixture 的 runSource 对任何 sema 错误 ADD_FAILURE
     //（正向用例专用），错误路径按 INHMultiInheritDiagE2E 先例走显式管线。
-    Lexer lexer("test_redef.cmm",
+    Lexer lexer("test_redef.cdd",
         "struct B48 { int32 x; };\nstruct B48 { int32 y; };\nint32 main() { return 0; }\n");
     auto tokens = lexer.tokenize();
     Parser parser(tokens);

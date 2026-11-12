@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add class/struct support with member functions, `this` pointer, and public inheritance to Cmm compiler.
+**Goal:** Add class/struct support with member functions, `this` pointer, and public inheritance to CDD compiler.
 
 **Architecture:** Extend existing `StructDeclAST` to hold methods and base class info. Parser recognizes `class` keyword same as `struct`. Semantic analyzer validates inheritance and method resolution. Codegen generates methods as separate functions with `this` as first parameter. Inheritance via struct embedding.
 

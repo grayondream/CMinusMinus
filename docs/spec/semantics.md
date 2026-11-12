@@ -1,4 +1,4 @@
-# Cmm 1.0 — 求值语义与静态分析规范
+# CDD 1.0 — 求值语义与静态分析规范
 
 > 对应 TODO：**SEM-13 ~ SEM-18**、**FUN-07/10/13/14**、**GEN-06**
 > 状态：`[impl]` 以 `src/sema/SemanticAnalyzer.cpp`、`src/ast/Symbol.cpp`、`src/ast/*.cpp` 为准；`[plan]` 为目标。

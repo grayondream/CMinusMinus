@@ -48,11 +48,11 @@ static int runWithImports(const std::string& source, const std::string& filename
     auto tokens = lexer.tokenize();
     if (!lexer.getDiagnostics().empty()) return -1;
 
-    cmm::ModuleSearchPaths paths{{STD_DIR}};
+    cdd::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::unique_ptr<DeclAST>> importedDecls;
     std::vector<std::string> errors;
-    cmm::preloadImports(cmm::collectImportSpecifiers(tokens), ".", paths, loaded,
+    cdd::preloadImports(cdd::collectImportSpecifiers(tokens), ".", paths, loaded,
                         importedDecls, errors);
     if (!errors.empty()) {
         for (auto& e : errors) std::cerr << "import error: " << e << "\n";
@@ -67,7 +67,7 @@ static int runWithImports(const std::string& source, const std::string& filename
                                  std::make_move_iterator(importedDecls.begin()),
                                  std::make_move_iterator(importedDecls.end()));
     }
-    cmm::processImports(*ast, ".", paths, loaded, errors);
+    cdd::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) {
         for (auto& e : errors) std::cerr << "import error: " << e << "\n";
         return -1;
@@ -118,10 +118,10 @@ static std::vector<std::string> analyzeWithImports(const std::string& source,
     std::vector<std::string> errors;
     for (auto& d : lexer.getDiagnostics()) errors.push_back(d.formatWithSeverity());
 
-    cmm::ModuleSearchPaths paths{{STD_DIR}};
+    cdd::ModuleSearchPaths paths{{STD_DIR}};
     std::set<std::string> loaded;
     std::vector<std::unique_ptr<DeclAST>> importedDecls;
-    cmm::preloadImports(cmm::collectImportSpecifiers(tokens), ".", paths, loaded,
+    cdd::preloadImports(cdd::collectImportSpecifiers(tokens), ".", paths, loaded,
                         importedDecls, errors);
     if (!errors.empty()) return errors;
 
@@ -138,7 +138,7 @@ static std::vector<std::string> analyzeWithImports(const std::string& source,
                                  std::make_move_iterator(importedDecls.begin()),
                                  std::make_move_iterator(importedDecls.end()));
     }
-    cmm::processImports(*ast, ".", paths, loaded, errors);
+    cdd::processImports(*ast, ".", paths, loaded, errors);
     if (!errors.empty()) return errors;
 
     SemanticAnalyzer analyzer;
@@ -173,7 +173,7 @@ TEST_F(ConstexprContainersTest, VecSumInConstexpr) {
             return total;
         }
         int32 main() { compile_time int32 x = sum8(); return x - 140; }
-    )", "ct_vec_sum.cmm"), 0);
+    )", "ct_vec_sum.cdd"), 0);
 }
 
 TEST_F(ConstexprContainersTest, HashMapInConstexpr) {
@@ -205,7 +205,7 @@ TEST_F(ConstexprContainersTest, HashMapInConstexpr) {
             return 0;
         }
         int32 main() { compile_time int32 x = mapWork(); return x; }
-    )", "ct_map.cmm"), 0);
+    )", "ct_map.cdd"), 0);
 }
 
 TEST_F(ConstexprContainersTest, HashSetInConstexpr) {
@@ -234,7 +234,7 @@ TEST_F(ConstexprContainersTest, HashSetInConstexpr) {
             return 0;
         }
         int32 main() { compile_time int32 x = setWork(); return x; }
-    )", "ct_set.cmm"), 0);
+    )", "ct_set.cdd"), 0);
 }
 
 TEST_F(ConstexprContainersTest, StringViewElementsInConstexpr) {
@@ -258,7 +258,7 @@ TEST_F(ConstexprContainersTest, StringViewElementsInConstexpr) {
             return 0;
         }
         int32 main() { compile_time int32 x = strWork(); return x; }
-    )", "ct_vec_string.cmm"), 0);
+    )", "ct_vec_string.cdd"), 0);
 }
 
 TEST_F(ConstexprContainersTest, OutParametersInConstexpr) {
@@ -278,7 +278,7 @@ TEST_F(ConstexprContainersTest, OutParametersInConstexpr) {
             return out;
         }
         int32 main() { compile_time int32 x = outWork(); return x - 20; }
-    )", "ct_out.cmm"), 0);
+    )", "ct_out.cdd"), 0);
 }
 
 TEST_F(ConstexprContainersTest, ConstexprLoopStepLimit) {
@@ -292,7 +292,7 @@ TEST_F(ConstexprContainersTest, ConstexprLoopStepLimit) {
             return 0;
         }
         int32 main() { compile_time int32 x = spin(); return x; }
-    )", "ct_step_limit.cmm"), -1);
+    )", "ct_step_limit.cdd"), -1);
 }
 
 TEST_F(ConstexprContainersTest, DequeRingInConstexpr) {
@@ -318,7 +318,7 @@ TEST_F(ConstexprContainersTest, DequeRingInConstexpr) {
             return 0;
         }
         int32 main() { compile_time int64 x = dequeSum(); return (int32)x; }
-    )", "ct_deque_ring.cmm"), 0);
+    )", "ct_deque_ring.cdd"), 0);
 }
 
 TEST_F(ConstexprContainersTest, AcceptsContainerConstexprFunction) {
@@ -336,7 +336,7 @@ TEST_F(ConstexprContainersTest, AcceptsContainerConstexprFunction) {
         compile_time std::Vec<int32> T = make();
         compile_time std::Vec<int32> B = T;
         int32 main() { return T.get(0) + B.get(0) - 2; }
-    )", "ct_accept_vec.cmm");
+    )", "ct_accept_vec.cdd");
     for (auto& e : errors) std::cerr << "sema: " << e << "\n";
     EXPECT_TRUE(errors.empty());
 }
@@ -354,7 +354,7 @@ TEST_F(ConstexprContainersTest, RejectsMutationOfConstexprContainer) {
         }
         compile_time std::Vec<int32> T = make();
         int32 main() { T.push(1); return 0; }
-    )", "ct_mutate_vec.cmm");
+    )", "ct_mutate_vec.cdd");
     EXPECT_TRUE(hasErrorContaining(errors, "compile_time container"));
 }
 
@@ -371,7 +371,7 @@ TEST_F(ConstexprContainersTest, RejectsFieldWriteOnConstexprContainer) {
         }
         compile_time std::Vec<int32> T = make();
         int32 main() { T.len = 0; return 0; }
-    )", "ct_mutate_field.cmm");
+    )", "ct_mutate_field.cdd");
     EXPECT_TRUE(hasErrorContaining(errors, "read-only"));
 }
 
@@ -388,7 +388,7 @@ TEST_F(ConstexprContainersTest, RejectsMutableCopyOfConstexprContainer) {
         }
         compile_time std::Vec<int32> T = make();
         int32 main() { std::Vec<int32> M = T; return 0; }
-    )", "ct_copy_vec.cmm");
+    )", "ct_copy_vec.cdd");
     EXPECT_TRUE(hasErrorContaining(errors, "read-only"));
 }
 
@@ -396,7 +396,7 @@ TEST_F(ConstexprContainersTest, StillRejectsStringConstexprFunction) {
     auto errors = analyzeWithImports(R"(
         compile_time string make() { return string.new("x"); }
         int32 main() { return 0; }
-    )", "ct_string_constexpr.cmm");
+    )", "ct_string_constexpr.cdd");
     EXPECT_TRUE(hasErrorContaining(errors, "CT value return type"));
 }
 
@@ -419,7 +419,7 @@ TEST_F(ConstexprContainersTest, VecTableIsReadableAtRuntime) {
             if (T.data[6] != 36) return 3;
             return 0;
         }
-    )", "ct_table_vec.cmm"), 0);
+    )", "ct_table_vec.cdd"), 0);
 }
 
 TEST_F(ConstexprContainersTest, DequeTableIsReadableAtRuntime) {
@@ -442,7 +442,7 @@ TEST_F(ConstexprContainersTest, DequeTableIsReadableAtRuntime) {
             if (T.get(0) != 0 || T.get(1) != 1 || T.get(2) != 2) return 2;
             return 0;
         }
-    )", "ct_table_deque.cmm"), 0);
+    )", "ct_table_deque.cdd"), 0);
 }
 
 TEST_F(ConstexprContainersTest, EmptyVecTableIsReadableAtRuntime) {
@@ -462,7 +462,7 @@ TEST_F(ConstexprContainersTest, EmptyVecTableIsReadableAtRuntime) {
             if (!T.is_empty()) return 2;
             return 0;
         }
-    )", "ct_table_empty.cmm"), 0);
+    )", "ct_table_empty.cdd"), 0);
 }
 
 TEST_F(ConstexprContainersTest, StringViewTableIsReadableAtRuntime) {
@@ -486,7 +486,7 @@ TEST_F(ConstexprContainersTest, StringViewTableIsReadableAtRuntime) {
             if (T.get(2).len() != 5) return 3;
             return 0;
         }
-    )", "ct_table_str.cmm"), 0);
+    )", "ct_table_str.cdd"), 0);
 }
 
 TEST_F(ConstexprContainersTest, HashMapTableIsReadableAtRuntime) {
@@ -510,7 +510,7 @@ TEST_F(ConstexprContainersTest, HashMapTableIsReadableAtRuntime) {
             if (!T.contains(63)) return 3;
             return 0;
         }
-    )", "ct_table_map.cmm"), 0);
+    )", "ct_table_map.cdd"), 0);
 }
 
 TEST_F(ConstexprContainersTest, HashSetTableIsReadableAtRuntime) {
@@ -533,7 +533,7 @@ TEST_F(ConstexprContainersTest, HashSetTableIsReadableAtRuntime) {
             if (T.contains(31)) return 3;
             return 0;
         }
-    )", "ct_table_set.cmm"), 0);
+    )", "ct_table_set.cdd"), 0);
 }
 
 TEST_F(ConstexprContainersTest, StringViewMapTableIsReadableAtRuntime) {
@@ -559,7 +559,7 @@ TEST_F(ConstexprContainersTest, StringViewMapTableIsReadableAtRuntime) {
             if (T.contains("four")) return 3;
             return 0;
         }
-    )", "ct_table_strmap.cmm"), 0);
+    )", "ct_table_strmap.cdd"), 0);
 }
 
 TEST_F(ConstexprContainersTest, RejectsMutableAssignmentFromConstexprContainer) {
@@ -580,7 +580,7 @@ TEST_F(ConstexprContainersTest, RejectsMutableAssignmentFromConstexprContainer) 
             M = T;
             return 0;
         }
-    )", "ct_assign_copy.cmm");
+    )", "ct_assign_copy.cdd");
     EXPECT_TRUE(hasErrorContaining(errors, "read-only"));
 }
 
@@ -593,7 +593,7 @@ TEST_F(ConstexprContainersTest, RejectsGetPtrOnConstexprContainer) {
         compile_time std::Vec<int32> make() { std::Vec<int32> v; v.init(); v.push(1); return v; }
         compile_time std::Vec<int32> T = make();
         int32 main() { int32* p = T.get_ptr(0); return *p; }
-    )", "ct_get_ptr.cmm");
+    )", "ct_get_ptr.cdd");
     EXPECT_TRUE(hasErrorContaining(errors, "compile_time container"));
 }
 
@@ -612,7 +612,7 @@ TEST_F(ConstexprContainersTest, RejectsMutablePointerIntoConstexprData) {
             *q = 10;
             return 0;
         }
-    )", "ct_data_ptr.cmm");
+    )", "ct_data_ptr.cdd");
     EXPECT_TRUE(hasErrorContaining(errors, "compile_time container"));
 }
 
@@ -626,7 +626,7 @@ TEST_F(ConstexprContainersTest, RejectsPassingConstexprTableByValue) {
         compile_time std::Vec<int32> T = make();
         int32 mutate(std::Vec<int32> w) { w.push(2); return w.len; }
         int32 main() { return mutate(T); }
-    )", "ct_pass_value.cmm");
+    )", "ct_pass_value.cdd");
     EXPECT_TRUE(hasErrorContaining(errors, "read-only"));
 }
 
@@ -644,7 +644,7 @@ TEST_F(ConstexprContainersTest, AllowsScalarReadFromConstexprTable) {
             int32 y = T.data[0];
             return n + x + y - 3;
         }
-    )", "ct_scalar_read.cmm");
+    )", "ct_scalar_read.cdd");
     for (auto& e : errors) std::cerr << "sema: " << e << "\n";
     EXPECT_TRUE(errors.empty());
 }
@@ -663,7 +663,7 @@ TEST_F(ConstexprContainersTest, AllowsShadowingConstexprContainerName) {
             T.push(9);
             return T.len == 1 ? 0 : 1;
         }
-    )", "ct_shadow.cmm");
+    )", "ct_shadow.cdd");
     for (auto& e : errors) std::cerr << "sema: " << e << "\n";
     EXPECT_TRUE(errors.empty());
 }

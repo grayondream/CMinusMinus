@@ -74,7 +74,7 @@ TEST_F(RecordGrammarE2E, StructWithAccessAndMethods) {
             void set(int32 v) { this->x = v; }
         };
         int32 main() { S s; s.set(7); return s.get() - 7; }
-    )", "record_access.cmm"), 0);
+    )", "record_access.cdd"), 0);
 }
 
 TEST_F(RecordGrammarE2E, StructAccessOnlyWithoutMethods) {
@@ -86,7 +86,7 @@ TEST_F(RecordGrammarE2E, StructAccessOnlyWithoutMethods) {
             int32 open;
         };
         int32 main() { S s; s.open = 3; return s.open - 3; }
-    )", "record_access_only.cmm"), 0);
+    )", "record_access_only.cdd"), 0);
 }
 
 TEST_F(RecordGrammarE2E, StructAttachedVariableKeepsMethods) {
@@ -96,28 +96,28 @@ TEST_F(RecordGrammarE2E, StructAttachedVariableKeepsMethods) {
             int32 get() { return this->x; }
         } s;
         int32 main() { s.x = 9; return s.get() - 9; }
-    )", "record_attached.cmm"), 0);
+    )", "record_attached.cdd"), 0);
 }
 
 TEST_F(RecordGrammarE2E, StructMethodUsesOwnType) {
     EXPECT_EQ(runSource(R"(
         struct S { int32 x; S* self() { return this; } };
         int32 main() { S s; s.x = 5; return s.self()->x - 5; }
-    )", "record_self_method.cmm"), 0);
+    )", "record_self_method.cdd"), 0);
 }
 
 TEST_F(RecordGrammarE2E, StructSelfReferentialFieldFirst) {
     EXPECT_EQ(runSource(R"(
         struct Node { Node* next; int32 value; };
         int32 main() { Node n; n.value = 6; return n.value - 6; }
-    )", "record_self_field.cmm"), 0);
+    )", "record_self_field.cdd"), 0);
 }
 
 TEST_F(RecordGrammarE2E, ElaboratedStructReferenceUsesClassLikeType) {
     EXPECT_EQ(runSource(R"(
         struct S { private: int32 hidden; public: int32 open; };
         int32 main() { struct S s; s.open = 3; return s.open - 3; }
-    )", "record_elaborated.cmm"), 0);
+    )", "record_elaborated.cdd"), 0);
 }
 
 TEST_F(RecordGrammarE2E, ForwardDeclarationThenAttachedStruct) {
@@ -126,7 +126,7 @@ TEST_F(RecordGrammarE2E, ForwardDeclarationThenAttachedStruct) {
         S* g;
         struct S { int32 x; int32 get() { return this->x; } } s;
         int32 main() { s.x = 4; return s.get() - 4; }
-    )", "record_forward_attached.cmm"), 0);
+    )", "record_forward_attached.cdd"), 0);
 }
 
 TEST_F(RecordGrammarE2E, StructWithMethodsInheritsPlainStruct) {
@@ -134,7 +134,7 @@ TEST_F(RecordGrammarE2E, StructWithMethodsInheritsPlainStruct) {
         struct B { int32 x; };
         struct D : B { int32 y; int32 sum() { return this->x + this->y; } };
         int32 main() { D d; d.x = 1; d.y = 2; return d.sum() - 3; }
-    )", "record_inherit_plain.cmm"), 0);
+    )", "record_inherit_plain.cdd"), 0);
 }
 
 TEST_F(RecordGrammarE2E, PlainStructInheritsClassLikeStruct) {
@@ -142,7 +142,7 @@ TEST_F(RecordGrammarE2E, PlainStructInheritsClassLikeStruct) {
         struct B { int32 x; int32 get() { return this->x; } };
         struct D : B { int32 y; };
         int32 main() { D d; d.x = 1; d.y = 2; return d.x + d.y - 3; }
-    )", "record_inherit_classlike.cmm"), 0);
+    )", "record_inherit_classlike.cdd"), 0);
 }
 
 TEST_F(RecordGrammarE2E, CompileTimeDeadBranchRejectsClassLikeStruct) {
@@ -151,7 +151,7 @@ TEST_F(RecordGrammarE2E, CompileTimeDeadBranchRejectsClassLikeStruct) {
             struct Ghost { private: int32 x; }
         }
         int32 main() { Ghost g; return 0; }
-    )", "record_dead_branch.cmm"), -1);
+    )", "record_dead_branch.cdd"), -1);
 }
 
 TEST_F(RecordGrammarE2E, StructAndClassLayoutSame) {
@@ -161,5 +161,5 @@ TEST_F(RecordGrammarE2E, StructAndClassLayoutSame) {
         int32 main() {
             return compile_time.size_of(S) == compile_time.size_of(C) ? 0 : 1;
         }
-    )", "record_layout.cmm"), 0);
+    )", "record_layout.cdd"), 0);
 }
