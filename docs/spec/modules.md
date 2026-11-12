@@ -13,7 +13,7 @@
 | `export decl` / `export namespace A { … }` | 置 `DeclAST::isExported` | `[impl]` 参与模块的默认私有，导出者进全局（MOD-05/06） |
 | `namespace A { ... }` | `NamespaceDeclAST` | 名称修饰 + 限定/非限定查找（PAR-22/MOD-12） |
 
-导入解析（`src/driver/ModuleLoader.*`）：搜索顺序为**导入者目录 → `-M/--module-path` → `STD_DIR`**；点分名映射为目录（`a.b` → `a/b.cdd`）；`loaded` 规范化路径去重、`active` DFS 栈检测**导入环并报错**（MOD-07）。被导入的声明**前插**到导入单元之前，因此对其全部可见（单遍语义分析需要）。`std.c` 绑定层即 `libs/std/c.cdd`（内嵌兜底）。
+导入解析（`src/driver/ModuleLoader.*`）：搜索顺序为**导入者目录 → `-M/--module-path` → `STD_DIR`**；点分名映射为目录（`a.b` → `a/b.cdd`）；`loaded` 规范化路径去重、`active` DFS 栈检测**导入环并报错**（MOD-07）。被导入的声明**前插**到导入单元之前，因此对其全部可见（单遍语义分析需要）。`std.c` 绑定层即 `libs/std/c.cdd`；编译器不内嵌该文本，缺失标准库时驱动显式报错。
 
 可见性（`src/sema/SemanticAnalyzer.cpp`）：符号表仍为 `Scope` 重载集链。声明 `module NAME;` 的单元为**参与模块**，其声明注册在**每模块私有作用域**（`moduleScopes`）中；只有 `export`/`public` 的声明才同时注册到全局作用域。因此导入者只能看到导出接口，而模块内部仍可使用私有成员。未声明 `module` 的**遗留/匿名单元**（如预置 `std.c` 与既有测试）保持全部全局可见，向后兼容。`main` 始终视为导出（程序入口）。
 

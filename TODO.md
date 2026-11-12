@@ -8,7 +8,7 @@
 
 > **进度快照（2026-11-09，module/namespace 职责分离 + record 文法统一）**：`module`/`import` 只使用点分路径，`namespace` 声明与限定访问只使用 `::`；`import` 只控制可见性——模块根部导出保持非限定访问，namespace 成员必须限定访问（`import std.vec;` → `std::Vec`，不是 `Vec` 或 `std.vec::Vec`）。`struct`/`class` 合并到同一 `parseRecordDecl(bool)`：两者都支持字段、方法、运算符、静态成员、嵌套类型、`using`、访问段与 attached declarator；`struct` 默认 public，`class` 默认 private。带方法/访问段的 `struct` 复用 `ClassType`，纯数据 `struct` 仍为 `StructType`；`union` 模型不变。全量 **1829/1829** 通过，`examples/all_features.cdd` 输出 `ALL FEATURES OK`。终审补丁还修复了：elaborated `struct S` 引用优先解析 ClassType、前向声明不生成空 LLVM 类型、attachedVars 在前向+定义路径不丢、`import a::b` 驱动预扫描不再预加载部分模块、`compile_time.if` 死分支的 class-like struct 毒化、struct 自引用方法/字段、struct/class 交叉继承。`string`/`string_view` 迁移与删除 `struct` 仍为后续项。
 
-> **进度快照（2026-11-07，历史身份硬改名；已由 2026-11-12 统一改名归一化）**：语言正式命名 **CDD（C dot dot）**，源文件后缀 **`.cdd`**；CLI/CMake 项目/LLVM module/安装路径统一为 `cdd`/`CDD`，C++ 内部 namespace 统一为 `cdd`，内部 builtin 与 helper 改为 `__cdd_*`/`cdd.*`。公开语言命名空间与标准库模块保持 `std`。旧扩展名输入/导入明确拒绝。全量 **1802/1802** 通过，`examples/all_features.cdd` 输出 `ALL FEATURES OK`。
+> **进度快照（2026-11-07，历史身份硬改名；已由 2026-11-12 统一改名归一化）**：语言正式命名 **CDD（C dot dot）**，源文件后缀 **`.cdd`**；CLI/CMake 项目/LLVM module/安装路径统一为 `cdd`/`CDD`，C++ 内部 namespace 统一为 `cdd`，内部 builtin 与 helper 改为 `__cdd_*`/`cdd.*`。公开语言命名空间与标准库模块保持 `std`。旧 `.smc` 扩展名输入/导入明确拒绝。全量 **1802/1802** 通过，`examples/all_features.cdd` 输出 `ALL FEATURES OK`。
 >
 > 本文件是唯一的需求与进度追踪清单。每条以稳定 ID 编号，便于 issue/commit 引用。
 >

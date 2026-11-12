@@ -1248,12 +1248,12 @@
 - 背景：语言正式命名 **CDD（C dot dot）**，源文件后缀统一 `.cdd`；对外标准库命名空间/模块保持 `std`，编译器内部 C++ 命名空间改为 `cdd`。
 - 构建身份：CMake 项目 `CDD`，库目标 `cdd_lib`，可执行文件 `build/bin/cdd`，LLVM module `cdd`，安装目录 `share/cdd/libs`，环境变量/宏 `CDD_STD_DIR`、`CDD_INSTALL_*`，`compile_time.build.compiler` 返回 `"cdd"`。
 - 源文件迁移：22 个标准库源文件统一为 `.cdd`；`examples/all_features.cdd`、`resources/main_min.cdd`、测试 fixture 同步改名；模块加载器、预置层、测试合成文件名和 CTest 输入全部改用 `.cdd`。
-- 兼容：硬切换，不保留旧扩展名别名；命令行旧扩展名输入和旧扩展名导入均报明确的迁移错误。
+- 兼容：硬切换，不保留 `.smc` 别名；命令行 `.smc` 输入和 `.smc` 导入均报明确的迁移错误。
 - 内部命名：C++ 内部命名空间、UTF-8 辅助命名空间、内部 builtin 与 helper 统一为 `cdd` / `cdd_utf8` / `__cdd_*` / `cdd.*`；快照环境变量统一为 `CDD_UPDATE_SNAPSHOTS`。
 - 文档：新增根 `README.md`（英文主文 + 中文简介）；`docs/spec/` 全部标题统一为 `CDD 1.0`，路径/代码围栏/工具命令同步；历史 TODO/Progress/设计计划中的旧产品名机械归一化。
-- 提交：`46803c1`（构建身份）、`0074103`（`.cdd` 迁移与旧扩展名拒绝）、`ca7f098`（内部命名）、`51ba350`（文档/README）、`c511006`（终审修正）。
+- 提交：`46803c1`（构建身份）、`0074103`（源文件后缀迁移与 `.smc` 拒绝）、`ca7f098`（内部命名）、`51ba350`（文档/README）、`c511006`（终审修正）。
 - 验证：`cmake -S . -B build && cmake --build build -j$(nproc)` 成功；`ctest --test-dir build -j8` **1802/1802** 通过；`build/bin/cdd examples/all_features.cdd` 输出 `ALL FEATURES OK`；安装布局包含 `bin/cdd` 与 `share/cdd/libs/std/c.cdd`。
-- 评审修复（2026-11-08）：命令行输入名为 `.smc` 的隐藏文件时改按后缀拒绝（`path::extension()` 对其返回空）；嵌套旧扩展名导入诊断补上导入者路径与 specifier；裸文件名输入现在按当前目录搜索同级导入；恢复 static-member 测试 fixture 的原名；统一两个 spec 分册标题；模块后缀长度改为显式常量并清理过期注释。新增 3 个回归测试（隐藏 `.smc`、嵌套诊断上下文、裸文件名同级导入）。
+- 评审修复（2026-11-08）：命令行输入名为 `.smc` 的隐藏文件时改按后缀拒绝（`path::extension()` 对其返回空）；嵌套 `.smc` 导入诊断补上导入者路径与 specifier；裸文件名输入现在按当前目录搜索同级导入；恢复 static-member 测试 fixture 的原名；统一两个 spec 分册标题；模块后缀长度改为显式常量并清理过期注释。新增 3 个回归测试（隐藏 `.smc`、嵌套诊断上下文、裸文件名同级导入）。
 
 ## 2026-11-09 — module/namespace 职责分离 + struct/class record 文法统一
 

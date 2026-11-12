@@ -48,6 +48,6 @@ library, tests, examples, and documentation.
 - No text file tracked by git contains the old lowercase identity, old
   capitalized identity, old uppercase identity, or old source suffix.
 - No tracked file name contains the old identity or old source suffix.
-- `build/bin/cdd` builds; `build/bin/compiler_tests` passes in full.
-- `build/bin/cdd examples/all_features.cdd` prints `ALL FEATURES OK`.
+- `build/bin/cdd` builds.
 - `ctest --test-dir build -j8` is fully green.
+- `build/bin/cdd examples/all_features.cdd` prints `ALL FEATURES OK`.
