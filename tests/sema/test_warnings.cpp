@@ -189,3 +189,16 @@ TEST_F(WarningAnalysisTest, UnreachableWarningHasSourceLocation) {
         }
     }
 }
+
+TEST_F(WarningAnalysisTest, WarnsWhenByRefClosureEscapes) {
+    auto r = analyze(R"(
+        auto make_ref() {
+            int32 x = 7;
+            return [&x]() -> int32 { return x; };
+        }
+        int32 main() { return 0; }
+    )");
+    ASSERT_TRUE(r.errors.empty());
+    EXPECT_EQ(r.count(DiagnosticCode::WarnClosureEscape), 1);
+    EXPECT_TRUE(r.mentions(DiagnosticCode::WarnClosureEscape, "by-reference"));
+}

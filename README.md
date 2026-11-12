@@ -137,11 +137,16 @@ The last line must be `ALL FEATURES OK`.
 
 CDD is an actively developed compiler. The normative spec marks features as
 `[impl]`, `[plan]`, or `[ng]` (non-goal). By-value capturing closures can
-escape by returning them from an `auto`-return function; returning a closure
-with by-reference or `this` captures is rejected at compile time. Anonymous
-closure types stored in struct fields or arrays remain unsupported. Other
-limitations include some template-body lambda cases and platform support
-beyond Linux x86-64; see `TODO.md` for the up-to-date list.
+escape by returning them from an `auto`-return function. By-reference and
+`this` captures may also escape; the closure copies its raw pointers and the
+caller must ensure the captured storage outlives it (warning `W3006`). Closure
+types are nominal but can be named with `decltype(expr)` for aliases, struct
+fields, arrays, and ordinary parameters. `auto` arrays infer their element type
+from the brace initializer, and closure calls work through fields, array
+elements, and returned rvalues. Auto-return instance methods are supported;
+static methods still require an explicit return type. Other limitations include
+some template-body lambda cases and platform support beyond Linux x86-64; see
+`TODO.md` for the up-to-date list.
 
 ## Naming
 

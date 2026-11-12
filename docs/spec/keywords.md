@@ -99,7 +99,8 @@
 | `static_assert` | `[impl]` | 作为 `compile_time.static_assert`，**不设独立关键字**（NG-12） |
 | `sizeof` | `[impl]` | 一元运算符 |
 | `alignof` / `offsetof` | `[impl]` | 独立关键字形式已实现（PAR-14） |
-| `typeof` | `[remove]` | DEC-18 裁决移除；类型查询改由 `compile_time` 反射（CT-07）承担 |
+| `decltype` | `[impl]` | 类型查询 `decltype(expr)`：只分析表达式类型、不求值；可命名匿名闭包类型（2026-11-12） |
+| `typeof` | `[remove]` | DEC-18 裁决移除；`decltype` 与 `compile_time` 反射承担当前类型查询 |
 | `cast` | `[remove]` | DEC-18 裁决移除；显式转换用 `static_cast`/`reinterpret_cast`（LEX-11） |
 | `type_info` | `[remove]` | 由 `compile_time` 反射取代（NG-12） |
 
@@ -137,6 +138,6 @@
 1. 本表为**唯一权威**；新增关键字需同步更新 `Lexer.cpp`、`Token.h` 与本文件。
 2. 不以关键字形式复用的标识符：`str`、`String`、`Array` 等标准库类型名保持普通标识符。
 3. 上下文关键字（`using`/`type`/`protected`/`compile_time`）在引入二义性前不改为一等关键字，见 DEC-16。
-4. **DEC-18 已裁决**：移除 `register`/`cast`/`typeof`/`comptime`/`generic` 的 token（已从 `Token.h`、`Lexer.cpp`、`Utils.cpp` 删除）。显式转换改用 `static_cast`/`reinterpret_cast`（LEX-11），类型查询改用 `compile_time` 反射（CT-07）。
+4. **DEC-18 已裁决**：移除 `register`/`cast`/`typeof`/`comptime`/`generic` 的 token（已从 `Token.h`、`Lexer.cpp`、`Utils.cpp` 删除）。显式转换改用 `static_cast`/`reinterpret_cast`（LEX-11）；当前类型查询由 `decltype(expr)` 与 `compile_time` 反射承担，旧 `typeof` 拼写不恢复。
 5. `print`/`println`/`assert`/`panic` 是**内建标识符**，不是关键字：它们仍是普通标识符，仅在用户未声明同名函数时由语义分析按内建处理（见 `stdlib.md`）。
 6. `static_cast`/`reinterpret_cast` 是**上下文关键字**：作为普通标识符，仅在紧跟 `<类型>` 时按转换运算符解析（LEX-11 / PAR-18 / DEC-18，见 `conversions.md` §5）。

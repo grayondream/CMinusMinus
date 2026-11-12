@@ -514,6 +514,10 @@ public:
     // pointee function signature in `resolvedParamTypes` (no implicit this).
     bool isFunctionPointerCall = false;
     std::unique_ptr<MemberAccessExprAST> fieldCallee;
+    // `obj.closure_field(args)` / `ptr->closure_field(args)`: sema rewrites
+    // the member call into a general expression callee so codegen shares the
+    // closure-call address lowering.
+    std::unique_ptr<CallExprAST> closureDispatch;
 
     // CT-07: compile_time reflection call (name_of/fields_of/attributes_of).
     // Sema records data in ReflectionRegistry and sets the kind + target type;

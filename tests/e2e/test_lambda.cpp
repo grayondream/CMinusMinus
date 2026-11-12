@@ -498,12 +498,48 @@ TEST_F(LambdaE2E, AutoReturnPrototypeRejected) {
     EXPECT_TRUE(hasErrorContaining(errs, "must have a body"));
 }
 
-TEST_F(LambdaE2E, AutoReturnMethodRejected) {
-    auto errs = compileErrors(R"(
-        class C { public: auto f() { return 1; } };
-        int32 main() { return 0; }
-    )", "auto_ret_method.cdd");
-    EXPECT_TRUE(hasErrorContaining(errs, "not supported on methods"));
+TEST_F(LambdaE2E, AutoReturnInstanceMethod) {
+    EXPECT_EQ(runSource(R"(
+        class C { public: auto twice(int32 x) { return x * 2; } };
+        int32 main() { C c; return c.twice(21) - 42; }
+    )", "auto_ret_instance_method.cdd"), 0);
+}
+
+TEST_F(LambdaE2E, AutoReturnOutOfClassInstanceMethod) {
+    EXPECT_EQ(runSource(R"(
+        class C { public: auto twice(int32 x); };
+        auto C::twice(int32 x) { return x * 2; }
+        int32 main() { C c; return c.twice(21) - 42; }
+    )", "auto_ret_ooc_instance_method.cdd"), 0);
+}
+
+TEST_F(LambdaE2E, ThisClosureReturnOutOfClassAllowed) {
+    EXPECT_EQ(runSource(R"(
+        class C { public: int32 x; auto get(); };
+        auto C::get() { return [this]() -> int32 { return x; }; }
+        int32 main() {
+            C c;
+            c.x = 7;
+            auto f = c.get();
+            return f() - 7;
+        }
+    )", "auto_ret_this_ooc_ok.cdd"), 0);
+}
+
+TEST_F(LambdaE2E, ThisClosureReturnAllowed) {
+    EXPECT_EQ(runSource(R"(
+        class C {
+        public:
+            int32 x;
+            auto get() { return [this]() -> int32 { return x; }; }
+        };
+        int32 main() {
+            C c;
+            c.x = 7;
+            auto f = c.get();
+            return f() - 7;
+        }
+    )", "auto_ret_this_ok.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, AutoReturnCompileTimeRejected) {
@@ -514,27 +550,25 @@ TEST_F(LambdaE2E, AutoReturnCompileTimeRejected) {
     EXPECT_TRUE(hasErrorContaining(errs, "compile_time"));
 }
 
-TEST_F(LambdaE2E, ByReferenceClosureReturnRejected) {
-    auto errs = compileErrors(R"(
-        auto bad() {
+TEST_F(LambdaE2E, ByReferenceClosureReturnAllowed) {
+    EXPECT_EQ(runSource(R"(
+        auto make_ref() {
             int32 x = 7;
             return [&x]() -> int32 { return x; };
         }
-        int32 main() { return 0; }
-    )", "auto_ret_ref.cdd");
-    EXPECT_TRUE(hasErrorContaining(errs, "by-reference captures cannot escape by return"));
+        int32 main() { auto f = make_ref(); return 0; }
+    )", "auto_ret_ref_ok.cdd"), 0);
 }
 
-TEST_F(LambdaE2E, IndirectByReferenceClosureReturnRejected) {
-    auto errs = compileErrors(R"(
-        auto bad() {
+TEST_F(LambdaE2E, IndirectByReferenceClosureReturnAllowed) {
+    EXPECT_EQ(runSource(R"(
+        auto make_ref() {
             int32 x = 7;
             auto f = [&x]() -> int32 { return x; };
             return f;
         }
-        int32 main() { return 0; }
-    )", "auto_ret_ref_indirect.cdd");
-    EXPECT_TRUE(hasErrorContaining(errs, "by-reference captures cannot escape by return"));
+        int32 main() { auto f = make_ref(); return 0; }
+    )", "auto_ret_ref_indirect_ok.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, ByReferenceClosureLocalCallStillAllowed) {
@@ -601,6 +635,91 @@ TEST_F(LambdaE2E, ReturnedClosureFromBranch) {
     )", "auto_ret_closure_branch.cdd"), 0);
 }
 
+TEST_F(LambdaE2E, DecltypeClosureField) {
+    EXPECT_EQ(runSource(R"(
+        auto make_adder(int32 x) {
+            return [x](int32 y) -> int32 { return x + y; };
+        }
+        using Adder = decltype(make_adder(0));
+        struct Box { Adder f; };
+        int32 main() {
+            Box b = { make_adder(40) };
+            return b.f(2) - 42;
+        }
+    )", "closure_field_decltype.cdd"), 0);
+}
+
+TEST_F(LambdaE2E, DecltypeClosureFieldDirect) {
+    EXPECT_EQ(runSource(R"(
+        auto make_adder(int32 x) {
+            return [x](int32 y) -> int32 { return x + y; };
+        }
+        struct Box { decltype(make_adder(0)) f; };
+        int32 main() {
+            Box b = { make_adder(40) };
+            return b.f(2) - 42;
+        }
+    )", "closure_field_decltype_direct.cdd"), 0);
+}
+
+TEST_F(LambdaE2E, DecltypeClosureParameter) {
+    EXPECT_EQ(runSource(R"(
+        auto make_adder(int32 x) {
+            return [x](int32 y) -> int32 { return x + y; };
+        }
+        using Adder = decltype(make_adder(0));
+        int32 call(Adder f, int32 x) { return f(x); }
+        int32 main() { return call(make_adder(40), 2) - 42; }
+    )", "closure_param_decltype.cdd"), 0);
+}
+
+TEST_F(LambdaE2E, DecltypeClosureFieldArray) {
+    EXPECT_EQ(runSource(R"(
+        auto make_adder(int32 x) {
+            return [x](int32 y) -> int32 { return x + y; };
+        }
+        using Adder = decltype(make_adder(0));
+        struct Box { Adder fs[2]; };
+        int32 main() {
+            Box b = { { make_adder(10), make_adder(20) } };
+            return b.fs[0](1) + b.fs[1](1) - 32;
+        }
+    )", "closure_field_array_decltype.cdd"), 0);
+}
+
+TEST_F(LambdaE2E, AutoArrayOfClosures) {
+    EXPECT_EQ(runSource(R"(
+        auto make_adder(int32 x) {
+            return [x](int32 y) -> int32 { return x + y; };
+        }
+        int32 main() {
+            auto a[2] = { make_adder(10), make_adder(20) };
+            return a[0](1) + a[1](1) - 32;
+        }
+    )", "closure_array_auto.cdd"), 0);
+}
+
+TEST_F(LambdaE2E, AutoArrayOfClosuresUnsized) {
+    EXPECT_EQ(runSource(R"(
+        auto make_adder(int32 x) {
+            return [x](int32 y) -> int32 { return x + y; };
+        }
+        int32 main() {
+            auto a[] = { make_adder(10), make_adder(20) };
+            return a[0](1) + a[1](1) - 32;
+        }
+    )", "closure_array_auto_unsized.cdd"), 0);
+}
+
+TEST_F(LambdaE2E, ReturnedClosureImmediateCall) {
+    EXPECT_EQ(runSource(R"(
+        auto make_adder(int32 x) {
+            return [x](int32 y) -> int32 { return x + y; };
+        }
+        int32 main() { return make_adder(40)(2) - 42; }
+    )", "closure_rvalue_call.cdd"), 0);
+}
+
 TEST_F(LambdaE2E, AutoReturnCompoundLiteralRejected) {
     auto errs = compileErrors(R"(
         auto make() { return (int32[2]){1, 2}; }
@@ -620,17 +739,16 @@ TEST_F(LambdaE2E, AutoReturnSliceLiteralRejected) {
     EXPECT_TRUE(hasErrorContaining(errs, "cannot return a slice backed by a stack literal"));
 }
 
-TEST_F(LambdaE2E, NestedByReferenceClosureReturnRejected) {
-    auto errs = compileErrors(R"(
-        auto bad() {
+TEST_F(LambdaE2E, NestedByReferenceClosureReturnAllowed) {
+    EXPECT_EQ(runSource(R"(
+        auto make_ref() {
             int32 y = 7;
             auto inner = [&y]() -> int32 { return y; };
             auto outer = [inner]() -> int32 { return inner(); };
             return outer;
         }
-        int32 main() { return 0; }
-    )", "auto_ret_nested_ref.cdd");
-    EXPECT_TRUE(hasErrorContaining(errs, "by-reference captures cannot escape by return"));
+        int32 main() { auto f = make_ref(); return 0; }
+    )", "auto_ret_nested_ref_ok.cdd"), 0);
 }
 
 TEST_F(LambdaE2E, AutoReturnOutOfClassStaticRejected) {
@@ -639,7 +757,7 @@ TEST_F(LambdaE2E, AutoReturnOutOfClassStaticRejected) {
         auto C::f() { return 1; }
         int32 main() { return 0; }
     )", "auto_ret_ooc_static.cdd");
-    EXPECT_TRUE(hasErrorContaining(errs, "not supported on methods"));
+    EXPECT_TRUE(hasErrorContaining(errs, "not supported on static methods"));
 }
 
 TEST_F(LambdaE2E, AutoReturnCallBeforeDefinitionRejected) {
@@ -679,5 +797,5 @@ TEST_F(LambdaE2E, AutoReturnMethodPrototypeDiagnostic) {
         class C { public: auto f(); };
         int32 main() { return 0; }
     )", "auto_ret_method_proto.cdd");
-    EXPECT_TRUE(hasErrorContaining(errs, "not supported on methods"));
+    EXPECT_TRUE(hasErrorContaining(errs, "must have a body"));
 }

@@ -61,6 +61,10 @@ enum class TypeKind {
     // Review 2.6: parser placeholder for `auto name = init;`; sema replaces
     // it with the initializer's type before codegen.
     Auto,
+    // Type-only query: `decltype(expr)`. Resolved by sema; never reaches
+    // codegen. This makes a nominal closure type nameable so it can be used
+    // in aliases, fields, arrays, and ordinary parameters.
+    Decltype,
 };
 
 class Type {
@@ -283,6 +287,17 @@ public:
 
     explicit TypeVarType(const std::string& n)
         : Type(TypeKind::TypeVar), name(n) {}
+};
+
+// `decltype(expr)` placeholder. The expression is analyzed for its type only;
+// it is never emitted. The shared_ptr keeps the type copyable enough for the
+// existing Type* handoff paths.
+class DecltypeType : public Type {
+public:
+    std::shared_ptr<ExprAST> expr;
+
+    explicit DecltypeType(std::shared_ptr<ExprAST> e)
+        : Type(TypeKind::Decltype), expr(std::move(e)) {}
 };
 
 // P1-03 / GEN-03: parse 期模板使用占位（`Box<i32>`、`Array<T, 8>`）。

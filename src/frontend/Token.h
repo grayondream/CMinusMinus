@@ -33,6 +33,7 @@ enum class TokenType : int32_t {
     TOKEN_CLASS,
     TOKEN_CONST,
     TOKEN_AUTO,
+    TOKEN_DECLTYPE,
     TOKEN_STATIC,
     TOKEN_EXTERN,
     TOKEN_VOLATILE,

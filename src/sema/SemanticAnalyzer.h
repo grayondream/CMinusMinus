@@ -291,6 +291,8 @@ private:
     void visit(BinaryExprAST& node);
     void visit(UnaryExprAST& node);
     void visit(CallExprAST& node);
+    // Shared closure-call validation for named and expression callees.
+    bool analyzeClosureCall(CallExprAST& node, StructType* closure);
     void visit(AssignmentExprAST& node);
     void visit(TernaryExprAST& node);
     void visit(CastExprAST& node);
@@ -358,8 +360,8 @@ private:
     // Rewrite a bare field name to `this->name` when the innermost lambda
     // captures `this`. Returns true when the rewrite happened.
     bool desugarImplicitThis(VariableExprAST& node, const std::string& name);
-    // Reject returning a closure whose environment points into the creating
-    // frame (by-reference capture or captured `this`).
+    // Warn when a returned closure carries by-reference/`this` pointers.
+    // The closure struct is copied as usual; captured storage must outlive it.
     void checkClosureReturnEscape(Type* returnValueType, const ASTNode& at);
     // Reject returning stack-backed compound literals/slice literals and
     // slice views of local arrays. Shared by declared, lambda-inferred, and
@@ -381,6 +383,12 @@ private:
     // P1-03 / INH-05 / GEN-09: 惰性方法体——基类实例（CRTP）延迟到首次调用。
     int m_useDepth = 0; // 评审 I2：使用点解析深度
     static constexpr int kMaxTemplateUseDepth = 64;
+    // `decltype(expr)` resolution guard. A type alias can indirectly refer to
+    // itself; diagnose instead of recursing until the stack overflows.
+    std::unordered_set<DecltypeType*> m_decltypeResolving;
+    // Instance auto-return method declarations wait for an out-of-class
+    // definition; unresolved entries are diagnosed after the whole unit.
+    std::unordered_map<std::string, FunctionDeclAST*> m_pendingAutoMethodPrototypes;
     std::vector<std::string> m_definingStack; // visit 中的类名栈（CRTP 自嵌套检测）
     std::unordered_set<std::string> m_lazyInstanceMethods;
     std::unordered_map<std::string, std::vector<FunctionDeclAST*>> m_pendingLazyMethods;

@@ -1029,7 +1029,8 @@ llvm::Value* CallExprAST::codegen(CodegenContext& ctx) {
         return emitAtomicBuiltin(ctx, *this);
     }
     // General expression callee: evaluate the function pointer expression.
-    if (isExprCallee) {
+    // Closure expression callees take the dedicated branch below.
+    if (isExprCallee && !isClosureCall) {
         llvm::Value* fnPtr = calleeExpr ? calleeExpr->codegen(ctx) : nullptr;
         if (!fnPtr) return nullptr;
         if (calleeExpr->isLValue) fnPtr = readLValue(ctx, *calleeExpr, fnPtr);
@@ -1054,7 +1055,26 @@ llvm::Value* CallExprAST::codegen(CodegenContext& ctx) {
     // Review 2.6: captured-lambda closure call — pass the closure address as
     // the hidden first argument.
     if (isClosureCall) {
-        llvm::Value* closureAddr = ctx.lookupVariableAddr(callee);
+        llvm::Value* closureAddr = nullptr;
+        if (isExprCallee && calleeExpr) {
+            if (calleeExpr->isLValue) {
+                // Field/member or array element: codegen already yields the
+                // address of the closure struct.
+                closureAddr = calleeExpr->codegen(ctx);
+            } else {
+                // Rvalue closure (e.g. a returned closure): materialize it in
+                // a temporary so the hidden closure pointer is valid.
+                llvm::Value* closureVal = calleeExpr->codegen(ctx);
+                if (!closureVal || !calleeExpr->type) return nullptr;
+                auto* tmp = ctx.getBuilder().CreateAlloca(
+                    ctx.getLLVMType(calleeExpr->type), nullptr,
+                    "closure.rvalue");
+                ctx.getBuilder().CreateStore(closureVal, tmp);
+                closureAddr = tmp;
+            }
+        } else {
+            closureAddr = ctx.lookupVariableAddr(callee);
+        }
         if (!closureAddr) return nullptr;
         llvm::Function* calleeFn = ctx.getModule().getFunction(mangledCallee);
         if (!calleeFn) return nullptr;
@@ -1650,6 +1670,9 @@ llvm::Value* CallExprAST::codegen(CodegenContext& ctx) {
 }
 
 llvm::Value* MethodCallExprAST::codegen(CodegenContext& ctx) {
+    // A closure-valued aggregate field was rewritten by sema into an
+    // expression call; reuse the shared closure-call lowering.
+    if (closureDispatch) return closureDispatch->codegen(ctx);
     // CT-07: compile_time reflection — name_of/fields_of/attributes_of.
     // Must run before ctConstantOrNull (which would fold the ctHandled flag
     // into a default int constant).

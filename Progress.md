@@ -1347,3 +1347,15 @@
 - 文档：README 标题/首段/Hello/Why/布局/命名说明改为 CDD；`docs/spec/*` 标题和正文统一；历史 2026-11-07 改名条目及设计/计划加注“已归一化”；工作区目录 `My_LLVM_C` 与公开 `std` namespace 保持不变。
 - 兼容性：不保留旧身份/旧后缀别名；标准库模块发现只使用 `.cdd`。直接编译输入的扩展名仍不参与语言语义。
 - 验证：`cmake -S . -B build` 成功；`cmake --build build -j$(nproc)` 成功；全量 `ctest --test-dir build -j8` **1888/1888** 通过；`build/bin/cdd examples/all_features.cdd` 输出 `ALL FEATURES OK`；`build/bin/cdd --help` 显示 `Usage: cdd ...`；旧身份在 tracked 文本/路径/旧后缀中均无命中。
+
+## 2026-11-12 — 闭包逃逸与一等存储
+
+- 背景：用户指出两条闭包限制：按引用/`this` 捕获的闭包返回在 sema 被硬性拒绝；匿名闭包类型不能作为结构体字段或数组元素。设计/计划：`docs/superpowers/specs/2026-11-12-closure-first-class-design.md`、`docs/superpowers/plans/2026-11-12-closure-first-class.md`。
+- 逃逸：`checkClosureReturnEscape` 从错误改为 **W3006** 警告（`returned closure contains by-reference captures; captured storage must outlive the closure` / `returned closure captures 'this'; the object must outlive the closure`）。闭包按普通 struct 复制，原始指针不延长被引用局部/对象生命周期；嵌套闭包标志继续递归传播。未引入堆提升、引用计数、GC 或 type erasure。
+- `auto` 方法：实例方法支持返回类型推导（类内和类外）；类外 `auto` 定义会同步 `ClassType::methods` 与类内声明 AST，避免 codegen 先以 int32 建原型再复用错误签名。静态方法、`compile_time`、`compile_only` 仍拒绝 `auto`。类内 `auto` 原型延迟到整单元结束检查，未定义时仍报 `must have a body`。
+- `decltype`：新增 `TOKEN_DECLTYPE` / `TypeKind::Decltype` / `DecltypeType`；sema 只分析表达式类型、不求值。可用于 `using`、字段、数组元素、普通参数、局部变量、返回类型、`sizeof`/cast 等 type-id 位置；带递归保护；模板体内 `decltype` 定向拒绝。`visit(UsingDeclAST)` 先解析别名类型。
+- 字段解析：parser 在 `recordBodyLooksClassLike` 中跟踪括号深度，避免把 `decltype(make(0)) f;` 的内层调用误判为方法；sema 对已由 parser 注册的字段刷新 resolved type，修复直接 `decltype` 字段仍保留占位类型的问题。
+- `auto` 数组：`auto a[] = { ... }` / `auto a[N] = { ... }` 从首个初始化器推导元素类型，其余元素用 `typesCompatible` 检查；空/非 brace 初始化器报错。
+- 闭包调用：`CallExprAST` 支持表达式 callee 的闭包签名；codegen 对左值字段/数组元素取地址，对右值闭包存临时 alloca。`MethodCallExprAST` 将闭包字段调用改写为 `CallExprAST` 的 expression-callee 路径，支持 `obj.f(args)`、`ptr->f(args)`。这同时覆盖 `make()(args)` 链式调用。
+- 测试：新增/更新 LambdaE2E（逃逸允许、W3006、类内/类外 auto 方法、this 逃逸、`decltype` 字段/参数/字段数组、`auto` 闭包数组、rvalue 闭包调用）、ParserDeclTest（`decltype` 别名/字段）、WarningAnalysisTest（W3006）；全量由 1888 增至 **1901/1901** 通过。
+- 验证：`cmake --build build -j$(nproc)` 成功；`ctest --test-dir build -j8` **1901/1901**；`build/bin/cdd examples/all_features.cdd` 输出 `ALL FEATURES OK`。

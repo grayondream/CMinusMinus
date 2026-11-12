@@ -60,6 +60,9 @@ enum class DiagnosticCode {
     WarnDeprecated,
     // P1-05 / ANN-05
     WarnNullNonnull,
+    // Closure escape: by-reference/`this` captures are copied as raw pointers;
+    // the captured storage must outlive the returned closure.
+    WarnClosureEscape,
 };
 
 // Human-readable metadata for a code (the registry, INF-13).

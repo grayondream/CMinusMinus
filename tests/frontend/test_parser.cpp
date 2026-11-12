@@ -1523,6 +1523,28 @@ TEST_F(ParserDeclTest, UsingDecl) {
     EXPECT_EQ(u->aliasedType->kind, TypeKind::Int32);
 }
 
+TEST_F(ParserDeclTest, UsingDecltypeAlias) {
+    auto tu = parse("int32 f(); using T = decltype(f());");
+    ASSERT_NE(tu, nullptr);
+    ASSERT_EQ(tu->declarations.size(), 2u);
+    auto u = dynamic_cast<UsingDeclAST*>(tu->declarations[1].get());
+    ASSERT_NE(u, nullptr);
+    EXPECT_EQ(u->name, "T");
+    EXPECT_EQ(u->aliasedType->kind, TypeKind::Decltype);
+}
+
+TEST_F(ParserDeclTest, DecltypeFieldIsNotMistakenForMethod) {
+    auto tu = parse("struct Box { decltype(make(0)) f; };");
+    ASSERT_NE(tu, nullptr);
+    ASSERT_EQ(tu->declarations.size(), 1u);
+    auto sd = dynamic_cast<StructDeclAST*>(tu->declarations[0].get());
+    ASSERT_NE(sd, nullptr);
+    ASSERT_EQ(sd->fields.size(), 1u);
+    EXPECT_EQ(sd->fields[0].name, "f");
+    EXPECT_EQ(sd->fields[0].type->kind, TypeKind::Decltype);
+    EXPECT_TRUE(sd->methods.empty());
+}
+
 TEST_F(ParserDeclTest, UsingAnonStruct) {
     auto tu = parse("using Point = struct { int32 x; int32 y; };");
     ASSERT_NE(tu, nullptr);

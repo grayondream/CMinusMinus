@@ -204,7 +204,8 @@ template-argument   = type | const-expr ;  (* [impl] SG-01: 常量表达式实�
 (* --- 函数 --- *)
 function-decl       = ( type | 'auto' ) , identifier , '(' , [ parameter-list ] , ')' , ( block | ';' ) ;
                       (* [impl] 2026-11-11: 'auto' return deduction for free runtime functions;
-                         body required; methods/compile_time/compile_only rejected by sema. *)
+                         2026-11-12: instance methods supported (in-class or out-of-class);
+                         static/compile_time/compile_only auto returns rejected by sema. *)
 (* [impl] PAR-03：类外方法定义 `type Class::method(params) { ... }`——声明在
    类体内、定义在类外；签名须与类内声明一致。 *)
 method-definition   = type , identifier , '::' , identifier , '(' , [ parameter-list ] , ')'
@@ -224,7 +225,10 @@ parameter           = type , [ identifier ] , [ '=' , const-expr ] ;   (* [impl]
 (* --- 变量 --- *)
 variable-decl-list  = variable-decl , { ',' , variable-decl } , ';' ;
 variable-decl       = type , identifier , [ '[' , const-expr , ']' ] , [ '=' , initializer ]
-                    | 'auto' , identifier , '=' , initializer ;    (* [impl] Review 2.6 仅限有初始化器的变量 *)
+                    | 'auto' , identifier , [ '[' , [ const-expr ] , ']' ] , '=' , initializer ;
+                    (* [impl] Review 2.6: auto variables require an initializer.
+                       2026-11-12: auto array element type is inferred from the
+                       first brace initializer; `[]` infers the length too. *)
 
 (* --- 函数指针 --- *)
 function-pointer-type = type , '(' , '*' , identifier , ')'
@@ -247,7 +251,9 @@ slice-suffix        = '[' , ']' ;                                   (* [impl] Sl
 optional-suffix     = '?' ;                                         (* [impl] OptionalType *)
 
 base-type           = primitive-type | named-type | record-body | enum-body
-                    | template-instance ;
+                    | template-instance
+                    | 'decltype' , '(' , expression , ')' ;
+                    (* [impl] 2026-11-12: type-only query; expression is not evaluated. *)
 (* [impl] atomic 限定符 CON-01：仅整型标量；restrict/atomic 完整语义见 MEM-04 / CON-01 / DEC-11 *)
 
 primitive-type      = 'void' | 'bool' | 'char'

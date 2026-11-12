@@ -566,6 +566,7 @@ std::string SemanticAnalyzer::typeToString(Type* type) const {
         case TypeKind::Str: return "string_view";
         case TypeKind::String: return "string";
         case TypeKind::Auto: return "auto";
+        case TypeKind::Decltype: return "decltype(...)";
         case TypeKind::Pointer: {
             std::string baseStr = typeToString(type->base);
             if (type->isConst) baseStr = "const " + baseStr;
@@ -4518,6 +4519,36 @@ void SemanticAnalyzer::analyzeResultMethod(MethodCallExprAST& node, Type* objTyp
     node.isLValue = false;
 }
 
+bool SemanticAnalyzer::analyzeClosureCall(CallExprAST& node,
+                                          StructType* closure) {
+    if (!closure || !closure->isClosure) return false;
+    if (node.args.size() != closure->closureParamTypes.size()) {
+        emitError("closure call expects " +
+                      std::to_string(closure->closureParamTypes.size()) +
+                      " argument(s), got " + std::to_string(node.args.size()),
+                  node);
+        node.type = nullptr;
+        node.isLValue = false;
+        return true;
+    }
+    for (size_t i = 0; i < node.args.size(); ++i) {
+        Type* at = getExprType(*node.args[i]);
+        if (!at) continue;
+        if (!typesCompatible(closure->closureParamTypes[i], at)) {
+            emitError("closure argument " + std::to_string(i) + ": expected '" +
+                          typeToString(closure->closureParamTypes[i]) +
+                          "', got '" + typeToString(at) + "'",
+                      node);
+        }
+    }
+    node.isClosureCall = true;
+    node.mangledCallee = closure->closureCallName;
+    node.resolvedParamTypes = closure->closureParamTypes;
+    node.type = closure->closureReturnType;
+    node.isLValue = false;
+    return true;
+}
+
 void SemanticAnalyzer::visit(CallExprAST& node) {
     const std::string calleeRef = node.callee;
 
@@ -4568,6 +4599,11 @@ void SemanticAnalyzer::visit(CallExprAST& node) {
     // the signature for codegen's indirect call.
     if (node.isExprCallee && node.calleeExpr) {
         Type* ct = stripTypedef(getExprType(*node.calleeExpr));
+        if (ct && ct->kind == TypeKind::Struct &&
+            static_cast<StructType*>(ct)->isClosure) {
+            analyzeClosureCall(node, static_cast<StructType*>(ct));
+            return;
+        }
         Type* pointee = ct && ct->kind == TypeKind::Pointer ? stripTypedef(ct->base) : nullptr;
         if (!pointee || pointee->kind != TypeKind::Function) {
             emitError("called object is not a function pointer", node);
@@ -4650,30 +4686,7 @@ void SemanticAnalyzer::visit(CallExprAST& node) {
             auto* closure = static_cast<StructType*>(st);
             if (closure->isClosure) {
                 sym->isUsed = true;
-                if (node.args.size() != closure->closureParamTypes.size()) {
-                    emitError("closure call expects " +
-                                  std::to_string(closure->closureParamTypes.size()) +
-                                  " argument(s), got " +
-                                  std::to_string(node.args.size()), node);
-                    node.type = nullptr;
-                    node.isLValue = false;
-                    return;
-                }
-                for (size_t i = 0; i < node.args.size(); ++i) {
-                    Type* at = getExprType(*node.args[i]);
-                    if (!at) continue;
-                    if (!typesCompatible(closure->closureParamTypes[i], at)) {
-                        emitError("closure argument " + std::to_string(i) +
-                                      ": expected '" +
-                                      typeToString(closure->closureParamTypes[i]) +
-                                      "', got '" + typeToString(at) + "'", node);
-                    }
-                }
-                node.isClosureCall = true;
-                node.mangledCallee = closure->closureCallName;
-                node.resolvedParamTypes = closure->closureParamTypes;
-                node.type = closure->closureReturnType;
-                node.isLValue = false;
+                analyzeClosureCall(node, closure);
                 return;
             }
         }
@@ -5746,6 +5759,9 @@ void SemanticAnalyzer::visit(MemberAccessExprAST& node) {
 }
 
 void SemanticAnalyzer::visit(MethodCallExprAST& node) {
+    // A closure-field call was rewritten in place; a repeated visit (e.g.
+    // through auto-initializer analysis) must not touch the moved children.
+    if (node.closureDispatch) return;
     // P1-04 / CT-01/02: compile_time 成员调用特判（先于对象解析，理由同链形）。
     if (tryAnalyzeCompileTimeCall(node)) {
         return;
@@ -5792,6 +5808,45 @@ void SemanticAnalyzer::visit(MethodCallExprAST& node) {
         node.type = nullptr;
         node.isLValue = false;
         return;
+    }
+
+    // `obj.closure_field(args)` / `ptr->closure_field(args)`: the parser
+    // represents every member call as MethodCallExprAST. If the member is a
+    // closure-valued field, rewrite it into the general expression-callee
+    // path so codegen can pass the field address as the hidden environment.
+    {
+        Type* owner = stripTypedef(objType);
+        const bool ownerIsPointer = owner && owner->kind == TypeKind::Pointer;
+        if (ownerIsPointer) owner = stripTypedef(owner->base);
+        Type* fieldType = nullptr;
+        if (owner && owner->kind == TypeKind::Struct) {
+            fieldType = static_cast<StructType*>(owner)->getFieldType(node.methodName);
+        } else if (owner && owner->kind == TypeKind::Class) {
+            for (const auto& f : static_cast<ClassType*>(owner)->fields) {
+                if (f.name == node.methodName) {
+                    fieldType = f.type;
+                    break;
+                }
+            }
+        }
+        Type* fieldStripped = fieldType ? stripTypedef(fieldType) : nullptr;
+        if (fieldStripped && fieldStripped->kind == TypeKind::Struct &&
+            static_cast<StructType*>(fieldStripped)->isClosure) {
+            const bool objectLValue = node.object->isLValue;
+            auto member = std::make_unique<MemberAccessExprAST>(
+                ownerIsPointer ? MemberAccessKind::Arrow : MemberAccessKind::Dot,
+                std::move(node.object), node.methodName);
+            member->type = fieldType;
+            member->isLValue = ownerIsPointer || objectLValue;
+            auto call = std::make_unique<CallExprAST>("", std::move(node.args));
+            call->calleeExpr = std::move(member);
+            call->isExprCallee = true;
+            analyzeClosureCall(*call, static_cast<StructType*>(fieldStripped));
+            node.type = call->type;
+            node.isLValue = false;
+            node.closureDispatch = std::move(call);
+            return;
+        }
     }
 
     // Review 2.2: `len()` stays as a compatibility alias on arrays/slices.
@@ -7237,12 +7292,22 @@ void SemanticAnalyzer::checkClosureReturnEscape(Type* returnValueType,
     if (!t || t->kind != TypeKind::Struct) return;
     auto* closure = static_cast<StructType*>(t);
     if (!closure->isClosure) return;
+    // Returning the closure struct copies its fields, including raw pointers
+    // for by-reference/`this` captures. CDD's pointer model leaves the
+    // lifetime of the pointee to the programmer, so this is a warning rather
+    // than a hard semantic error. No hidden allocation extends the storage.
     if (closure->closureCapturesThis) {
-        emitError("capturing closure with a 'this' capture cannot escape by return", at);
+        emitWarning(DiagnosticCode::WarnClosureEscape,
+                    "returned closure captures 'this'; the object must outlive "
+                    "the closure",
+                    at);
         return;
     }
     if (closure->closureHasByRefCapture) {
-        emitError("capturing closure with by-reference captures cannot escape by return", at);
+        emitWarning(DiagnosticCode::WarnClosureEscape,
+                    "returned closure contains by-reference captures; captured "
+                    "storage must outlive the closure",
+                    at);
     }
 }
 
@@ -7893,6 +7958,37 @@ void SemanticAnalyzer::visit(ArrayDeclAST& node) {
     // AGG-11 评审 I2: array declarations are var declarations (DS5) — a
     // private nested type must not slip through as the element type.
     node.elementType = resolveTypeInstance(node.elementType, node);
+
+    // `auto a[] = { ... }` / `auto a[N] = { ... }`: infer the element type
+    // from the first brace initializer. Closure types are nominal, so all
+    // elements must be the same closure type (or otherwise compatible).
+    if (node.elementType && stripTypedef(node.elementType)->kind == TypeKind::Auto) {
+        auto* initList = dynamic_cast<InitializerListExprAST*>(node.initExpr.get());
+        if (!initList || initList->initializers.empty()) {
+            emitError("auto array '" + node.name +
+                          "' requires a brace-enclosed initializer",
+                      node);
+            node.elementType = typeCtx->getInt32();
+        } else {
+            Type* elem = getExprType(*initList->initializers[0]);
+            if (!elem) {
+                emitError("cannot infer auto array element type", node);
+                elem = typeCtx->getInt32();
+            }
+            for (size_t i = 1; i < initList->initializers.size(); ++i) {
+                Type* other = getExprType(*initList->initializers[i]);
+                if (other && !typesCompatible(elem, other)) {
+                    emitError("auto array '" + node.name +
+                                  "' has incompatible element types: '" +
+                                  typeToString(elem) + "' vs '" +
+                                  typeToString(other) + "'",
+                              node);
+                }
+            }
+            node.elementType = elem;
+        }
+    }
+
     checkNestedTypeAccess(node.elementType, node);
     if (!node.sizeName.empty()) {
         const std::string key = resolveNamespaceName(node.sizeName);
@@ -8214,9 +8310,20 @@ void SemanticAnalyzer::visitStructDeclImpl(StructDeclAST& node) {
             classType->isComplete = true;
         }
 
-        // Add fields if not already added
+        // Add fields if not already added. Parser-time registration may hold
+        // an unresolved `decltype`/placeholder type; sema's resolved field is
+        // authoritative, so refresh an existing entry in place.
         for (auto& field : node.fields) {
-            if (!classType->getFieldType(field.name)) {
+            bool updated = false;
+            for (auto& existing : classType->fields) {
+                if (existing.name == field.name) {
+                    existing.type = field.type;
+                    existing.bitWidth = field.bitWidth;
+                    updated = true;
+                    break;
+                }
+            }
+            if (!updated) {
                 classType->addField(field.name, field.type, field.bitWidth, field.annotations);
                 if (field.flexibleArray && !classType->fields.empty())
                     classType->fields.back().flexibleArray = true;
@@ -8412,7 +8519,16 @@ void SemanticAnalyzer::visitStructDeclImpl(StructDeclAST& node) {
             structType = new StructType(node.name);
         }
         for (auto& field : node.fields) {
-            if (!structType->getFieldType(field.name)) {
+            bool updated = false;
+            for (auto& existing : structType->fields) {
+                if (existing.name == field.name) {
+                    existing.type = field.type;
+                    existing.bitWidth = field.bitWidth;
+                    updated = true;
+                    break;
+                }
+            }
+            if (!updated) {
                 structType->addField(field.name, field.type, field.bitWidth, field.annotations);
                 if (field.flexibleArray && !structType->fields.empty())
                     structType->fields.back().flexibleArray = true;
@@ -8675,6 +8791,9 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
     }
     // Keep the pre-mangling spelling for out-of-class static member lookup.
     const std::string oocOriginalName = node.name;
+    // Class method tables are keyed by the bare source spelling; preserve it
+    // before scopedName() adds a namespace prefix for the function symbol.
+    const std::string methodLookupName = node.name;
     // Namespace members are registered/emitted under a mangled key.
     // C-linkage extern functions keep their plain symbol name even inside a
     // namespace (`std::sqrt` links to libm's `sqrt`): skip the prefix only
@@ -8751,6 +8870,11 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
                 std::make_unique<ParamDeclAST>("this",
                     new Type(TypeKind::Pointer, oocClass)));
             currentClass = oocClass;
+            // An out-of-class definition satisfies a deferred auto prototype.
+            if (node.body) {
+                m_pendingAutoMethodPrototypes.erase(
+                    oocClass->name + "::" + methodLookupName);
+            }
         }
     }
 
@@ -8767,15 +8891,25 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
     Type* resolvedReturn = stripTypedef(node.returnType);
     const bool isAutoReturn =
         resolvedReturn && resolvedReturn->kind == TypeKind::Auto;
+    ClassType* autoMethodClass = nullptr;
     if (isAutoReturn) {
-        if (isMethodDecl) {
-            emitError("auto return type is not supported on methods", node);
+        if (isMethodDecl && node.isStatic) {
+            emitError("auto return type is not supported on static methods", node);
             return;
         }
         if (!node.body) {
+            if (isMethodDecl && !node.isStatic && currentClass) {
+                // A class may declare an auto-return instance method and
+                // define it out of class later. Defer the body requirement;
+                // analyze() reports it if no definition binds.
+                m_pendingAutoMethodPrototypes[
+                    currentClass->name + "::" + methodLookupName] = &node;
+                return;
+            }
             emitError("auto function '" + node.name + "' must have a body", node);
             return;
         }
+        if (isMethodDecl) autoMethodClass = currentClass;
         if (node.isCompileTime || node.isCompileOnly) {
             emitError("auto return type is not supported on compile_time/compile_only functions",
                       node);
@@ -8949,6 +9083,24 @@ void SemanticAnalyzer::visit(FunctionDeclAST& node) {
 
         exitScope();
         currentFunction = prevFunc;
+    }
+
+    // The class method table was populated with the `auto` placeholder before
+    // the body was analyzed. Replace its return type so later calls through
+    // the class see the inferred closure/scalar type.
+    if (autoMethodClass) {
+        if (FunctionType* ft = autoMethodClass->getMethod(methodLookupName)) {
+            ft->returnType = node.returnType;
+        }
+        // The in-class prototype AST is emitted by StructDeclAST::codegen
+        // before the out-of-class definition is visited. Keep its return type
+        // in sync so codegen does not create an `auto`/int32 prototype and
+        // then reuse that wrong LLVM signature for the real body.
+        auto declIt = m_methodDecls.find(autoMethodClass->name + "::" +
+                                         methodLookupName);
+        if (declIt != m_methodDecls.end() && declIt->second) {
+            declIt->second->returnType = node.returnType;
+        }
     }
 
     std::vector<Type*> paramTypes;
@@ -9328,6 +9480,13 @@ void SemanticAnalyzer::analyze(TranslationUnitAST& ast) {
         }
         ast.declarations.push_back(std::move(decl));
     }
+    for (const auto& entry : m_pendingAutoMethodPrototypes) {
+        if (entry.second) {
+            emitError("auto function '" + entry.second->name +
+                          "' must have a body",
+                      *entry.second);
+        }
+    }
     reportCompileOnlyViolations();
 }
 
@@ -9371,6 +9530,28 @@ Type* SemanticAnalyzer::resolveTypeInstance(Type* t, ASTNode& at) {
             auto* td = static_cast<TypedefType*>(t);
             td->aliasedType = resolveTypeInstance(td->aliasedType, at);
             return t;
+        }
+        case TypeKind::Decltype: {
+            auto* dt = static_cast<DecltypeType*>(t);
+            if (!dt->expr) return nullptr;
+            // The expression may contain unbound template type parameters.
+            // Type queries inside template bodies are outside this feature's
+            // scope; reject rather than evaluate against a placeholder.
+            if (!m_instStack.empty()) {
+                emitError("decltype is not supported in template bodies", at);
+                return nullptr;
+            }
+            if (!m_decltypeResolving.insert(dt).second) {
+                emitError("recursive decltype in type definition", at);
+                return nullptr;
+            }
+            Type* resolved = getExprType(*dt->expr);
+            m_decltypeResolving.erase(dt);
+            if (!resolved) {
+                emitError("cannot deduce a type from decltype expression", at);
+                return nullptr;
+            }
+            return resolved;
         }
         case TypeKind::TypeInstance: {
             auto* use = static_cast<TypeInstanceType*>(t);
@@ -9881,6 +10062,10 @@ void SemanticAnalyzer::visit(UsingDeclAST& node) {
     // PAR-24: using 是唯一别名形式——注解目标校验、弃用折叠与内联 enum
     // 枚举量注册都与原 typedef 语义对齐。
     validateAnnotations(node.annotations, node, "using");
+
+    // Resolve type-only queries before the alias enters the type table so
+    // fields/arrays declared through the alias see the concrete closure type.
+    node.aliasedType = resolveTypeInstance(node.aliasedType, node);
 
     // `[[deprecated]] using T = ...;` —— 折叠到别名类型，使用点告警。
     auto markDeprecated = [&](Type* td) {

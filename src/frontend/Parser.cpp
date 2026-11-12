@@ -2375,6 +2375,7 @@ bool Parser::isTypeStart() const {
         case TokenType::TOKEN_VOID:
         case TokenType::TOKEN_BOOL:
         case TokenType::TOKEN_AUTO:
+        case TokenType::TOKEN_DECLTYPE:
         case TokenType::TOKEN_STRUCT:
         case TokenType::TOKEN_UNION:
         case TokenType::TOKEN_ENUM:
@@ -2505,6 +2506,19 @@ Type* Parser::parseBaseType() {
         case TokenType::TOKEN_AUTO: {
             advance();
             return new Type(TypeKind::Auto);
+        }
+        case TokenType::TOKEN_DECLTYPE: {
+            advance();
+            if (!expect(TokenType::TOKEN_LPAREN, "expected '(' after decltype"))
+                return nullptr;
+            auto expr = parseExpr();
+            if (!expr) {
+                errorUnexpected("expression in decltype");
+                return nullptr;
+            }
+            if (!expect(TokenType::TOKEN_RPAREN, "expected ')' after decltype"))
+                return nullptr;
+            return new DecltypeType(std::shared_ptr<ExprAST>(std::move(expr)));
         }
         case TokenType::TOKEN_CHAR_KW: {
             advance();
@@ -4558,6 +4572,7 @@ static bool tokenStartsDeclarationType(TokenType type) {
         case TokenType::TOKEN_VOID:
         case TokenType::TOKEN_BOOL:
         case TokenType::TOKEN_AUTO:
+        case TokenType::TOKEN_DECLTYPE:
         case TokenType::TOKEN_STRUCT:
         case TokenType::TOKEN_UNION:
         case TokenType::TOKEN_ENUM:
@@ -5086,6 +5101,7 @@ bool Parser::recordBodyLooksClassLike() const {
     if (end <= m_currentTokenPos) return false;
 
     int depth = 0;
+    int parenDepth = 0;
     for (size_t i = m_currentTokenPos + 1; i < end; ++i) {
         const TokenType type = m_tokens[i].type;
         if (type == TokenType::TOKEN_LBRACE) {
@@ -5097,6 +5113,18 @@ bool Parser::recordBodyLooksClassLike() const {
             continue;
         }
         if (depth != 0) continue;
+        // Parentheses inside a member type/initializer (notably
+        // `decltype(make(0))`) must not make the inner call look like a
+        // method declaration. Only a top-level `identifier (` is a method.
+        if (type == TokenType::TOKEN_LPAREN) {
+            ++parenDepth;
+            continue;
+        }
+        if (type == TokenType::TOKEN_RPAREN) {
+            if (parenDepth > 0) --parenDepth;
+            continue;
+        }
+        if (parenDepth != 0) continue;
 
         // Skip member annotations (`[[align(16)]]`): the identifier inside the
         // attribute is followed by '(' and would otherwise look like a method.

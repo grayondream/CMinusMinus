@@ -48,6 +48,7 @@ const DiagnosticInfo kRegistry[] = {
     {DiagnosticCode::WarnUnreachableCode,        "W3003", "unreachable code"},
     {DiagnosticCode::WarnDeprecated,             "W3004", "deprecated API"},
     {DiagnosticCode::WarnNullNonnull,            "W3005", "null passed to nonnull parameter"},
+    {DiagnosticCode::WarnClosureEscape,           "W3006", "closure captures storage that may not outlive it"},
 };
 
 } // namespace
